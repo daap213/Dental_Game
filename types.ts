@@ -35,6 +35,7 @@ export interface Player extends Entity {
   type: 'player';
   invincibleTimer: number;
   weapon: WeaponType;
+  weaponLevel: number; // 1 to 3
   ammo: number;
   score: number;
   // Abilities

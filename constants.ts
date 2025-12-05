@@ -13,6 +13,7 @@ export const PLAYER_DASH_SPEED = 15;
 export const PLAYER_DASH_DURATION = 0.2; // seconds
 export const PLAYER_DASH_COOLDOWN = 1.0;
 export const PLAYER_MAX_JUMPS = 2;
+export const MAX_WEAPON_LEVEL = 3;
 
 // Colors
 export const COLORS = {
