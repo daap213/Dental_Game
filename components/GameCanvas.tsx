@@ -37,6 +37,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     waveTimer: number;
     shake: number;
     levelTransitioning: boolean;
+    transition: {
+        phase: 'none' | 'closing' | 'opening';
+        progress: number; // 0 to 1
+    };
   }>({
     player: createPlayer(),
     enemies: [],
@@ -49,7 +53,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     level: { stage: 1, distanceTraveled: 0, bossSpawned: false, levelWidth: 4000 },
     waveTimer: 0,
     shake: 0,
-    levelTransitioning: false
+    levelTransitioning: false,
+    transition: { phase: 'none', progress: 0 }
   });
 
   const inputs = useRef({
@@ -153,6 +158,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     entities.current.waveTimer = 0;
     entities.current.shake = 0;
     entities.current.levelTransitioning = false;
+    entities.current.transition = { phase: 'none', progress: 0 };
     
     // Clear inputs to prevent sticky keys/movement on restart
     inputs.current = {
@@ -167,7 +173,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     setBossHp(0);
   };
 
-  const nextLevel = () => {
+  const startLevelTransition = () => {
+      // Don't start multiple times
+      if (entities.current.transition.phase !== 'none') return;
+      entities.current.transition.phase = 'closing';
+  };
+
+  const performLevelReset = () => {
       const s = entities.current;
       s.levelTransitioning = false;
       s.level.stage++;
@@ -436,6 +448,26 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
   const update = (dt: number) => {
     const s = entities.current;
     const p = s.player;
+
+    // --- Transition Update ---
+    if (s.transition.phase === 'closing') {
+        s.transition.progress += dt * 0.8; // Speed of close
+        if (s.transition.progress >= 1) {
+            s.transition.progress = 1;
+            performLevelReset();
+            s.transition.phase = 'opening';
+        }
+        return; // Pause game updates during transition (optional, or keep running background)
+    } else if (s.transition.phase === 'opening') {
+        s.transition.progress -= dt * 0.8;
+        if (s.transition.progress <= 0) {
+            s.transition.progress = 0;
+            s.transition.phase = 'none';
+        }
+        // Game updates resume? Or maybe let bg run but not player control?
+        // For now, let's return to prevent player moving while mouth opens
+        return;
+    }
 
     // --- Player Logic ---
 
@@ -1025,7 +1057,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                         if (enemy.subType === 'boss') {
                             if (!s.levelTransitioning) {
                                 s.levelTransitioning = true;
-                                setTimeout(nextLevel, 2000); // Level complete
+                                setTimeout(startLevelTransition, 2000); // Start Transition after delay
                             }
                         }
                     }
@@ -1446,6 +1478,60 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       ctx.fill();
   };
 
+  const drawTransition = (ctx: CanvasRenderingContext2D) => {
+      const p = entities.current.transition.progress;
+      if (p <= 0) return;
+
+      const halfH = CANVAS_HEIGHT / 2;
+      const topY = -halfH + (halfH * p);
+      const botY = CANVAS_HEIGHT - (halfH * p);
+
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform for overlay
+
+      // Top Jaw (Gums)
+      ctx.fillStyle = '#db2777'; // Pink
+      ctx.fillRect(0, 0, CANVAS_WIDTH, topY + halfH);
+      
+      // Bottom Jaw (Gums)
+      ctx.fillRect(0, botY, CANVAS_WIDTH, CANVAS_HEIGHT - botY);
+
+      // Teeth (Top)
+      ctx.fillStyle = '#fff';
+      const toothW = 50;
+      const teethY = topY + halfH;
+      ctx.beginPath();
+      for(let x=0; x<=CANVAS_WIDTH; x+=toothW) {
+          ctx.moveTo(x, teethY);
+          ctx.lineTo(x + toothW/2, teethY + 30); // Point down
+          ctx.lineTo(x + toothW, teethY);
+      }
+      ctx.fill();
+
+      // Teeth (Bottom)
+      const teethBotY = botY;
+      ctx.beginPath();
+      for(let x=0; x<=CANVAS_WIDTH; x+=toothW) {
+          ctx.moveTo(x, teethBotY);
+          ctx.lineTo(x + toothW/2, teethBotY - 30); // Point up
+          ctx.lineTo(x + toothW, teethBotY);
+      }
+      ctx.fill();
+
+      // Text Overlay when fully closed
+      if (p > 0.95) {
+          ctx.fillStyle = '#fff';
+          ctx.font = '20px "Press Start 2P", system-ui';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(`STAGE ${stage} CLEAR`, CANVAS_WIDTH/2, CANVAS_HEIGHT/2 - 20);
+          ctx.fillStyle = '#fef08a'; // Yellow
+          ctx.fillText("BRUSHING TEETH...", CANVAS_WIDTH/2, CANVAS_HEIGHT/2 + 20);
+      }
+
+      ctx.restore();
+  };
+
   const draw = (ctx: CanvasRenderingContext2D) => {
     // Clear
     ctx.fillStyle = COLORS.bgTop;
@@ -1780,6 +1866,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     });
 
     ctx.restore();
+
+    // Draw Transition Overlay (Last so it covers everything)
+    drawTransition(ctx);
   };
 
   // --- Mobile Controls Helpers ---
