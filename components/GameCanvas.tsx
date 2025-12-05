@@ -1,22 +1,25 @@
+
 import React, { useRef, useEffect, useState } from 'react';
 import { GameState, Entity, Player, Enemy, Projectile, Platform, Particle, PowerUp, Rect, WeaponType, LevelState } from '../types';
-import { CANVAS_WIDTH, CANVAS_HEIGHT, GRAVITY, COLORS, PLAYER_SPEED, PLAYER_JUMP, FRICTION, TERMINAL_VELOCITY, PLAYER_SIZE } from '../constants';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, GRAVITY, COLORS, PLAYER_SPEED, PLAYER_JUMP, FRICTION, TERMINAL_VELOCITY, PLAYER_SIZE, PLAYER_DASH_SPEED, PLAYER_DASH_DURATION, PLAYER_DASH_COOLDOWN, PLAYER_MAX_JUMPS } from '../constants';
 import { generateBriefing, generateGameOverMessage } from '../services/geminiService';
-import { Rocket, Heart, Zap, Waves, Crosshair, Skull } from 'lucide-react';
+import { Rocket, Heart, Zap, Waves, Crosshair, Sword, Wind } from 'lucide-react';
 
 interface GameCanvasProps {
   onGameOver: (score: number, message: string) => void;
   gameState: GameState;
   setGameState: (state: GameState) => void;
+  sessionId: number;
 }
 
-export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, setGameState }) => {
+export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, setGameState, sessionId }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [score, setScore] = useState(0);
   const [hp, setHp] = useState(100);
   const [stage, setStage] = useState(1);
   const [bossHp, setBossHp] = useState(0);
   const [bossMaxHp, setBossMaxHp] = useState(0);
+  const [bossName, setBossName] = useState("Boss");
   const [briefing, setBriefing] = useState<string>("Loading Mission...");
   const [isMobile, setIsMobile] = useState(false);
 
@@ -53,8 +56,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     up: false,
     down: false,
     shoot: false,
+    dash: false,
     jumpPressed: false,
-    shootPressed: false
+    shootPressed: false,
+    dashPressed: false
   });
 
   function createPlayer(): Player {
@@ -77,7 +82,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       ammo: -1,
       score: 0,
       frameTimer: 0,
-      state: 0
+      state: 0,
+      jumpCount: 0,
+      maxJumps: PLAYER_MAX_JUMPS,
+      dashTimer: 0,
+      dashCooldown: 0
     };
   }
 
@@ -90,6 +99,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     }
   }, [gameState]);
 
+  // Reset Game when sessionId changes
+  useEffect(() => {
+      if (sessionId > 0) {
+          resetGame();
+      }
+  }, [sessionId]);
+
   useEffect(() => {
     if (gameState !== GameState.PLAYING) return;
 
@@ -97,8 +113,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
-    resetGame();
 
     let animationFrameId: number;
     let lastTime = performance.now();
@@ -135,6 +149,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     entities.current.camera = { x: 0, y: 0 };
     entities.current.waveTimer = 0;
     entities.current.shake = 0;
+    
+    // Clear inputs to prevent sticky keys/movement on restart
+    inputs.current = {
+        left: false, right: false, up: false, down: false,
+        shoot: false, dash: false,
+        jumpPressed: false, shootPressed: false, dashPressed: false
+    };
+
     setScore(0);
     setHp(100);
     setStage(1);
@@ -169,6 +191,18 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Escape') {
+          if (gameState === GameState.PLAYING) setGameState(GameState.PAUSED);
+          else if (gameState === GameState.PAUSED) setGameState(GameState.PLAYING);
+          return;
+      }
+      if (gameState !== GameState.PLAYING) return;
+      
+      // Prevent scrolling/page interaction for game keys
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+          e.preventDefault();
+      }
+
       switch (e.code) {
         case 'KeyA':
         case 'ArrowLeft': inputs.current.left = true; break;
@@ -177,20 +211,27 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         case 'KeyW':
         case 'ArrowUp': 
         case 'Space':
+            if (!inputs.current.up) inputs.current.jumpPressed = true;
             inputs.current.up = true; 
-            inputs.current.jumpPressed = true;
             break;
         case 'KeyS':
         case 'ArrowDown': inputs.current.down = true; break;
         case 'KeyF':
         case 'KeyK': 
+            if (!inputs.current.shoot) inputs.current.shootPressed = true;
             inputs.current.shoot = true; 
-            inputs.current.shootPressed = true;
+            break;
+        case 'ShiftLeft':
+        case 'ShiftRight':
+        case 'KeyL':
+            if (!inputs.current.dash) inputs.current.dashPressed = true;
+            inputs.current.dash = true;
             break;
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
+      if (gameState !== GameState.PLAYING) return;
       switch (e.code) {
         case 'KeyA':
         case 'ArrowLeft': inputs.current.left = false; break;
@@ -200,14 +241,17 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         case 'ArrowUp': 
         case 'Space':
             inputs.current.up = false; 
-            inputs.current.jumpPressed = false;
             break;
         case 'KeyS':
         case 'ArrowDown': inputs.current.down = false; break;
         case 'KeyF':
         case 'KeyK': 
             inputs.current.shoot = false; 
-            inputs.current.shootPressed = false;
+            break;
+        case 'ShiftLeft':
+        case 'ShiftRight':
+        case 'KeyL':
+            inputs.current.dash = false;
             break;
       }
     };
@@ -218,7 +262,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
+  }, [gameState, setGameState]);
 
 
   // --- Game Logic ---
@@ -239,7 +283,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         const gap = Math.random() > 0.8 ? 100 : 0;
         const w = 400 + Math.random() * 400;
         if (gap > 0 && x + gap + w < width) {
-            // Add a gap
             x += gap;
         }
         platforms.push({ x: x, y: CANVAS_HEIGHT - 40, w: w, h: 40, type: 'platform', isGround: true });
@@ -273,24 +316,67 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       return props;
   };
 
-  const spawnBoss = (x: number) => {
-      const maxHp = 500 + (entities.current.level.stage * 200);
+  const spawnBoss = (arenaStartX: number) => {
+      const stage = entities.current.level.stage;
+      const baseHp = 1000;
+      let maxHp = baseHp + (stage * 500);
+      let bossVariant: Enemy['bossVariant'] = 'king';
+      let w = 120, h = 160;
+      let color = COLORS.enemyBoss;
+      let name = "The Cavity King";
+
+      if (stage === 1) {
+          bossVariant = 'king';
+          name = "The Cavity King";
+          maxHp = 1000;
+          color = '#3f3f46'; // Zinc
+      } else if (stage === 2) {
+          bossVariant = 'phantom';
+          name = "Plaque Phantom";
+          maxHp = 1400;
+          color = '#22d3ee'; // Cyan (Ghostly)
+          w = 100; h = 100; // Smaller
+      } else if (stage === 3) {
+          bossVariant = 'tank';
+          name = "Tartar Tank";
+          maxHp = 2500;
+          color = '#57534e'; // Stone
+          w = 160; h = 140; // Wider
+      } else if (stage === 4) {
+          bossVariant = 'general';
+          name = "General Gingivitis";
+          maxHp = 2000;
+          color = '#dc2626'; // Red
+          w = 100; h = 180; // Tall
+      } else {
+          bossVariant = 'deity';
+          name = "The Decay Deity";
+          maxHp = 5000;
+          color = '#0f172a'; // Slate-900
+          w = 140; h = 140;
+      }
+
+      setBossName(name);
+
       entities.current.enemies.push({
           id: 'boss',
-          x: x + 400,
+          x: arenaStartX + 500,
           y: CANVAS_HEIGHT - 250,
-          w: 120, h: 160,
+          w, h,
           vx: 0, vy: 0,
           hp: maxHp, maxHp: maxHp,
           type: 'enemy',
           subType: 'boss',
-          color: COLORS.enemyBoss,
+          bossVariant,
+          phase: 1,
+          color,
           facing: -1,
           isGrounded: true,
           aiTimer: 0,
           attackTimer: 0,
           frameTimer: 0,
-          state: 0
+          state: 0,
+          bossState: 0
       });
       setBossMaxHp(maxHp);
       setBossHp(maxHp);
@@ -337,7 +423,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       aiTimer: 0,
       attackTimer: 0,
       frameTimer: 0,
-      state: 0
+      state: 0,
+      bossState: 0
     });
   };
 
@@ -345,35 +432,76 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     const s = entities.current;
     const p = s.player;
 
-    // --- Player Physics ---
-    if (inputs.current.left) { p.vx -= PLAYER_SPEED * 0.2; p.facing = -1; }
-    if (inputs.current.right) { p.vx += PLAYER_SPEED * 0.2; p.facing = 1; }
-    
-    // Friction
-    if (!inputs.current.left && !inputs.current.right) p.vx *= FRICTION;
-    
-    // Clamp Speed
-    p.vx = Math.max(Math.min(p.vx, PLAYER_SPEED), -PLAYER_SPEED);
-    
-    // Gravity
-    p.vy += GRAVITY;
-    p.vy = Math.min(p.vy, TERMINAL_VELOCITY);
+    // --- Player Logic ---
 
-    // Jump
-    if (inputs.current.up && p.isGrounded) {
-       p.vy = PLAYER_JUMP;
-       p.isGrounded = false;
-       spawnParticle(p.x + p.w/2, p.y + p.h, '#fff', 5);
+    // Dash Logic
+    if (p.dashCooldown > 0) p.dashCooldown -= dt;
+    
+    if (inputs.current.dashPressed && p.dashCooldown <= 0) {
+        p.dashTimer = PLAYER_DASH_DURATION;
+        p.dashCooldown = PLAYER_DASH_COOLDOWN;
+        p.invincibleTimer = PLAYER_DASH_DURATION; // Invincible while dashing
+        p.vx = p.facing * PLAYER_DASH_SPEED;
+        p.vy = 0; // Hover during dash
+        spawnParticle(p.x, p.y + p.h/2, '#fff', 10);
+        inputs.current.dashPressed = false;
     }
 
-    // Move X
+    if (p.dashTimer > 0) {
+        // Dashing Movement
+        p.dashTimer -= dt;
+        p.vx = p.facing * PLAYER_DASH_SPEED;
+        p.vy = 0;
+        // Spawn afterimages
+        if (Math.random() > 0.5) {
+            s.particles.push({
+                id: Math.random().toString(),
+                x: p.x, y: p.y, w: p.w, h: p.h,
+                vx: 0, vy: 0, hp: 0, maxHp: 0, type: 'particle',
+                lifeTime: 0.2, alpha: 0.5, color: p.color, facing: p.facing,
+                isGrounded: false, frameTimer: 0, state: 0
+            });
+        }
+    } else {
+        // Normal Movement
+        if (inputs.current.left) { p.vx -= PLAYER_SPEED * 0.2; p.facing = -1; }
+        if (inputs.current.right) { p.vx += PLAYER_SPEED * 0.2; p.facing = 1; }
+        
+        // Friction
+        if (!inputs.current.left && !inputs.current.right) p.vx *= FRICTION;
+        
+        // Clamp Speed
+        p.vx = Math.max(Math.min(p.vx, PLAYER_SPEED), -PLAYER_SPEED);
+        
+        // Gravity
+        p.vy += GRAVITY;
+        p.vy = Math.min(p.vy, TERMINAL_VELOCITY);
+    }
+
+    // Jump / Double Jump
+    if (inputs.current.jumpPressed) {
+       if (p.isGrounded) {
+           p.vy = PLAYER_JUMP;
+           p.isGrounded = false;
+           p.jumpCount = 1;
+           spawnParticle(p.x + p.w/2, p.y + p.h, '#fff', 5);
+       } else if (p.jumpCount < p.maxJumps && p.dashTimer <= 0) {
+           p.vy = PLAYER_JUMP;
+           p.jumpCount++;
+           spawnParticle(p.x + p.w/2, p.y + p.h, '#88ccff', 5); // Blue particles for double jump
+       }
+       inputs.current.jumpPressed = false;
+    }
+
+    // Update Position
     p.x += p.vx;
     checkPlatformCollisions(p, s.platforms, true);
 
-    // Move Y
     p.y += p.vy;
     p.isGrounded = false; 
     checkPlatformCollisions(p, s.platforms, false);
+    
+    if (p.isGrounded) p.jumpCount = 0;
 
     // Level Bounds
     if (p.x < 0) p.x = 0;
@@ -397,14 +525,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
            // Fire rate based on weapon
            let cooldown = 10;
            if (p.weapon === 'spread') cooldown = 20;
-           if (p.weapon === 'laser') cooldown = 6;
+           if (p.weapon === 'laser') cooldown = 8;
            if (p.weapon === 'mouthwash') cooldown = 30;
-           if (p.weapon === 'floss') cooldown = 15;
+           if (p.weapon === 'floss') cooldown = 18;
+           if (p.weapon === 'toothbrush') cooldown = 20;
            
            p.frameTimer = cooldown;
            
-           // Auto-fire only for some weapons, others require click
-           if (p.weapon !== 'laser') inputs.current.shootPressed = false; 
+           // Auto-fire only for some weapons
+           if (p.weapon !== 'laser' && p.weapon !== 'toothbrush') inputs.current.shootPressed = false; 
        }
     }
     if (p.frameTimer > 0) p.frameTimer--;
@@ -415,6 +544,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         let targetCamX = p.x - CANVAS_WIDTH * 0.3;
         targetCamX = Math.max(0, Math.min(targetCamX, s.level.levelWidth - CANVAS_WIDTH));
         s.camera.x += (targetCamX - s.camera.x) * 0.1;
+    } else {
+        // Pan to the arena
+        let targetCamX = s.level.levelWidth - CANVAS_WIDTH;
+        s.camera.x += (targetCamX - s.camera.x) * 0.05; // Smooth pan
     }
 
     // Screen Shake
@@ -434,6 +567,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         spawnBoss(s.level.levelWidth - 800);
     }
 
+    // Boss Failsafe
+    if (s.level.bossSpawned) {
+        const bossExists = s.enemies.some(e => e.subType === 'boss');
+        if (!bossExists) {
+             s.level.bossSpawned = false;
+        }
+    }
+
     // Enemy Spawning (only if no boss)
     s.waveTimer += dt;
     if (!s.level.bossSpawned && s.waveTimer > Math.max(0.5, 2.0 - (score / 10000) - (s.level.stage * 0.1))) {
@@ -445,19 +586,22 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     
     // Projectiles
     s.projectiles.forEach(proj => {
-        proj.x += proj.vx;
-        proj.y += proj.vy;
+        if (proj.projectileType === 'sword' || proj.projectileType === 'floss') {
+            // Melee weapons follow player
+             if (proj.owner === 'player') {
+                proj.x = p.x + (p.facing === 1 ? p.w : -proj.w);
+                proj.y = p.y + p.h/2 - proj.h/2;
+            }
+        } else {
+            proj.x += proj.vx;
+            proj.y += proj.vy;
+            if (proj.projectileType === 'mortar') proj.vy += GRAVITY * 0.5;
+        }
+        
         proj.lifeTime -= dt;
         
         if (proj.projectileType === 'wave') {
             proj.y += Math.sin(Date.now() / 50) * 5;
-        }
-        if (proj.projectileType === 'floss') {
-            // Floss sticks to player
-            if (proj.owner === 'player') {
-                proj.x = p.x + (p.facing === 1 ? p.w : -proj.w);
-                proj.y = p.y + p.h/2 - proj.h/2;
-            }
         }
     });
     s.projectiles = s.projectiles.filter(p => p.lifeTime > 0);
@@ -484,7 +628,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                 case 'candy_bomber':
                     enemy.vy = Math.sin(Date.now() / 200) * 1; 
                     enemy.vx = -3;
-                    // Drops bomb
                     if (enemy.attackTimer > 2.0 && Math.abs(enemy.x - p.x) < 50) {
                         spawnProjectile(enemy.x, enemy.y + 20, 0, 'enemy', 'normal');
                         enemy.attackTimer = 0;
@@ -493,7 +636,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                 case 'tartar_turret':
                     enemy.vx = 0;
                     enemy.vy += GRAVITY;
-                    // Shoots aimed shot
                     if (enemy.attackTimer > 3.0 && dist < 400) {
                         const angle = Math.atan2(p.y - enemy.y, p.x - enemy.x);
                         s.projectiles.push({
@@ -509,46 +651,219 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                     }
                     break;
                 case 'sugar_rusher':
-                    // Fast runs then jumps
                     enemy.vx = enemy.x > p.x ? -6 : 6;
                     if (enemy.isGrounded && Math.random() < 0.05) enemy.vy = -12;
                     enemy.vy += GRAVITY;
                     break;
                 case 'boss':
-                    // Boss Logic
                     setBossHp(enemy.hp);
-                    // Floating slight movement
-                    enemy.vy = Math.sin(Date.now() / 500) * 0.5;
-                    
-                    // Phases
-                    if (enemy.attackTimer > 2.0) {
-                        const phase = enemy.hp < enemy.maxHp * 0.5 ? 2 : 1;
-                        if (phase === 1) {
-                            // Spread shot
-                            for(let i=-1; i<=1; i++) {
-                                s.projectiles.push({
-                                    id: Math.random().toString(),
-                                    x: enemy.x, y: enemy.y + enemy.h/2,
-                                    w: 12, h: 12,
-                                    vx: -8, vy: i * 3,
-                                    hp: 1, maxHp: 1, type: 'projectile', projectileType: 'bullet',
-                                    damage: 15, owner: 'enemy', lifeTime: 4,
-                                    color: COLORS.enemyCandy, facing: -1, isGrounded: false, frameTimer: 0, state: 0
-                                });
-                            }
-                        } else {
-                            // Spawn minions
-                            const minion = {
-                                id: Math.random().toString(),
-                                x: enemy.x - 50, y: enemy.y + 100,
-                                w: 20, h: 20, vx: -5, vy: -5,
-                                hp: 10, maxHp: 10, type: 'enemy', subType: 'sugar_rusher' as const,
-                                color: COLORS.enemyRusher, facing: -1, isGrounded: false, aiTimer: 0, attackTimer: 0, frameTimer: 0, state: 0
-                            };
-                            s.enemies.push(minion);
-                        }
-                        enemy.attackTimer = 0;
+                    // Phase change for Final Boss
+                    if (enemy.bossVariant === 'deity' && enemy.hp < enemy.maxHp / 2 && enemy.phase === 1) {
+                         enemy.phase = 2;
+                         enemy.color = '#7f1d1d'; // Dark Red
+                         s.shake = 30;
+                         spawnParticle(enemy.x, enemy.y, '#ff0000', 50);
                     }
+
+                    // --- BOSS AI SWITCH ---
+                    if (enemy.bossVariant === 'phantom') {
+                        // Phantom: Floats, Dashes
+                        enemy.vy = Math.sin(Date.now() / 300) * 2;
+                        if (enemy.bossState === 0) { // Hover
+                             enemy.vx = (p.x - enemy.x) * 0.02;
+                             if (enemy.aiTimer > 2.0) {
+                                 enemy.bossState = 1; enemy.aiTimer = 0;
+                             }
+                        } else if (enemy.bossState === 1) { // Prep Dash
+                             enemy.vx = 0;
+                             if (enemy.aiTimer > 0.5) {
+                                 enemy.bossState = 2;
+                                 enemy.vx = (p.x < enemy.x) ? -15 : 15;
+                                 enemy.aiTimer = 0;
+                             }
+                        } else if (enemy.bossState === 2) { // Dashing
+                             if (enemy.aiTimer > 1.0) { // Dash complete
+                                 enemy.bossState = 3; enemy.aiTimer = 0; enemy.vx = 0;
+                             }
+                        } else if (enemy.bossState === 3) { // Shoot
+                             if (enemy.aiTimer > 0.5) {
+                                 for(let i=-1; i<=1; i++) {
+                                     spawnProjectile(enemy.x + enemy.w/2, enemy.y + enemy.h/2, p.facing, 'enemy', 'normal');
+                                 }
+                                 enemy.bossState = 0; enemy.aiTimer = 0;
+                             }
+                        }
+                    } 
+                    else if (enemy.bossVariant === 'tank') {
+                        // Tank: Slow, Mortars, Shockwaves
+                        if (enemy.bossState === 0) { // March
+                             enemy.vx = (p.x - enemy.x) > 0 ? 1 : -1;
+                             enemy.vy += GRAVITY;
+                             if (enemy.aiTimer > 3.0) {
+                                 enemy.bossState = Math.random() > 0.5 ? 1 : 2; 
+                                 enemy.aiTimer = 0;
+                             }
+                        } else if (enemy.bossState === 1) { // Mortar
+                             enemy.vx = 0; enemy.vy += GRAVITY;
+                             if (enemy.aiTimer > 1.0) {
+                                  // Fire Mortar
+                                  s.projectiles.push({
+                                      id: Math.random().toString(),
+                                      x: enemy.x + enemy.w/2, y: enemy.y,
+                                      w: 16, h: 16,
+                                      vx: (p.x - enemy.x) * 0.015, vy: -12, // Arc
+                                      hp: 1, maxHp: 1, type: 'projectile', projectileType: 'mortar',
+                                      damage: 25, owner: 'enemy', lifeTime: 3,
+                                      color: '#78716c', facing: 1, isGrounded: false, frameTimer: 0, state: 0
+                                  });
+                                  enemy.bossState = 0; enemy.aiTimer = 0;
+                             }
+                        } else if (enemy.bossState === 2) { // Ground Wave
+                             enemy.vx = 0; enemy.vy += GRAVITY;
+                             if (enemy.aiTimer > 1.0) {
+                                  s.projectiles.push({
+                                      id: Math.random().toString(),
+                                      x: enemy.x + (p.x > enemy.x ? enemy.w : 0), y: enemy.y + enemy.h - 10,
+                                      w: 40, h: 20, vx: (p.x > enemy.x ? 8 : -8), vy: 0,
+                                      hp: 1, maxHp: 1, type: 'projectile', projectileType: 'wave',
+                                      damage: 20, owner: 'enemy', lifeTime: 3,
+                                      color: COLORS.projectileWave, facing: 1, isGrounded: false, frameTimer: 0, state: 0
+                                  });
+                                  enemy.bossState = 0; enemy.aiTimer = 0;
+                             }
+                        }
+                    }
+                    else if (enemy.bossVariant === 'general') {
+                         // General: High Hover, Summon, Laser
+                         enemy.vy = Math.sin(Date.now() / 600) * 0.5;
+                         if (enemy.y > 100) enemy.y -= 1; // Stay high
+                         
+                         if (enemy.bossState === 0) { // Idle/Move
+                             enemy.vx = (p.x - enemy.x) * 0.01;
+                             if (enemy.aiTimer > 2.0) {
+                                 enemy.bossState = Math.random() > 0.6 ? 2 : 1; 
+                                 enemy.aiTimer = 0;
+                             }
+                         } else if (enemy.bossState === 1) { // Summon
+                             enemy.vx = 0;
+                             if (enemy.aiTimer > 1.0) {
+                                 // Summon Minion
+                                 const minion = {
+                                    id: Math.random().toString(),
+                                    x: enemy.x + enemy.w/2, y: enemy.y + enemy.h,
+                                    w: 20, h: 20, vx: (Math.random()-0.5)*10, vy: -5,
+                                    hp: 10, maxHp: 10, type: 'enemy', subType: 'bacteria' as const,
+                                    color: COLORS.enemyBacteria, facing: -1, isGrounded: false, aiTimer: 0, attackTimer: 0, frameTimer: 0, state: 0, bossState: 0
+                                };
+                                s.enemies.push(minion);
+                                enemy.bossState = 0; enemy.aiTimer = 0;
+                             }
+                         } else if (enemy.bossState === 2) { // Laser
+                             enemy.vx = 0;
+                             if (enemy.aiTimer > 0.5) {
+                                 // Laser down
+                                 s.projectiles.push({
+                                    id: Math.random().toString(),
+                                    x: enemy.x + enemy.w/2 - 10, y: enemy.y + enemy.h,
+                                    w: 20, h: 400, vx: 0, vy: 15, // Fast drop
+                                    hp: 1, maxHp: 1, type: 'projectile', projectileType: 'laser',
+                                    damage: 30, owner: 'enemy', lifeTime: 0.5,
+                                    color: '#ef4444', facing: 1, isGrounded: false, frameTimer: 0, state: 0
+                                 });
+                                 enemy.bossState = 0; enemy.aiTimer = 0;
+                             }
+                         }
+                    }
+                    else if (enemy.bossVariant === 'deity') {
+                        // DEITY - PHASE 1 & 2
+                        if (enemy.phase === 1) {
+                            enemy.vx = (CANVAS_WIDTH/2 + s.camera.x - enemy.x - enemy.w/2) * 0.05; // Stay center
+                            enemy.vy = Math.sin(Date.now() / 400) * 1;
+                            
+                            // Spiral Shoot
+                             if (enemy.attackTimer > 0.2) {
+                                 const angle = (Date.now() / 200);
+                                 for(let i=0; i<3; i++) {
+                                    const offset = (Math.PI * 2 / 3) * i;
+                                    s.projectiles.push({
+                                        id: Math.random().toString(),
+                                        x: enemy.x + enemy.w/2, y: enemy.y + enemy.h/2,
+                                        w: 12, h: 12,
+                                        vx: Math.cos(angle + offset) * 5, vy: Math.sin(angle + offset) * 5,
+                                        hp: 1, maxHp: 1, type: 'projectile', projectileType: 'bullet',
+                                        damage: 15, owner: 'enemy', lifeTime: 5,
+                                        color: '#ef4444', facing: 1, isGrounded: false, frameTimer: 0, state: 0
+                                    });
+                                 }
+                                 enemy.attackTimer = 0;
+                             }
+                        } else {
+                            // Phase 2: Aggressive
+                            if (enemy.bossState === 0) { // Chase
+                                enemy.vx = (p.x - enemy.x) * 0.05;
+                                enemy.vy = (p.y - enemy.y) * 0.05;
+                                if (enemy.aiTimer > 2.0) { enemy.bossState = 1; enemy.aiTimer = 0; }
+                            } else if (enemy.bossState === 1) { // Slam
+                                enemy.vy = 15; // Fast drop
+                                enemy.vx = 0;
+                                // Slam detection handles in collision
+                            }
+                        }
+                    }
+                    else {
+                        // Default (Cavity King) Logic
+                        if (enemy.bossState === 0) { // Idle/Hover
+                            enemy.vy = Math.sin(Date.now() / 500) * 0.5;
+                            enemy.vx = (p.x - enemy.x) * 0.01;
+                            if (enemy.aiTimer > 2.0) {
+                                enemy.aiTimer = 0;
+                                const r = Math.random();
+                                if (r < 0.3) enemy.bossState = 4; // Shoot
+                                else if (r < 0.6) enemy.bossState = 2; // Charge Slam
+                                else enemy.bossState = 1; // Chase
+                            }
+                        } else if (enemy.bossState === 4) { // Shoot Pattern
+                           enemy.vx = 0;
+                            if (enemy.attackTimer > 0.5) {
+                                for(let i=-2; i<=2; i++) {
+                                   s.projectiles.push({
+                                       id: Math.random().toString(),
+                                       x: enemy.x + enemy.w/2, y: enemy.y + enemy.h/2,
+                                       w: 12, h: 12,
+                                       vx: -8, vy: i * 3,
+                                       hp: 1, maxHp: 1, type: 'projectile', projectileType: 'bullet',
+                                       damage: 15, owner: 'enemy', lifeTime: 4,
+                                       color: COLORS.enemyCandy, facing: -1, isGrounded: false, frameTimer: 0, state: 0
+                                   });
+                                }
+                                enemy.attackTimer = 0;
+                                enemy.bossState = 0; // Return to idle
+                                enemy.aiTimer = 0;
+                            }
+                        } else if (enemy.bossState === 2) { // Slam - Go Up
+                           enemy.vy = -5;
+                           if (enemy.y < 50) {
+                               enemy.bossState = 3; // Slam Down
+                               enemy.vx = (p.x - enemy.x) * 0.1; // Track player X slightly
+                           }
+                        } else if (enemy.bossState === 3) { // Slam Down
+                           enemy.vy += 1; // Gravity accel
+                        } else if (enemy.bossState === 1) { // Summon/Chase
+                            if (enemy.aiTimer > 1.0) {
+                               const minion = {
+                                   id: Math.random().toString(),
+                                   x: enemy.x + enemy.w/2, y: enemy.y + 20,
+                                   w: 20, h: 20, vx: -5, vy: -5,
+                                   hp: 10, maxHp: 10, type: 'enemy', subType: 'sugar_rusher' as const,
+                                   color: COLORS.enemyRusher, facing: -1, isGrounded: false, aiTimer: 0, attackTimer: 0, frameTimer: 0, state: 0, bossState: 0
+                               };
+                               s.enemies.push(minion);
+                               enemy.bossState = 0;
+                               enemy.aiTimer = 0;
+                            }
+                        }
+                    }
+
                     break;
             }
 
@@ -558,10 +873,52 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                 checkPlatformCollisions(enemy, s.platforms, true);
             }
             
-            enemy.y += enemy.vy;
-            enemy.isGrounded = false;
-            if (enemy.subType !== 'candy_bomber' && enemy.subType !== 'boss') {
-                checkPlatformCollisions(enemy, s.platforms, false);
+            // Boss passes through platforms logic
+            if (enemy.subType === 'boss') {
+                 // Clamp Boss to Arena
+                 const arenaLeft = s.level.levelWidth - 800;
+                 if (enemy.x < arenaLeft) enemy.x = arenaLeft;
+                 if (enemy.x > s.level.levelWidth - enemy.w) enemy.x = s.level.levelWidth - enemy.w;
+
+                 // ALWAYS Apply Y movement
+                 enemy.y += enemy.vy;
+
+                 // Special Slam Ground Check
+                 if (enemy.bossState === 3 || (enemy.bossVariant === 'deity' && enemy.bossState === 1)) {
+                     const floorY = CANVAS_HEIGHT - 40; 
+                     if (enemy.y + enemy.h > floorY) {
+                         enemy.y = floorY - enemy.h;
+                         enemy.isGrounded = true;
+                         enemy.vy = 0;
+                         
+                         // Slam Effect
+                         s.shake = 20; 
+                         s.projectiles.push({
+                            id: Math.random().toString(), x: enemy.x, y: enemy.y + enemy.h - 20,
+                            w: 40, h: 20, vx: -8, vy: 0, hp: 1, maxHp: 1, type: 'projectile', projectileType: 'wave',
+                            damage: 25, owner: 'enemy', lifeTime: 3, color: COLORS.projectileWave, facing: -1, isGrounded: false, frameTimer: 0, state: 0
+                         });
+                         s.projectiles.push({
+                            id: Math.random().toString(), x: enemy.x + enemy.w, y: enemy.y + enemy.h - 20,
+                            w: 40, h: 20, vx: 8, vy: 0, hp: 1, maxHp: 1, type: 'projectile', projectileType: 'wave',
+                            damage: 25, owner: 'enemy', lifeTime: 3, color: COLORS.projectileWave, facing: 1, isGrounded: false, frameTimer: 0, state: 0
+                         });
+                         enemy.bossState = 0;
+                         enemy.aiTimer = 0;
+                     }
+                 } else if (enemy.bossVariant === 'tank') {
+                     // Tank is grounded
+                     if (enemy.y + enemy.h > CANVAS_HEIGHT - 40) {
+                         enemy.y = CANVAS_HEIGHT - 40 - enemy.h;
+                         enemy.vy = 0;
+                     }
+                 }
+            } else {
+                 enemy.y += enemy.vy;
+                 enemy.isGrounded = false;
+                 if (enemy.subType !== 'candy_bomber') {
+                    checkPlatformCollisions(enemy, s.platforms, false);
+                 }
             }
         }
     });
@@ -574,7 +931,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             s.enemies.forEach(enemy => {
                 if (checkRectCollide(proj, enemy)) {
                     enemy.hp -= proj.damage;
-                    if (proj.projectileType !== 'laser' && proj.projectileType !== 'floss') {
+                    if (proj.projectileType !== 'laser' && proj.projectileType !== 'floss' && proj.projectileType !== 'sword') {
                         proj.lifeTime = 0; 
                     }
                     spawnParticle(proj.x, proj.y, '#fff', 3);
@@ -628,12 +985,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             if (pu.subType === 'health') {
                 p.hp = Math.min(p.hp + 30, 100);
                 setHp(p.hp);
-            } else if (pu.subType === 'spread') {
-                p.weapon = 'spread';
-            } else if (pu.subType === 'laser') {
-                p.weapon = 'laser';
-            } else if (pu.subType === 'mouthwash') {
-                p.weapon = 'mouthwash';
+            } else {
+                if (pu.subType === 'spread') p.weapon = 'spread';
+                if (pu.subType === 'laser') p.weapon = 'laser';
+                if (pu.subType === 'mouthwash') p.weapon = 'mouthwash';
+                if (pu.subType === 'floss') p.weapon = 'floss';
+                if (pu.subType === 'toothbrush') p.weapon = 'toothbrush';
             }
             pu.dead = true;
         }
@@ -692,11 +1049,18 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                 hp: 1, maxHp: 1, damage: 40, lifeTime: 2.0, projectileType: 'wave', color: COLORS.projectileWave
             } as Projectile);
       } else if (type === 'floss') {
-             // Melee hitbox
+            // WHIP: Long range, short duration
             entities.current.projectiles.push({
                 ...base,
-                x, y, w: 50, h: 40, vx: 0, vy: 0,
-                hp: 1, maxHp: 1, damage: 60, lifeTime: 0.1, projectileType: 'floss', color: '#fff'
+                x, y, w: 100, h: 20, vx: 0, vy: 0,
+                hp: 1, maxHp: 1, damage: 60, lifeTime: 0.15, projectileType: 'floss', color: '#fff'
+            } as Projectile);
+      } else if (type === 'toothbrush') {
+            // SWORD: Short range, high arc
+            entities.current.projectiles.push({
+                ...base,
+                x, y, w: 60, h: 60, vx: 0, vy: 0,
+                hp: 1, maxHp: 1, damage: 80, lifeTime: 0.2, projectileType: 'sword', color: COLORS.projectileMelee
             } as Projectile);
       } else {
         // Normal
@@ -729,14 +1093,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
   };
 
   const spawnPowerUp = (x: number, y: number) => {
-      if (Math.random() > 0.5) return;
+      if (Math.random() > 0.6) return;
       const typeRoll = Math.random();
       let subType: PowerUp['subType'] = 'health';
       let color = '#ef4444';
       
-      if (typeRoll > 0.8) { subType = 'spread'; color = COLORS.projectilePlayer; }
-      else if (typeRoll > 0.6) { subType = 'laser'; color = COLORS.projectileLaser; }
-      else if (typeRoll > 0.4) { subType = 'mouthwash'; color = COLORS.projectileWave; }
+      if (typeRoll > 0.85) { subType = 'spread'; color = COLORS.projectilePlayer; }
+      else if (typeRoll > 0.70) { subType = 'laser'; color = COLORS.projectileLaser; }
+      else if (typeRoll > 0.55) { subType = 'mouthwash'; color = COLORS.projectileWave; }
+      else if (typeRoll > 0.40) { subType = 'floss'; color = '#fff'; }
+      else if (typeRoll > 0.25) { subType = 'toothbrush'; color = '#e2e8f0'; }
 
       entities.current.powerups.push({
           id: Math.random().toString(),
@@ -782,6 +1148,21 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
   };
 
   // --- Rendering ---
+  
+  const drawRoundRect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, radius: number) => {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + w - radius, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+    ctx.lineTo(x + w, y + h - radius);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+    ctx.lineTo(x + radius, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+    ctx.fill();
+  };
 
   const draw = (ctx: CanvasRenderingContext2D) => {
     // Clear
@@ -813,12 +1194,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         ctx.fillStyle = p.isGround ? COLORS.ground : COLORS.platform;
         
         if (p.isGround) {
-             // Round the tops of the gums
-             ctx.beginPath();
-             ctx.roundRect(p.x, p.y, p.w, p.h, [10, 10, 0, 0]);
-             ctx.fill();
+             drawRoundRect(ctx, p.x, p.y, p.w, p.h, 10);
         } else {
-             // Floating Teeth
              ctx.beginPath();
              ctx.moveTo(p.x, p.y);
              ctx.lineTo(p.x + p.w, p.y);
@@ -832,21 +1209,20 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     entities.current.powerups.forEach(pu => {
         ctx.fillStyle = pu.color;
         ctx.beginPath();
-        // Bouncing motion
         const yOff = Math.sin(Date.now() / 200) * 3;
         ctx.arc(pu.x + pu.w/2, pu.y + pu.h/2 + yOff, 10, 0, Math.PI * 2);
         ctx.fill();
-        
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = 2;
         ctx.stroke();
-
         ctx.fillStyle = '#fff';
         ctx.font = 'bold 12px sans-serif';
         let icon = '+';
         if (pu.subType === 'spread') icon = 'S';
         if (pu.subType === 'laser') icon = 'L';
         if (pu.subType === 'mouthwash') icon = 'W';
+        if (pu.subType === 'floss') icon = 'F';
+        if (pu.subType === 'toothbrush') icon = 'T';
         ctx.fillText(icon, pu.x + 6, pu.y + 14 + yOff);
     });
 
@@ -855,64 +1231,96 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         ctx.fillStyle = e.color;
         
         if (e.subType === 'bacteria') {
-            // Blobby shape
-            ctx.beginPath();
-            ctx.arc(e.x + e.w/2, e.y + e.h/2, e.w/2, 0, Math.PI*2);
-            ctx.fill();
-            // Eyes
-            ctx.fillStyle = '#fff';
-            ctx.beginPath(); ctx.arc(e.x + 8, e.y + 12, 4, 0, Math.PI*2); ctx.fill();
-            ctx.beginPath(); ctx.arc(e.x + 24, e.y + 12, 4, 0, Math.PI*2); ctx.fill();
-            ctx.fillStyle = '#000';
-            ctx.beginPath(); ctx.arc(e.x + 8, e.y + 12, 2, 0, Math.PI*2); ctx.fill();
-            ctx.beginPath(); ctx.arc(e.x + 24, e.y + 12, 2, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(e.x + e.w/2, e.y + e.h/2, e.w/2, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(e.x + 8, e.y + 12, 4, 0, Math.PI*2); ctx.fill(); ctx.arc(e.x + 24, e.y + 12, 4, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(e.x + 8, e.y + 12, 2, 0, Math.PI*2); ctx.fill(); ctx.arc(e.x + 24, e.y + 12, 2, 0, Math.PI*2); ctx.fill();
         } else if (e.subType === 'plaque_monster') {
-            // Spiky block
             ctx.fillRect(e.x, e.y, e.w, e.h);
             ctx.fillStyle = '#b45309';
-            // Spikes
             for(let i=0; i<e.w; i+=10) {
-                ctx.beginPath();
-                ctx.moveTo(e.x + i, e.y);
-                ctx.lineTo(e.x + i + 5, e.y - 5);
-                ctx.lineTo(e.x + i + 10, e.y);
-                ctx.fill();
+                ctx.beginPath(); ctx.moveTo(e.x + i, e.y); ctx.lineTo(e.x + i + 5, e.y - 5); ctx.lineTo(e.x + i + 10, e.y); ctx.fill();
             }
         } else if (e.subType === 'tartar_turret') {
-            // Base
             ctx.fillRect(e.x, e.y + 20, e.w, 20);
-            // Cannon
             ctx.fillStyle = '#5b21b6';
-            ctx.beginPath();
-            ctx.arc(e.x + e.w/2, e.y + 15, 15, 0, Math.PI, true);
-            ctx.fill();
+            ctx.beginPath(); ctx.arc(e.x + e.w/2, e.y + 15, 15, 0, Math.PI, true); ctx.fill();
         } else if (e.subType === 'boss') {
-            // Massive Molar
-            ctx.fillStyle = e.color;
-            // Main body
-            ctx.beginPath();
-            ctx.roundRect(e.x, e.y, e.w, e.h - 40, 20);
-            ctx.fill();
-            // Roots
-            ctx.beginPath();
-            ctx.moveTo(e.x + 20, e.y + e.h - 40);
-            ctx.lineTo(e.x + 40, e.y + e.h);
-            ctx.lineTo(e.x + 60, e.y + e.h - 20);
-            ctx.lineTo(e.x + 80, e.y + e.h);
-            ctx.lineTo(e.x + 100, e.y + e.h - 40);
-            ctx.fill();
             
-            // Evil Face
-            ctx.fillStyle = '#000'; // Mouth
-            ctx.beginPath();
-            ctx.ellipse(e.x + e.w/2, e.y + 100, 30, 20, 0, 0, Math.PI*2);
-            ctx.fill();
-            ctx.fillStyle = '#ef4444'; // Eyes
-            ctx.beginPath(); ctx.arc(e.x + 40, e.y + 60, 10, 0, Math.PI*2); ctx.fill();
-            ctx.beginPath(); ctx.arc(e.x + e.w - 40, e.y + 60, 10, 0, Math.PI*2); ctx.fill();
+            if (e.bossVariant === 'phantom') {
+                ctx.save();
+                ctx.globalAlpha = 0.8;
+                ctx.beginPath();
+                ctx.moveTo(e.x, e.y + e.h);
+                ctx.quadraticCurveTo(e.x, e.y, e.x + e.w/2, e.y);
+                ctx.quadraticCurveTo(e.x + e.w, e.y, e.x + e.w, e.y + e.h);
+                // Jagged bottom
+                for(let i=e.x+e.w; i>e.x; i-=20) {
+                    ctx.lineTo(i-10, e.y+e.h-20);
+                    ctx.lineTo(i-20, e.y+e.h);
+                }
+                ctx.fill();
+                ctx.fillStyle = '#fff';
+                ctx.beginPath(); ctx.arc(e.x+30, e.y+40, 10, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(e.x+70, e.y+40, 10, 0, Math.PI*2); ctx.fill();
+                ctx.restore();
+            } else if (e.bossVariant === 'tank') {
+                ctx.fillRect(e.x, e.y, e.w, e.h);
+                ctx.fillStyle = '#292524'; // Treads
+                ctx.fillRect(e.x - 10, e.y + e.h - 30, e.w + 20, 30);
+                // Cannon
+                ctx.fillStyle = '#57534e';
+                ctx.save();
+                ctx.translate(e.x + e.w/2, e.y + 20);
+                ctx.rotate(Math.PI / 4);
+                ctx.fillRect(0, -10, 60, 20);
+                ctx.restore();
+            } else if (e.bossVariant === 'general') {
+                // Red blobby mass
+                 ctx.beginPath();
+                 ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w/2, e.h/2, 0, 0, Math.PI * 2);
+                 ctx.fill();
+                 // Eye
+                 ctx.fillStyle = '#fca5a5';
+                 ctx.beginPath(); ctx.arc(e.x + e.w/2, e.y + 50, 30, 0, Math.PI*2); ctx.fill();
+                 ctx.fillStyle = '#000';
+                 ctx.beginPath(); ctx.arc(e.x + e.w/2, e.y + 50, 10, 0, Math.PI*2); ctx.fill();
+            } else if (e.bossVariant === 'deity') {
+                // Black Void
+                ctx.fillStyle = e.phase === 2 ? '#7f1d1d' : '#0f172a';
+                ctx.beginPath();
+                ctx.arc(e.x + e.w/2, e.y + e.h/2, e.w/2 + (Math.sin(Date.now()/100)*5), 0, Math.PI*2);
+                ctx.fill();
+                // Glowing Eyes
+                ctx.fillStyle = '#ef4444';
+                ctx.shadowColor = '#ef4444';
+                ctx.shadowBlur = 20;
+                ctx.beginPath(); ctx.arc(e.x + 40, e.y + 60, 15, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(e.x + e.w - 40, e.y + 60, 15, 0, Math.PI*2); ctx.fill();
+                ctx.shadowBlur = 0;
+            } else {
+                // Standard Cavity King
+                drawRoundRect(ctx, e.x, e.y, e.w, e.h - 40, 20);
+                ctx.beginPath();
+                ctx.moveTo(e.x + 20, e.y + e.h - 40);
+                ctx.lineTo(e.x + 40, e.y + e.h);
+                ctx.lineTo(e.x + 60, e.y + e.h - 20);
+                ctx.lineTo(e.x + 80, e.y + e.h);
+                ctx.lineTo(e.x + 100, e.y + e.h - 40);
+                ctx.fill();
+                ctx.fillStyle = '#000';
+                ctx.beginPath(); ctx.ellipse(e.x + e.w/2, e.y + 100, 30, 20, 0, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#ef4444'; 
+                ctx.beginPath(); ctx.arc(e.x + 40, e.y + 60, 10, 0, Math.PI*2); ctx.fill(); ctx.arc(e.x + e.w - 40, e.y + 60, 10, 0, Math.PI*2); ctx.fill();
+            }
 
+            // Invincibility flash
+            if (e.invincibleTimer > 0) {
+                ctx.globalCompositeOperation = 'source-atop';
+                ctx.fillStyle = 'rgba(255,255,255,0.5)';
+                ctx.fillRect(e.x, e.y, e.w, e.h);
+                ctx.globalCompositeOperation = 'source-over';
+            }
         } else {
-            // Generic/Candy
             ctx.fillRect(e.x, e.y, e.w, e.h);
         }
     });
@@ -921,6 +1329,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     const p = entities.current.player;
     if (p.invincibleTimer <= 0 || Math.floor(Date.now() / 50) % 2 === 0) {
         ctx.fillStyle = p.color;
+        
+        // Dash Ghost effect
+        if (p.dashTimer > 0) {
+            ctx.globalAlpha = 0.5;
+            ctx.fillStyle = '#a5f3fc';
+        }
+
         // Tooth Body
         ctx.beginPath();
         // Top curves
@@ -937,6 +1352,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         ctx.lineTo(p.x, p.y + p.h - 10);
         ctx.closePath();
         ctx.fill();
+        ctx.globalAlpha = 1.0;
         
         // Face
         ctx.fillStyle = '#000';
@@ -946,20 +1362,29 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         // Rambo Headband
         ctx.fillStyle = '#ef4444';
         ctx.fillRect(p.x, p.y + 8, p.w, 4);
-        // Bandana knot flowing back
         if (p.facing === 1) ctx.fillRect(p.x - 8, p.y + 8, 8, 4);
         else ctx.fillRect(p.x + p.w, p.y + 8, 8, 4);
 
-        // Weapon
-        ctx.fillStyle = '#4b5563';
-        const gunX = p.facing === 1 ? p.x + 20 : p.x - 10;
-        ctx.fillRect(gunX, p.y + 20, 22, 6);
-        // Weapon Tip Color
-        let tipColor = '#9ca3af';
-        if (p.weapon === 'laser') tipColor = COLORS.projectileLaser;
-        if (p.weapon === 'mouthwash') tipColor = COLORS.projectileWave;
-        ctx.fillStyle = tipColor;
-        ctx.fillRect(p.facing === 1 ? gunX + 20 : gunX, p.y + 19, 4, 8);
+        // Weapon Rendering
+        if (p.weapon === 'toothbrush') {
+             // Toothbrush handle
+             ctx.fillStyle = '#22d3ee';
+             ctx.fillRect(p.facing === 1 ? p.x + 10 : p.x + 22, p.y + 20, 4, 15);
+        } else if (p.weapon === 'floss') {
+             // Floss box
+             ctx.fillStyle = '#fff';
+             ctx.fillRect(p.facing === 1 ? p.x + 15 : p.x + 5, p.y + 20, 10, 10);
+        } else {
+             // Gun
+             ctx.fillStyle = '#4b5563';
+             const gunX = p.facing === 1 ? p.x + 20 : p.x - 10;
+             ctx.fillRect(gunX, p.y + 20, 22, 6);
+             let tipColor = '#9ca3af';
+             if (p.weapon === 'laser') tipColor = COLORS.projectileLaser;
+             if (p.weapon === 'mouthwash') tipColor = COLORS.projectileWave;
+             ctx.fillStyle = tipColor;
+             ctx.fillRect(p.facing === 1 ? gunX + 20 : gunX, p.y + 19, 4, 8);
+        }
     }
 
     // Projectiles
@@ -970,17 +1395,33 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             ctx.translate(proj.x, proj.y);
             ctx.strokeStyle = '#fff';
             ctx.lineWidth = 3;
+            // Draw a snapping line
             ctx.beginPath();
-            ctx.arc(proj.w/2, proj.h/2, 20, 0, Math.PI*2); // Spin effect
+            ctx.moveTo(0, proj.h/2);
+            ctx.lineTo(proj.w, proj.h/2);
+            ctx.stroke();
+            // End bit
+            ctx.beginPath(); ctx.arc(proj.w, proj.h/2, 4, 0, Math.PI*2); ctx.fill();
+            ctx.restore();
+        } else if (proj.projectileType === 'sword') {
+            // Draw Swipe Arc
+            ctx.save();
+            ctx.translate(proj.x, proj.y);
+            ctx.strokeStyle = '#22d3ee';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(proj.w/2, proj.h, proj.w, Math.PI, Math.PI * 2);
             ctx.stroke();
             ctx.restore();
         } else if (proj.projectileType === 'laser') {
             ctx.fillRect(proj.x, proj.y, proj.w, proj.h);
-            // Glow
             ctx.shadowColor = proj.color;
             ctx.shadowBlur = 10;
             ctx.fillRect(proj.x, proj.y, proj.w, proj.h);
             ctx.shadowBlur = 0;
+        } else if (proj.projectileType === 'mortar') {
+             ctx.fillStyle = '#444';
+             ctx.beginPath(); ctx.arc(proj.x+proj.w/2, proj.y+proj.h/2, 8, 0, Math.PI*2); ctx.fill();
         } else {
              ctx.beginPath();
              ctx.arc(proj.x + proj.w/2, proj.y + proj.h/2, proj.w/2, 0, Math.PI * 2);
@@ -1006,12 +1447,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
           case 'left': inputs.current.left = pressed; break;
           case 'right': inputs.current.right = pressed; break;
           case 'jump': 
+            if (!inputs.current.up && pressed) inputs.current.jumpPressed = true;
             inputs.current.up = pressed;
-            if (pressed) inputs.current.jumpPressed = true;
             break;
           case 'shoot': 
+            if (!inputs.current.shoot && pressed) inputs.current.shootPressed = true;
             inputs.current.shoot = pressed;
-            if (pressed) inputs.current.shootPressed = true;
+            break;
+          case 'dash':
+            if (!inputs.current.dash && pressed) inputs.current.dashPressed = true;
+            inputs.current.dash = pressed;
             break;
       }
   };
@@ -1040,10 +1485,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
               <div className="mt-8 text-xs text-slate-500 flex flex-col items-center gap-2">
                   <p>CONTROLS</p>
-                  <div className="flex gap-4">
+                  <div className="flex gap-4 flex-wrap justify-center">
                       <span className="bg-slate-700 px-2 py-1 rounded">WASD / ARROWS : Move</span>
-                      <span className="bg-slate-700 px-2 py-1 rounded">SPACE : Jump</span>
+                      <span className="bg-slate-700 px-2 py-1 rounded">SPACE : Jump (x2)</span>
                       <span className="bg-slate-700 px-2 py-1 rounded">F / K : Shoot</span>
+                      <span className="bg-slate-700 px-2 py-1 rounded">SHIFT / L : Dash</span>
+                      <span className="bg-slate-700 px-2 py-1 rounded">ESC : Pause</span>
                   </div>
               </div>
           </div>
@@ -1085,6 +1532,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
               {entities.current.player.weapon === 'spread' && <Crosshair className="w-4 h-4" />}
               {entities.current.player.weapon === 'laser' && <Zap className="w-4 h-4" />}
               {entities.current.player.weapon === 'mouthwash' && <Waves className="w-4 h-4" />}
+              {entities.current.player.weapon === 'floss' && <Wind className="w-4 h-4" />}
+              {entities.current.player.weapon === 'toothbrush' && <Sword className="w-4 h-4" />}
               <span className="text-xs uppercase">{entities.current.player.weapon}</span>
           </div>
       </div>
@@ -1093,7 +1542,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       {bossHp > 0 && (
           <div className="absolute bottom-20 left-1/2 -translate-x-1/2 w-64 md:w-96 bg-slate-900/90 p-2 rounded border-2 border-red-900 pointer-events-none">
               <div className="flex justify-between text-xs text-red-500 font-bold mb-1 uppercase">
-                  <span>The Cavity King</span>
+                  <span>{bossName}</span>
                   <span>{Math.ceil((bossHp/bossMaxHp)*100)}%</span>
               </div>
               <div className="w-full h-4 bg-red-950 rounded overflow-hidden">
@@ -1107,27 +1556,32 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
           <div className="absolute bottom-4 left-0 right-0 px-8 flex justify-between select-none touch-none">
               <div className="flex gap-4">
                   <button 
-                    className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center active:bg-white/40"
+                    className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center active:bg-white/40"
                     onTouchStart={handleTouch('left', true)} onTouchEnd={handleTouch('left', false)}
                     onMouseDown={handleTouch('left', true)} onMouseUp={handleTouch('left', false)}
                   >←</button>
                   <button 
-                    className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center active:bg-white/40"
+                    className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center active:bg-white/40"
                     onTouchStart={handleTouch('right', true)} onTouchEnd={handleTouch('right', false)}
                     onMouseDown={handleTouch('right', true)} onMouseUp={handleTouch('right', false)}
                   >→</button>
               </div>
               <div className="flex gap-4">
                   <button 
-                    className="w-16 h-16 bg-blue-500/40 rounded-full flex items-center justify-center active:bg-blue-500/60 border-2 border-blue-400"
+                    className="w-14 h-14 bg-yellow-500/40 rounded-full flex items-center justify-center active:bg-yellow-500/60 border-2 border-yellow-400"
+                    onTouchStart={handleTouch('dash', true)} onTouchEnd={handleTouch('dash', false)}
+                    onMouseDown={handleTouch('dash', true)} onMouseUp={handleTouch('dash', false)}
+                  >D</button>
+                  <button 
+                    className="w-14 h-14 bg-blue-500/40 rounded-full flex items-center justify-center active:bg-blue-500/60 border-2 border-blue-400"
                     onTouchStart={handleTouch('shoot', true)} onTouchEnd={handleTouch('shoot', false)}
                     onMouseDown={handleTouch('shoot', true)} onMouseUp={handleTouch('shoot', false)}
-                  >FIRE</button>
+                  >F</button>
                   <button 
-                    className="w-16 h-16 bg-green-500/40 rounded-full flex items-center justify-center active:bg-green-500/60 border-2 border-green-400"
+                    className="w-14 h-14 bg-green-500/40 rounded-full flex items-center justify-center active:bg-green-500/60 border-2 border-green-400"
                     onTouchStart={handleTouch('jump', true)} onTouchEnd={handleTouch('jump', false)}
                     onMouseDown={handleTouch('jump', true)} onMouseUp={handleTouch('jump', false)}
-                  >JUMP</button>
+                  >J</button>
               </div>
           </div>
       )}

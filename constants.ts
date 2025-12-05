@@ -1,3 +1,4 @@
+
 export const CANVAS_WIDTH = 800;
 export const CANVAS_HEIGHT = 450;
 export const GRAVITY = 0.5;
@@ -6,6 +7,12 @@ export const FRICTION = 0.8;
 export const PLAYER_SPEED = 5;
 export const PLAYER_JUMP = -11;
 export const PLAYER_SIZE = 32;
+
+// Abilities
+export const PLAYER_DASH_SPEED = 15;
+export const PLAYER_DASH_DURATION = 0.2; // seconds
+export const PLAYER_DASH_COOLDOWN = 1.0;
+export const PLAYER_MAX_JUMPS = 2;
 
 // Colors
 export const COLORS = {
@@ -29,6 +36,7 @@ export const COLORS = {
   projectileEnemy: '#059669', // emerald-600
   projectileLaser: '#06b6d4', // cyan-500
   projectileWave: '#a78bfa', // purple-400
+  projectileMelee: '#e2e8f0', // slate-200
   
   ground: '#9d174d', // pink-800
   platform: '#fdf2f8', // pink-50

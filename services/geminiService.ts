@@ -14,7 +14,7 @@ export const generateBriefing = async (): Promise<string> => {
         maxOutputTokens: 60,
       }
     });
-    return response.text.trim();
+    return response.text ? response.text.trim() : "Mission: Scrub all bacteria. Good luck, soldier.";
   } catch (error) {
     console.error("Gemini Error:", error);
     return "Mission: Scrub all bacteria. System Link Failure. Good luck.";
@@ -32,7 +32,7 @@ export const generateGameOverMessage = async (score: number, cause: string): Pro
         maxOutputTokens: 60,
       }
     });
-    return response.text.trim();
+    return response.text ? response.text.trim() : `Diagnosis: You need to brush more. Score: ${score}`;
   } catch (error) {
     console.error("Gemini Error:", error);
     return `Diagnosis: Critical Structural Failure. Score: ${score}`;

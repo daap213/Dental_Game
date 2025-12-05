@@ -1,3 +1,4 @@
+
 export enum GameState {
   MENU,
   PLAYING,
@@ -28,7 +29,7 @@ export interface Entity extends Rect {
   dead?: boolean;
 }
 
-export type WeaponType = 'normal' | 'spread' | 'laser' | 'mouthwash' | 'floss';
+export type WeaponType = 'normal' | 'spread' | 'laser' | 'mouthwash' | 'floss' | 'toothbrush';
 
 export interface Player extends Entity {
   type: 'player';
@@ -36,6 +37,11 @@ export interface Player extends Entity {
   weapon: WeaponType;
   ammo: number;
   score: number;
+  // Abilities
+  jumpCount: number;
+  maxJumps: number;
+  dashTimer: number;
+  dashCooldown: number;
 }
 
 export interface Enemy extends Entity {
@@ -43,6 +49,9 @@ export interface Enemy extends Entity {
   subType: 'bacteria' | 'plaque_monster' | 'candy_bomber' | 'tartar_turret' | 'sugar_rusher' | 'boss';
   aiTimer: number;
   attackTimer: number;
+  bossState: number; // 0: Idle, 1: Chase, 2: Charge, 3: Slam, 4: Shoot
+  bossVariant?: 'king' | 'phantom' | 'tank' | 'general' | 'deity';
+  phase?: number;
 }
 
 export interface Projectile extends Entity {
@@ -50,7 +59,7 @@ export interface Projectile extends Entity {
   damage: number;
   owner: 'player' | 'enemy';
   lifeTime: number;
-  projectileType: 'bullet' | 'laser' | 'wave' | 'floss';
+  projectileType: 'bullet' | 'laser' | 'wave' | 'floss' | 'sword' | 'mortar';
 }
 
 export interface Particle extends Entity {
@@ -61,7 +70,7 @@ export interface Particle extends Entity {
 
 export interface PowerUp extends Entity {
   type: 'powerup';
-  subType: 'health' | 'spread' | 'laser' | 'mouthwash';
+  subType: 'health' | 'spread' | 'laser' | 'mouthwash' | 'floss' | 'toothbrush';
 }
 
 export interface Platform extends Rect {
