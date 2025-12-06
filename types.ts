@@ -36,8 +36,7 @@ export interface Player extends Entity {
   invincibleTimer: number;
   slowTimer: number; // New: For Sugar Fiend trap
   weapon: WeaponType;
-  weaponLevel: number; // Current effective level
-  weaponLevels: { [key in WeaponType]: number }; // Stored levels for all weapons
+  weaponLevel: number; // 1 to 3
   ammo: number;
   score: number;
   // Abilities
