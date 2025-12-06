@@ -1,7 +1,8 @@
 
 import React, { useState } from 'react';
 import { InputMethod } from '../../types';
-import { MousePointer, Keyboard, Info, X, ShieldAlert, Crosshair, Skull, Sword, Zap, Wind, Waves, Rocket } from 'lucide-react';
+import { MousePointer, Keyboard, Info, X, ShieldAlert, Crosshair, Skull, Sword, Zap, Wind, Waves, Rocket, User } from 'lucide-react';
+import { Credits } from './Credits';
 
 interface MainMenuProps {
   onStart: () => void;
@@ -12,6 +13,11 @@ interface MainMenuProps {
 
 export const MainMenu: React.FC<MainMenuProps> = ({ onStart, briefing, inputMethod, setInputMethod }) => {
   const [showIntel, setShowIntel] = useState(false);
+  const [showCredits, setShowCredits] = useState(false);
+
+  if (showCredits) {
+    return <Credits onClose={() => setShowCredits(false)} />;
+  }
 
   if (showIntel) {
     return <IntelDatabase onClose={() => setShowIntel(false)} />;
@@ -55,7 +61,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStart, briefing, inputMeth
           </div>
       </div>
 
-      <div className="flex gap-4">
+      <div className="flex gap-4 flex-wrap justify-center">
         <button 
             onClick={() => setShowIntel(true)}
             className="px-6 py-4 bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold rounded text-lg border-2 border-slate-500 flex items-center gap-2 transition-all"
@@ -68,6 +74,16 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStart, briefing, inputMeth
             className="px-8 py-4 bg-red-600 hover:bg-red-500 text-white font-bold rounded text-xl shadow-[0_4px_0_rgb(153,27,27)] active:shadow-none active:translate-y-1 transition-all border-2 border-red-400"
         >
             START OPERATION
+        </button>
+      </div>
+      
+      <div className="mt-6">
+        <button 
+            onClick={() => setShowCredits(true)}
+            className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white font-bold rounded text-sm border border-slate-600 flex items-center gap-2 transition-all"
+        >
+            <User className="w-4 h-4" />
+            CREDITS
         </button>
       </div>
 
