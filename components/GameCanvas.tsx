@@ -9,7 +9,7 @@ import { checkRectCollide } from '../utils/physics';
 import { AudioManager } from '../game/audio';
 import { generateLevel, drawBackground, drawPlatforms, drawTransition } from '../game/level';
 import { spawnBoss, spawnEnemy, drawEnemies, updateEnemyAI } from '../game/enemies';
-import { spawnProjectile, drawHeldWeapon, drawProjectiles } from '../game/weapons';
+import { spawnProjectile, drawHeldWeapon, drawProjectiles, spawnPowerUp, drawPowerUp } from '../game/weapons';
 import { GameHUD } from './GameHUD';
 
 interface GameCanvasProps {
@@ -476,7 +476,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                     if (enemy.hp <= 0 && !enemy.dead) {
                         enemy.dead = true;
                         p.score += (enemy.subType === 'boss' ? 5000 : 100); setScore(p.score); s.shake = 5;
-                        spawnPowerUp(enemy.x, enemy.y);
+                        spawnPowerUp(entities.current.powerups, enemy.x, enemy.y);
                         for(let i=0; i<8; i++) spawnParticle(enemy.x+enemy.w/2, enemy.y+enemy.h/2, enemy.color, 10);
                         if (enemy.subType === 'boss' && !s.levelTransitioning) {
                             s.levelTransitioning = true;
@@ -544,10 +544,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
     drawPlatforms(ctx, s.platforms);
     s.powerups.forEach(pu => {
-        const bounce = Math.sin(Date.now() / 200) * 5;
-        ctx.fillStyle = pu.color;
-        ctx.beginPath(); ctx.arc(pu.x + pu.w/2, pu.y + pu.h/2 + bounce, 8, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+        drawPowerUp(ctx, pu);
     });
 
     drawEnemies(ctx, s.enemies);
@@ -636,14 +633,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
           });
       }
   };
-  const spawnPowerUp = (x: number, y: number) => {
-      if (Math.random() > 0.6) return;
-      const r = Math.random(); let sub: PowerUp['subType'] = 'health'; let c = '#ef4444';
-      if (r > 0.85) { sub = 'spread'; c = COLORS.projectilePlayer; } else if (r > 0.7) { sub = 'laser'; c = COLORS.projectileLaser; }
-      else if (r > 0.55) { sub = 'mouthwash'; c = COLORS.projectileWave; } else if (r > 0.4) { sub = 'floss'; c = '#fff'; }
-      else if (r > 0.25) { sub = 'toothbrush'; c = '#e2e8f0'; }
-      entities.current.powerups.push({ id: Math.random().toString(), x, y, w: 20, h: 20, vx: 0, vy: 0, hp: 0, maxHp: 0, type: 'powerup', subType: sub, color: c, facing: 1, isGrounded: false, frameTimer: 0, state: 0 });
-  };
+  
   const checkPlatformCollisions = (entity: Entity, platforms: Platform[], horizontal: boolean) => {
      for (const plat of platforms) {
          if (checkRectCollide(entity, plat)) {

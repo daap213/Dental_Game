@@ -1,5 +1,5 @@
 
-import { Projectile, Player, WeaponType, Entity } from '../types';
+import { Projectile, Player, WeaponType, Entity, PowerUp } from '../types';
 import { COLORS } from '../constants';
 
 export const spawnProjectile = (projectiles: Projectile[], x: number, y: number, dx: number, dy: number, owner: 'player' | 'enemy', type: WeaponType | 'normal', player?: Player) => {
@@ -61,6 +61,105 @@ export const spawnProjectile = (projectiles: Projectile[], x: number, y: number,
            projectiles.push({ ...base, x, y, w: 10, h: 6, vx: vx * speed, vy: vy * speed, hp: 1, maxHp: 1, damage: dmg, lifeTime: 1.0, projectileType: 'bullet', color: COLORS.projectilePlayer } as Projectile);
         }
     }
+};
+
+export const spawnPowerUp = (powerups: PowerUp[], x: number, y: number) => {
+    // REDUCED FREQUENCY: 15% chance (was ~40%)
+    if (Math.random() > 0.85) return;
+    
+    const r = Math.random(); 
+    let sub: PowerUp['subType'] = 'health'; 
+    let c = '#ef4444';
+    
+    if (r > 0.85) { sub = 'spread'; c = '#3b82f6'; } 
+    else if (r > 0.7) { sub = 'laser'; c = '#06b6d4'; }
+    else if (r > 0.55) { sub = 'mouthwash'; c = '#a855f7'; } 
+    else if (r > 0.4) { sub = 'floss'; c = '#10b981'; }
+    else if (r > 0.25) { sub = 'toothbrush'; c = '#f97316'; }
+
+    powerups.push({ 
+        id: Math.random().toString(), 
+        x, y, w: 24, h: 24, 
+        vx: 0, vy: 0, 
+        hp: 0, maxHp: 0, 
+        type: 'powerup', 
+        subType: sub, 
+        color: c, 
+        facing: 1, 
+        isGrounded: false, 
+        frameTimer: 0, 
+        state: 0 
+    });
+};
+
+export const drawPowerUp = (ctx: CanvasRenderingContext2D, pu: PowerUp) => {
+    const bounce = Math.sin(Date.now() / 200) * 5;
+    const y = pu.y + bounce;
+    const x = pu.x;
+    const w = pu.w;
+    const h = pu.h;
+
+    ctx.save();
+    
+    // Draw Wings
+    ctx.fillStyle = '#cbd5e1';
+    const wingFlap = Math.sin(Date.now() / 100) * 3;
+    ctx.beginPath();
+    ctx.moveTo(x, y + h/2);
+    ctx.lineTo(x - 8, y + h/2 - 5 - wingFlap);
+    ctx.lineTo(x - 8, y + h/2 + 5 + wingFlap);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x + w, y + h/2);
+    ctx.lineTo(x + w + 8, y + h/2 - 5 - wingFlap);
+    ctx.lineTo(x + w + 8, y + h/2 + 5 + wingFlap);
+    ctx.fill();
+
+    // Box Body (Metallic Container)
+    ctx.fillStyle = '#475569';
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 6);
+    ctx.fill();
+    
+    // Border
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Inner Screen
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath();
+    ctx.roundRect(x + 4, y + 4, w - 8, h - 8, 4);
+    ctx.fill();
+
+    // Icon / Letter
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 12px monospace';
+    ctx.shadowColor = pu.color;
+    ctx.shadowBlur = 5;
+    ctx.fillStyle = pu.color;
+
+    let symbol = '?';
+    switch(pu.subType) {
+        case 'health': symbol = '✚'; break; // Plus
+        case 'spread': symbol = 'S'; break;
+        case 'laser': symbol = 'L'; break;
+        case 'mouthwash': symbol = 'W'; break;
+        case 'floss': symbol = 'F'; break;
+        case 'toothbrush': symbol = 'T'; break;
+    }
+
+    ctx.fillText(symbol, x + w/2, y + h/2 + 1);
+    
+    // Gloss
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    ctx.beginPath();
+    ctx.arc(x + w - 8, y + 8, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
 };
 
 export const drawHeldWeapon = (ctx: CanvasRenderingContext2D, p: Player, aimInput: {usingMouse: boolean, aimUp: boolean, mouseX: number, mouseY: number, cameraX: number, cameraY: number}) => {
