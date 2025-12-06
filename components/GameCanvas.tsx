@@ -389,6 +389,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     particles: Particle[];
     powerups: PowerUp[];
     platforms: Platform[];
+    bgProps: Rect[]; // For background parallax/decor
     camera: { x: number; y: number };
     level: LevelState;
     waveTimer: number;
@@ -405,6 +406,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     particles: [],
     powerups: [],
     platforms: [],
+    bgProps: [],
     camera: { x: 0, y: 0 },
     level: { stage: 1, distanceTraveled: 0, bossSpawned: false, levelWidth: 8000 },
     waveTimer: 0,
@@ -520,6 +522,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     
     // Generate initial level immediately
     entities.current.platforms = generateLevel(entities.current.level.levelWidth);
+    entities.current.bgProps = generateBgProps(entities.current.level.levelWidth);
     
     entities.current.camera = { x: 0, y: 0 };
     entities.current.waveTimer = 0;
@@ -563,6 +566,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       s.projectiles = [];
       s.powerups = [];
       s.platforms = generateLevel(s.level.levelWidth);
+      s.bgProps = generateBgProps(s.level.levelWidth);
       s.camera.x = 0;
       setStage(s.level.stage);
       setBossHp(0);
@@ -724,7 +728,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     const platforms: Platform[] = [];
     
     // SAFE START ZONE: Guaranteed ground for the first 800 pixels
-    platforms.push({ x: 0, y: CANVAS_HEIGHT - 60, w: 800, h: 60, type: 'platform', isGround: true });
+    platforms.push({ x: 0, y: CANVAS_HEIGHT - 40, w: 800, h: 40, type: 'platform', isGround: true });
     
     // Continuous Floor with gaps logic, starting AFTER the safe zone
     let x = 800;
@@ -734,22 +738,35 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         if (gap > 0 && x + gap + w < width) {
             x += gap;
         }
-        platforms.push({ x: x, y: CANVAS_HEIGHT - 60, w: w, h: 60, type: 'platform', isGround: true });
+        platforms.push({ x: x, y: CANVAS_HEIGHT - 40, w: w, h: 40, type: 'platform', isGround: true });
         x += w;
     }
     
     // Floating Platforms
     for (let i = 300; i < width - 500; i += 200 + Math.random() * 150) {
         if (Math.random() > 0.3) {
-            const y = CANVAS_HEIGHT - 140 - Math.random() * 100;
+            const y = CANVAS_HEIGHT - 120 - Math.random() * 100;
             platforms.push({ x: i, y, w: 80 + Math.random() * 60, h: 20, type: 'platform', isGround: false });
         }
     }
     
     // Boss Arena floor at end (ensure overlap)
-    platforms.push({ x: width - 800, y: CANVAS_HEIGHT - 60, w: 800, h: 60, type: 'platform', isGround: true });
+    platforms.push({ x: width - 800, y: CANVAS_HEIGHT - 40, w: 800, h: 40, type: 'platform', isGround: true });
     
     return platforms;
+  };
+
+  const generateBgProps = (width: number): Rect[] => {
+      const props: Rect[] = [];
+      for(let x=0; x<width; x+= 400) {
+          props.push({
+              x: x + Math.random() * 200,
+              y: 50 + Math.random() * 200,
+              w: 50 + Math.random() * 100,
+              h: 100 + Math.random() * 100
+          });
+      }
+      return props;
   };
 
   const spawnBoss = (arenaStartX: number) => {
@@ -825,7 +842,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
     // Spawn ahead
     const x = cameraX + CANVAS_WIDTH + 50;
-    const y = Math.random() > 0.5 ? CANVAS_HEIGHT - 120 : CANVAS_HEIGHT - 240;
+    const y = Math.random() > 0.5 ? CANVAS_HEIGHT - 80 : CANVAS_HEIGHT - 200;
     
     const rand = Math.random();
     let subType: Enemy['subType'] = 'bacteria';
@@ -1584,7 +1601,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
                  // Special Slam Ground Check
                  if (enemy.bossState === 3 || (enemy.bossVariant === 'deity' && enemy.bossState === 1)) {
-                     const floorY = CANVAS_HEIGHT - 60; 
+                     const floorY = CANVAS_HEIGHT - 40; 
                      if (enemy.y + enemy.h > floorY) {
                          enemy.y = floorY - enemy.h;
                          enemy.isGrounded = true;
@@ -1608,8 +1625,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                      }
                  } else if (enemy.bossVariant === 'tank') {
                      // Tank is grounded
-                     if (enemy.y + enemy.h > CANVAS_HEIGHT - 60) {
-                         enemy.y = CANVAS_HEIGHT - 60 - enemy.h;
+                     if (enemy.y + enemy.h > CANVAS_HEIGHT - 40) {
+                         enemy.y = CANVAS_HEIGHT - 40 - enemy.h;
                          enemy.vy = 0;
                      }
                  }
@@ -1969,127 +1986,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     ctx.quadraticCurveTo(x, y, x + radius, y);
     ctx.closePath();
     ctx.fill();
-  };
-
-  const drawRetroBackground = (ctx: CanvasRenderingContext2D) => {
-    // 1. Dark Interior Throat (Base)
-    const throatGrad = ctx.createRadialGradient(CANVAS_WIDTH/2, CANVAS_HEIGHT/2, 50, CANVAS_WIDTH/2, CANVAS_HEIGHT/2, CANVAS_WIDTH);
-    throatGrad.addColorStop(0, '#580505'); // Deep red center
-    throatGrad.addColorStop(1, '#250202'); // Almost black edges
-    ctx.fillStyle = throatGrad;
-    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
-    // 2. Parallax Camera Offset for Background
-    // The background moves very slowly relative to the player to simulate great distance
-    const camX = entities.current.camera.x;
-    const bgOffsetX = camX * 0.05; // Very slow parallax
-    const midBgOffsetX = camX * 0.2; // Medium parallax (Teeth)
-
-    // 3. The "Light at the end of the tunnel" (Mouth Opening)
-    // Centered horizontally, moves slowly
-    const openingX = CANVAS_WIDTH/2 - bgOffsetX; 
-    const openingY = CANVAS_HEIGHT/2;
-    
-    ctx.save();
-    
-    // Draw the "Opening" (Lips/Light)
-    ctx.beginPath();
-    ctx.ellipse(openingX, openingY, 250, 180, 0, 0, Math.PI*2);
-    const lightGrad = ctx.createRadialGradient(openingX, openingY, 50, openingX, openingY, 250);
-    lightGrad.addColorStop(0, '#bae6fd'); // Light Blue (Clinical Light)
-    lightGrad.addColorStop(0.7, '#f472b6'); // Pink lips edge
-    lightGrad.addColorStop(1, 'rgba(88, 5, 5, 0)'); // Fade to throat
-    ctx.fillStyle = lightGrad;
-    ctx.fill();
-
-    // 4. The Dentist (Seen through the opening)
-    // Face
-    const dentistX = openingX;
-    const dentistY = openingY - 40;
-    
-    // Head Shape
-    ctx.fillStyle = '#fca5a5'; // Skin tone
-    ctx.beginPath();
-    ctx.arc(dentistX, dentistY, 100, 0, Math.PI*2);
-    ctx.fill();
-
-    // Surgical Cap (Teal)
-    ctx.fillStyle = '#2dd4bf';
-    ctx.beginPath();
-    ctx.arc(dentistX, dentistY - 20, 102, Math.PI, 0); 
-    ctx.fill();
-
-    // Mask (Teal/Blue rect)
-    ctx.fillStyle = '#14b8a6';
-    ctx.fillRect(dentistX - 80, dentistY + 10, 160, 80);
-    // Mask straps
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(dentistX - 80, dentistY + 30);
-    ctx.lineTo(dentistX - 110, dentistY); // Ear
-    ctx.moveTo(dentistX + 80, dentistY + 30);
-    ctx.lineTo(dentistX + 110, dentistY);
-    ctx.stroke();
-
-    // Eyes (Looking down)
-    const eyeY = dentistY - 10;
-    ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.ellipse(dentistX - 35, eyeY, 20, 15, 0, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(dentistX + 35, eyeY, 20, 15, 0, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#0f172a'; // Pupil
-    ctx.beginPath(); ctx.arc(dentistX - 35, eyeY + 2, 8, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(dentistX + 35, eyeY + 2, 8, 0, Math.PI*2); ctx.fill();
-
-    // Headlamp (Bright Light Source)
-    ctx.beginPath();
-    ctx.arc(dentistX, dentistY - 60, 25, 0, Math.PI*2);
-    ctx.fillStyle = '#fef08a'; // Yellow bulb
-    ctx.fill();
-    
-    // Lens Flare / Light Shafts
-    ctx.globalCompositeOperation = 'overlay';
-    const flareGrad = ctx.createRadialGradient(dentistX, dentistY - 60, 10, dentistX, dentistY, 400);
-    flareGrad.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
-    flareGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-    ctx.fillStyle = flareGrad;
-    ctx.beginPath();
-    ctx.moveTo(dentistX, dentistY - 60);
-    ctx.lineTo(dentistX - 200, CANVAS_HEIGHT);
-    ctx.lineTo(dentistX + 200, CANVAS_HEIGHT);
-    ctx.fill();
-    ctx.globalCompositeOperation = 'source-over';
-
-    ctx.restore();
-
-    // 5. Background Teeth Rows (Top and Bottom of View)
-    // Moving slightly faster than the dentist for depth
-    ctx.fillStyle = '#7f1d1d'; // Dark red gums background
-    // Top Gums
-    const toothW = 60;
-    const startToothX = -(midBgOffsetX % toothW);
-    
-    // Top Teeth (Silhouettes)
-    ctx.fillStyle = '#e2e8f0'; // Dim White
-    for (let x = startToothX - toothW; x < CANVAS_WIDTH; x += toothW) {
-        // Top Tooth
-        ctx.beginPath();
-        ctx.moveTo(x + 5, -20);
-        ctx.lineTo(x + toothW/2, 40); // Pointy
-        ctx.lineTo(x + toothW - 5, -20);
-        ctx.fill();
-        
-        // Bottom Tooth
-        ctx.beginPath();
-        ctx.moveTo(x + 5, CANVAS_HEIGHT + 20);
-        ctx.lineTo(x + toothW/2, CANVAS_HEIGHT - 40);
-        ctx.lineTo(x + toothW - 5, CANVAS_HEIGHT + 20);
-        ctx.fill();
-    }
-    
-    // Darken the background teeth to push them back
-    ctx.fillStyle = 'rgba(88, 5, 5, 0.6)';
-    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
   };
 
   // ... (Previous enemy draw functions remain same: drawBacteria, drawPlaque, etc.)
@@ -2619,40 +2515,42 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
   };
 
   const draw = (ctx: CanvasRenderingContext2D) => {
-    // 1. Draw The "View Out" Background
-    drawRetroBackground(ctx);
+    // Clear
+    ctx.fillStyle = COLORS.bgTop;
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    
+    // Gums/Background Gradient
+    const grad = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+    grad.addColorStop(0, COLORS.bgTop);
+    grad.addColorStop(1, COLORS.bgBottom);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
     ctx.save();
     ctx.translate(-entities.current.camera.x, -entities.current.camera.y);
 
-    // Platforms (Teeth/Tongue)
+    // Background Props (Parallax)
+    ctx.fillStyle = COLORS.bgProp;
+    entities.current.bgProps.forEach(prop => {
+        // Simple parallax
+        const px = prop.x - (entities.current.camera.x * 0.2); 
+        ctx.beginPath();
+        ctx.arc(prop.x, prop.y, prop.w, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    // Platforms (Teeth/Gums)
     entities.current.platforms.forEach(p => {
         if (p.isGround) {
-             // TONGUE TEXTURE
-             // Main Tongue Body
-             const grad = ctx.createLinearGradient(p.x, p.y, p.x, p.y + p.h);
-             grad.addColorStop(0, '#db2777'); // Pink-600
-             grad.addColorStop(1, '#9d174d'); // Pink-800
-             ctx.fillStyle = grad;
-             
-             // Draw rounded rect for organic feel
-             drawRoundRect(ctx, p.x, p.y, p.w, p.h + 20, 15);
-             
-             // Central Groove (Median Sulcus)
+             ctx.fillStyle = COLORS.ground;
+             drawRoundRect(ctx, p.x, p.y, p.w, p.h, 10);
+             // Gums texture
              ctx.fillStyle = 'rgba(0,0,0,0.1)';
-             ctx.fillRect(p.x, p.y + p.h/2 - 2, p.w, 4);
-
-             // Taste Buds (Papillae)
-             ctx.fillStyle = 'rgba(131, 24, 67, 0.3)'; // Darker spots
-             for(let i=0; i<p.w; i+=20) {
-                 const offsetY = Math.sin(i)*5;
-                 ctx.beginPath();
-                 ctx.arc(p.x + i, p.y + 15 + offsetY, 2, 0, Math.PI*2);
-                 ctx.fill();
-                 ctx.beginPath();
-                 ctx.arc(p.x + i + 10, p.y + 40 + offsetY, 3, 0, Math.PI*2);
-                 ctx.fill();
+             ctx.beginPath();
+             for(let i=p.x; i<p.x+p.w; i+=80) {
+                 ctx.ellipse(i, p.y + p.h, 30, 20, 0, Math.PI, 0); // Scalloped gum line bottom
              }
+             ctx.fill();
         } else {
              // BRACES PLATFORM DESIGN
              
