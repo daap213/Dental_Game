@@ -841,11 +841,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                              if (enemy.aiTimer > 1.0) {
                                  // Summon 3 Minions
                                  for(let i=0; i<3; i++) {
-                                     const minion = {
+                                     const minion: Enemy = {
                                         id: Math.random().toString(),
                                         x: enemy.x + enemy.w/2 + (i*30 - 30), y: enemy.y + enemy.h,
                                         w: 20, h: 20, vx: (Math.random()-0.5)*12, vy: -8,
-                                        hp: 15, maxHp: 15, type: 'enemy', subType: 'bacteria' as const,
+                                        hp: 15, maxHp: 15, type: 'enemy', subType: 'bacteria',
                                         color: COLORS.enemyBacteria, facing: -1, isGrounded: false, aiTimer: 0, attackTimer: 0, frameTimer: 0, state: 0, bossState: 0
                                     };
                                     s.enemies.push(minion);
@@ -957,11 +957,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                            enemy.vy += 1; // Gravity accel
                         } else if (enemy.bossState === 1) { // Summon/Chase
                             if (enemy.aiTimer > 1.0) {
-                               const minion = {
+                               const minion: Enemy = {
                                    id: Math.random().toString(),
                                    x: enemy.x + enemy.w/2, y: enemy.y + 20,
                                    w: 20, h: 20, vx: -5, vy: -5,
-                                   hp: 10, maxHp: 10, type: 'enemy', subType: 'sugar_rusher' as const,
+                                   hp: 10, maxHp: 10, type: 'enemy', subType: 'sugar_rusher',
                                    color: COLORS.enemyRusher, facing: -1, isGrounded: false, aiTimer: 0, attackTimer: 0, frameTimer: 0, state: 0, bossState: 0
                                };
                                s.enemies.push(minion);
@@ -1183,7 +1183,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             
             entities.current.projectiles.push({
                 ...base,
-                x, y, w: 12 + (level*2), h: 12 + (level*2), vx: dir * speed, vy: 0,
+                x, y, w: 16 + (level*4), h: 16 + (level*4), vx: dir * speed, vy: 0,
                 hp: 1, maxHp: 1, damage: dmg, lifeTime: 2.0, projectileType: 'wave', color: COLORS.projectileWave
             } as Projectile);
 
@@ -1191,7 +1191,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                 // Double Wave
                  entities.current.projectiles.push({
                     ...base,
-                    x: x - 10, y: y + 20, w: 16, h: 16, vx: dir * speed, vy: 0,
+                    x: x - 10, y: y + 20, w: 20, h: 20, vx: dir * speed, vy: 0,
                     hp: 1, maxHp: 1, damage: dmg, lifeTime: 2.0, projectileType: 'wave', color: COLORS.projectileWave
                 } as Projectile);
             }
@@ -1335,6 +1335,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     ctx.fill();
   };
 
+  // ... (Previous enemy draw functions remain same: drawBacteria, drawPlaque, etc.)
   const drawBacteria = (ctx: CanvasRenderingContext2D, e: Enemy) => {
       ctx.fillStyle = e.color;
       const pulses = Math.sin(e.frameTimer * 10) * 2;
@@ -1532,6 +1533,121 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       ctx.restore();
   };
 
+  const drawHeldWeapon = (ctx: CanvasRenderingContext2D, p: Player) => {
+      const type = p.weapon;
+      const facing = p.facing;
+      
+      // Pivot point (Hand position roughly)
+      const hx = p.x + (facing === 1 ? 22 : 10);
+      const hy = p.y + 20;
+
+      if (type === 'toothbrush') {
+          // Big Two-handed Toothbrush Sword
+          ctx.save();
+          ctx.translate(hx, hy);
+          // Angle slightly up
+          ctx.rotate(facing === 1 ? -Math.PI / 4 : Math.PI / 4);
+          
+          // Handle
+          ctx.fillStyle = '#38bdf8'; // Light Blue
+          ctx.fillRect(0, -3, 30 * facing, 6);
+          
+          // Neck
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(30 * facing, -2, 10 * facing, 4);
+          
+          // Head
+          ctx.fillRect(40 * facing, -4, 12 * facing, 8);
+          
+          // Bristles
+          ctx.fillStyle = '#0284c7'; // Darker Blue
+          const startX = 42 * facing;
+          const bristleH = -6;
+          for(let i=0; i<3; i++) {
+              ctx.fillRect(startX + (i*3*facing), -4, 2*facing, bristleH);
+          }
+
+          ctx.restore();
+      } else if (type === 'floss') {
+          // Floss Container
+          ctx.fillStyle = '#fff';
+          ctx.beginPath();
+          ctx.roundRect(hx - 5, hy - 5, 14, 14, 3);
+          ctx.fill();
+          // Label
+          ctx.fillStyle = '#10b981'; // Mint green label
+          ctx.fillRect(hx - 2, hy - 2, 8, 8);
+          
+          // String hanging out a bit
+          ctx.strokeStyle = '#fff';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(hx + (7*facing), hy);
+          ctx.lineTo(hx + (15*facing), hy + 5);
+          ctx.stroke();
+
+      } else if (type === 'mouthwash') {
+          // Mouthwash Bottle Cannon
+          ctx.save();
+          ctx.translate(hx, hy);
+          
+          // Main Bottle Body
+          ctx.fillStyle = 'rgba(45, 212, 191, 0.8)'; // Teal translucent
+          const bw = 24;
+          const bh = 14;
+          // Draw horizontal bottle
+          if (facing === 1) ctx.fillRect(0, -6, bw, bh);
+          else ctx.fillRect(-bw, -6, bw, bh);
+
+          // Liquid inside
+          ctx.fillStyle = '#0d9488'; // Teal liquid
+          if (facing === 1) ctx.fillRect(2, 0, bw-4, bh-6);
+          else ctx.fillRect(-bw+2, 0, bw-4, bh-6);
+
+          // Neck/Cap
+          ctx.fillStyle = '#fff'; // White Cap
+          if (facing === 1) ctx.fillRect(bw, -4, 6, 10);
+          else ctx.fillRect(-bw-6, -4, 6, 10);
+
+          ctx.restore();
+
+      } else if (type === 'laser') {
+          // Sci-fi Laser Tool (Curing Light)
+          ctx.save();
+          ctx.translate(hx, hy);
+          
+          // Main Body (Tapered)
+          ctx.fillStyle = '#64748b'; // Slate
+          ctx.beginPath();
+          if (facing === 1) {
+              ctx.moveTo(0, -4); ctx.lineTo(20, -2); ctx.lineTo(20, 8); ctx.lineTo(0, 10);
+          } else {
+              ctx.moveTo(0, -4); ctx.lineTo(-20, -2); ctx.lineTo(-20, 8); ctx.lineTo(0, 10);
+          }
+          ctx.fill();
+
+          // Glowing Tip
+          ctx.fillStyle = '#06b6d4'; // Cyan
+          if (facing === 1) ctx.fillRect(20, -1, 4, 8);
+          else ctx.fillRect(-24, -1, 4, 8);
+
+          ctx.restore();
+      } else {
+          // Normal/Spread Gun (Drill-like Blaster)
+          ctx.fillStyle = '#4b5563'; // Grey Body
+          const gunX = facing === 1 ? hx : hx - 22;
+          ctx.fillRect(gunX, hy - 3, 22, 6);
+          
+          // Handle grip
+          ctx.fillStyle = '#1f2937';
+          ctx.fillRect(facing === 1 ? hx : hx - 6, hy, 6, 8);
+
+          // Tip
+          ctx.fillStyle = '#9ca3af'; // Silver tip
+          ctx.fillRect(facing === 1 ? gunX + 22 : gunX - 4, hy - 2, 4, 4);
+      }
+  };
+
   const draw = (ctx: CanvasRenderingContext2D) => {
     // Clear
     ctx.fillStyle = COLORS.bgTop;
@@ -1559,22 +1675,69 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
     // Platforms (Teeth/Gums)
     entities.current.platforms.forEach(p => {
-        ctx.fillStyle = p.isGround ? COLORS.ground : COLORS.platform;
-        
         if (p.isGround) {
+             ctx.fillStyle = COLORS.ground;
              drawRoundRect(ctx, p.x, p.y, p.w, p.h, 10);
-        } else {
-             // Stylized floating teeth
+             // Gums texture
+             ctx.fillStyle = 'rgba(0,0,0,0.1)';
              ctx.beginPath();
-             ctx.moveTo(p.x, p.y);
-             ctx.lineTo(p.x + p.w, p.y);
-             ctx.bezierCurveTo(p.x + p.w, p.y + p.h, p.x + p.w/2, p.y + p.h + 20, p.x, p.y + p.h); // Root shape
-             ctx.lineTo(p.x, p.y);
+             for(let i=p.x; i<p.x+p.w; i+=80) {
+                 ctx.ellipse(i, p.y + p.h, 30, 20, 0, Math.PI, 0); // Scalloped gum line bottom
+             }
+             ctx.fill();
+        } else {
+             // BRACES PLATFORM DESIGN
+             
+             // 1. Draw the Tooth Base (White/Enamel)
+             ctx.fillStyle = '#f8fafc'; // Slate-50 (Whiteish)
+             // Rounded top corners, somewhat sharper bottom or rooty
+             ctx.beginPath();
+             drawRoundRect(ctx, p.x, p.y, p.w, p.h, 8);
              ctx.fill();
              
-             // Top shading
-             ctx.fillStyle = 'rgba(255,255,255,0.2)';
-             ctx.fillRect(p.x, p.y, p.w, 5);
+             // 2. Shade/Outline
+             ctx.strokeStyle = '#cbd5e1'; // Slate-300
+             ctx.lineWidth = 2;
+             ctx.stroke();
+
+             // 3. Draw Brackets and Wire
+             const toothWidth = 40;
+             const yMid = p.y + p.h / 2;
+             
+             // Wire
+             ctx.strokeStyle = '#64748b'; // Slate-500
+             ctx.lineWidth = 3;
+             ctx.beginPath();
+             ctx.moveTo(p.x, yMid);
+             ctx.lineTo(p.x + p.w, yMid);
+             ctx.stroke();
+
+             // Brackets
+             ctx.fillStyle = '#94a3b8'; // Metallic Slate
+             const bracketSize = 12;
+             
+             for (let i = 0; i < p.w / toothWidth; i++) {
+                 const bx = p.x + (i * toothWidth) + (toothWidth/2) - (bracketSize/2);
+                 const by = yMid - (bracketSize/2);
+                 
+                 // Bracket Square
+                 ctx.fillRect(bx, by, bracketSize, bracketSize);
+                 
+                 // Bracket Shine
+                 ctx.fillStyle = '#e2e8f0';
+                 ctx.fillRect(bx+2, by+2, 4, 4);
+                 ctx.fillStyle = '#94a3b8'; // Reset
+                 
+                 // Tooth Separator Line (Vertical)
+                 if (i > 0) {
+                     ctx.strokeStyle = '#e2e8f0';
+                     ctx.lineWidth = 1;
+                     ctx.beginPath();
+                     ctx.moveTo(p.x + (i * toothWidth), p.y + 2);
+                     ctx.lineTo(p.x + (i * toothWidth), p.y + p.h - 2);
+                     ctx.stroke();
+                 }
+             }
         }
     });
 
@@ -1741,14 +1904,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                 ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
                 ctx.beginPath(); ctx.moveTo(e.x + 20, e.y + 20); ctx.lineTo(e.x + 40, e.y + 60); ctx.lineTo(e.x + 30, e.y + 90); ctx.stroke();
             }
-
-            // Invincibility flash
-            if (e.invincibleTimer > 0) {
-                ctx.globalCompositeOperation = 'source-atop';
-                ctx.fillStyle = 'rgba(255,255,255,0.5)';
-                ctx.fillRect(e.x, e.y, e.w, e.h);
-                ctx.globalCompositeOperation = 'source-over';
-            }
         }
         ctx.globalAlpha = 1.0;
     });
@@ -1793,64 +1948,112 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         if (p.facing === 1) ctx.fillRect(p.x - 8, p.y + 8, 8, 4);
         else ctx.fillRect(p.x + p.w, p.y + 8, 8, 4);
 
-        // Weapon Rendering
-        if (p.weapon === 'toothbrush') {
-             // Toothbrush handle
-             ctx.fillStyle = '#22d3ee';
-             ctx.fillRect(p.facing === 1 ? p.x + 10 : p.x + 22, p.y + 20, 4, 15);
-        } else if (p.weapon === 'floss') {
-             // Floss box
-             ctx.fillStyle = '#fff';
-             ctx.fillRect(p.facing === 1 ? p.x + 15 : p.x + 5, p.y + 20, 10, 10);
-        } else {
-             // Gun
-             ctx.fillStyle = '#4b5563';
-             const gunX = p.facing === 1 ? p.x + 20 : p.x - 10;
-             ctx.fillRect(gunX, p.y + 20, 22, 6);
-             let tipColor = '#9ca3af';
-             if (p.weapon === 'laser') tipColor = COLORS.projectileLaser;
-             if (p.weapon === 'mouthwash') tipColor = COLORS.projectileWave;
-             ctx.fillStyle = tipColor;
-             ctx.fillRect(p.facing === 1 ? gunX + 20 : gunX, p.y + 19, 4, 8);
-        }
+        // Render Held Weapon
+        drawHeldWeapon(ctx, p);
     }
 
     // Projectiles
     entities.current.projectiles.forEach(proj => {
         ctx.fillStyle = proj.color;
+        
         if (proj.projectileType === 'floss') {
+            // Drawn as a thin string connecting player to a "Pick"
             ctx.save();
-            ctx.translate(proj.x, proj.y);
             ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 3;
-            // Draw a snapping line
+            ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.moveTo(0, proj.h/2);
-            ctx.lineTo(proj.w, proj.h/2);
+            
+            // Connect to player hand (rough estimate)
+            const handX = p.x + (p.facing === 1 ? 25 : 5);
+            const handY = p.y + 20;
+            
+            // The projectile rect is the hitbox area (the whip length)
+            // But visually we want a line
+            const endX = proj.x + (proj.facing === 1 ? proj.w : 0);
+            const endY = proj.y + proj.h/2;
+
+            ctx.moveTo(handX, handY);
+            // Little slack curve
+            ctx.quadraticCurveTo((handX + endX)/2, handY + 10, endX, endY);
             ctx.stroke();
-            // End bit
-            ctx.beginPath(); ctx.arc(proj.w, proj.h/2, 4, 0, Math.PI*2); ctx.fill();
+
+            // The Pick at the end
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(endX, endY, 4, 0, Math.PI*2);
+            ctx.fill();
+            // Sharp bit
+            ctx.beginPath();
+            ctx.moveTo(endX, endY - 4);
+            ctx.lineTo(endX + (5*proj.facing), endY);
+            ctx.lineTo(endX, endY + 4);
+            ctx.fill();
+
             ctx.restore();
+
         } else if (proj.projectileType === 'sword') {
-            // Draw Swipe Arc
+            // Draw Brush Stroke Arc
             ctx.save();
             ctx.translate(proj.x, proj.y);
-            ctx.strokeStyle = '#22d3ee';
-            ctx.lineWidth = 4;
+            ctx.strokeStyle = '#22d3ee'; // Cyan
+            ctx.lineWidth = 1;
+            
+            const startAngle = Math.PI + 0.2;
+            const endAngle = Math.PI * 2 - 0.2;
+            
+            // Draw multiple bristle lines for effect
+            for(let i=0; i<3; i++) {
+                 ctx.beginPath();
+                 const radius = proj.w - (i*5);
+                 ctx.arc(proj.w/2, proj.h, radius, startAngle, endAngle);
+                 ctx.strokeStyle = `rgba(34, 211, 238, ${1 - i*0.2})`;
+                 ctx.lineWidth = 4 - i;
+                 ctx.stroke();
+            }
+            // White shine
             ctx.beginPath();
-            ctx.arc(proj.w/2, proj.h, proj.w, Math.PI, Math.PI * 2);
+            ctx.arc(proj.w/2, proj.h, proj.w-2, startAngle, endAngle);
+            ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+            ctx.lineWidth = 2;
             ctx.stroke();
+
             ctx.restore();
+
+        } else if (proj.projectileType === 'wave') {
+            // Mouthwash Bubbles
+            ctx.save();
+            ctx.translate(proj.x, proj.y);
+            ctx.fillStyle = '#5eead4'; // Teal-300
+            
+            // Draw random bubbles within rect
+            // Using frameTimer or static position for bubble texture
+            const bubbleCount = 5;
+            for(let i=0; i<bubbleCount; i++) {
+                const bx = (i / bubbleCount) * proj.w;
+                const by = Math.sin(Date.now()/50 + i) * (proj.h/4) + proj.h/2;
+                const size = 3 + (i%3);
+                ctx.beginPath();
+                ctx.arc(bx, by, size, 0, Math.PI*2);
+                ctx.fill();
+            }
+            
+            ctx.restore();
+            
         } else if (proj.projectileType === 'laser') {
+            // Core beam
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(proj.x, proj.y + proj.h * 0.25, proj.w, proj.h * 0.5);
+            // Outer glow
+            ctx.fillStyle = proj.color;
+            ctx.globalAlpha = 0.5;
             ctx.fillRect(proj.x, proj.y, proj.w, proj.h);
-            ctx.shadowColor = proj.color;
-            ctx.shadowBlur = 10;
-            ctx.fillRect(proj.x, proj.y, proj.w, proj.h);
-            ctx.shadowBlur = 0;
+            ctx.globalAlpha = 1.0;
+            
         } else if (proj.projectileType === 'mortar') {
              ctx.fillStyle = '#444';
              ctx.beginPath(); ctx.arc(proj.x+proj.w/2, proj.y+proj.h/2, 8, 0, Math.PI*2); ctx.fill();
         } else {
+             // Standard Bullet
              ctx.beginPath();
              ctx.arc(proj.x + proj.w/2, proj.y + proj.h/2, proj.w/2, 0, Math.PI * 2);
              ctx.fill();
