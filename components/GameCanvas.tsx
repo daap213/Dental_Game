@@ -60,7 +60,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
   const inputs = useRef({
     left: false,
     right: false,
-    up: false,
+    aimUp: false,
     down: false,
     shoot: false,
     dash: false,
@@ -169,7 +169,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     
     // Clear inputs to prevent sticky keys/movement on restart
     inputs.current = {
-        left: false, right: false, up: false, down: false,
+        left: false, right: false, aimUp: false, down: false,
         shoot: false, dash: false,
         jumpPressed: false, shootPressed: false, dashPressed: false
     };
@@ -234,9 +234,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         case 'ArrowRight': inputs.current.right = true; break;
         case 'KeyW':
         case 'ArrowUp': 
+            inputs.current.aimUp = true; // Decoupled Jump from Up
+            break;
         case 'Space':
-            if (!inputs.current.up) inputs.current.jumpPressed = true;
-            inputs.current.up = true; 
+            if (!inputs.current.jumpPressed) inputs.current.jumpPressed = true;
             break;
         case 'KeyS':
         case 'ArrowDown': inputs.current.down = true; break;
@@ -263,8 +264,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         case 'ArrowRight': inputs.current.right = false; break;
         case 'KeyW':
         case 'ArrowUp': 
+            inputs.current.aimUp = false; 
+            break;
         case 'Space':
-            inputs.current.up = false; 
+            // jump logic is trigger based, usually doesn't need release handling for state but helpful for hold logic if any
             break;
         case 'KeyS':
         case 'ArrowDown': inputs.current.down = false; break;
@@ -280,11 +283,27 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       }
     };
 
+    const handleMouseDown = (e: MouseEvent) => {
+        if (gameState !== GameState.PLAYING) return;
+        if (!inputs.current.shoot) inputs.current.shootPressed = true;
+        inputs.current.shoot = true;
+    };
+
+    const handleMouseUp = (e: MouseEvent) => {
+        if (gameState !== GameState.PLAYING) return;
+        inputs.current.shoot = false;
+    };
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mouseup', handleMouseUp);
+    
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [gameState, setGameState]);
 
@@ -573,7 +592,41 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     // --- Shooting ---
     if (inputs.current.shootPressed) {
        if (p.frameTimer <= 0) {
-           spawnProjectile(p.x + (p.facing === 1 ? p.w : 0), p.y + p.h/2 - 5, p.facing, 'player', p.weapon);
+           // Calculate shooting direction
+           let dx = 0;
+           let dy = 0;
+           
+           if (inputs.current.aimUp) {
+               // Shooting UP
+               dy = -1;
+               // If moving sideways, shoot diagonal
+               if (inputs.current.left) dx = -1;
+               else if (inputs.current.right) dx = 1;
+               else dx = 0; // Straight up
+           } else {
+               // Default Horizontal
+               dx = p.facing;
+               dy = 0;
+           }
+
+           // Adjust Spawn Point based on direction
+           let spawnX = p.x + p.w/2;
+           let spawnY = p.y + p.h/2;
+           
+           if (dy === -1 && dx === 0) {
+               // Straight Up
+               spawnY = p.y - 10;
+           } else if (dy === 0) {
+               // Straight Side
+               spawnX = p.x + (dx === 1 ? p.w : 0);
+               spawnY = p.y + p.h/2 - 5;
+           } else {
+               // Diagonal
+               spawnX = p.x + (dx === 1 ? p.w : 0);
+               spawnY = p.y;
+           }
+
+           spawnProjectile(spawnX, spawnY, dx, dy, 'player', p.weapon);
            
            // Fire rate based on weapon AND level
            let cooldown = 10;
@@ -704,7 +757,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                     enemy.vy = Math.sin(Date.now() / 200) * 1; 
                     enemy.vx = -3;
                     if (enemy.attackTimer > 2.0 && Math.abs(enemy.x - p.x) < 50) {
-                        spawnProjectile(enemy.x, enemy.y + 20, 0, 'enemy', 'normal');
+                        spawnProjectile(enemy.x, enemy.y + 20, 0, 1, 'enemy', 'normal');
                         enemy.attackTimer = 0;
                     }
                     break;
@@ -783,7 +836,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                              if (enemy.aiTimer > 0.3) {
                                  // Fire 5 bullets spread
                                  for(let i=-2; i<=2; i++) {
-                                     spawnProjectile(enemy.x + enemy.w/2, enemy.y + enemy.h/2, p.facing, 'enemy', 'normal');
+                                     spawnProjectile(enemy.x + enemy.w/2, enemy.y + enemy.h/2, p.facing, 0, 'enemy', 'normal');
                                      const bullet = s.projectiles[s.projectiles.length - 1];
                                      bullet.vy = i * 2; // Spread
                                  }
@@ -1146,21 +1199,29 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     s.particles = s.particles.filter(p => p.lifeTime > 0);
   };
 
-  const spawnProjectile = (x: number, y: number, dir: number, owner: 'player' | 'enemy', type: WeaponType | 'normal') => {
+  const spawnProjectile = (x: number, y: number, dx: number, dy: number, owner: 'player' | 'enemy', type: WeaponType | 'normal') => {
       const base: Partial<Projectile> = {
           id: Math.random().toString(),
           owner,
-          facing: dir as 1|-1,
+          facing: dx === 0 ? 1 : Math.sign(dx) as 1|-1,
           isGrounded: false,
           frameTimer: 0,
           state: 0,
           type: 'projectile'
       };
 
+      // Normalize diagonal vectors slightly so they don't fly faster
+      let vx = dx;
+      let vy = dy;
+      if (dx !== 0 && dy !== 0) {
+          vx *= 0.707;
+          vy *= 0.707;
+      }
+
       if (owner === 'enemy') {
           entities.current.projectiles.push({
               ...base,
-              x, y, w: 10, h: 10, vx: dir * 6, vy: 0,
+              x, y, w: 10, h: 10, vx: dx * 6, vy: 0, // Enemy mostly shoots straight for now unless boss
               hp: 1, maxHp: 1, damage: 10, lifeTime: 2, projectileType: 'bullet', color: COLORS.projectileEnemy
           } as Projectile);
           return;
@@ -1171,25 +1232,44 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
       if (type === 'spread') {
           const bulletCount = 3 + (level - 1) * 2; // 3, 5, 7
-          const spreadFactor = level === 3 ? 1.5 : 2; // Tighter spread at high level
+          const spreadFactor = level === 3 ? 1.5 : 2; 
           const start = -Math.floor(bulletCount/2);
           const end = Math.floor(bulletCount/2);
 
           for(let i=start; i<=end; i++) {
+            // Spread adds to the base angle
+            // Simple method: add to vy if shooting horizontal, add to vx if shooting vertical
+            let svx = vx * 10;
+            let svy = vy * 10;
+            
+            if (dx !== 0 && dy === 0) svy += i * spreadFactor;
+            else if (dx === 0 && dy !== 0) svx += i * spreadFactor;
+            else {
+                // Diagonal spread is tricky, just add to both perpendicular?
+                // Keep it simple for now, spread might look weird on diagonal
+                svx += i; svy -= i; 
+            }
+
             entities.current.projectiles.push({
                 ...base,
-                x, y, w: 8, h: 8, vx: dir * 10, vy: i * spreadFactor,
+                x, y, w: 8, h: 8, vx: svx, vy: svy,
                 hp: 1, maxHp: 1, damage: 20, lifeTime: 1.0, projectileType: 'bullet', color: COLORS.projectilePlayer
             } as Projectile);
           }
       } else if (type === 'laser') {
             const width = level >= 2 ? (level === 3 ? 12 : 6) : 4;
             const dmg = 8 + ((level-1) * 4);
-            const wLen = level === 3 ? 800 : 30; // Mega beam at max level (visual glitch fix: still small sprite but big effect logic needed, keeping short for now for balance)
+            const wLen = level === 3 ? 800 : 30; 
             
+            // Laser needs rotation rect based on dir?
+            // For now, simple laser logic:
+            let lw = (dx !== 0 && dy === 0) ? 30 + (level * 10) : width;
+            let lh = (dx === 0 && dy !== 0) ? 30 + (level * 10) : width;
+            if (dx !== 0 && dy !== 0) { lw = 20; lh = 20; } // Diagonal laser ball
+
             entities.current.projectiles.push({
                 ...base,
-                x, y, w: 30 + (level * 10), h: width, vx: dir * 20, vy: 0,
+                x, y, w: lw, h: lh, vx: vx * 20, vy: vy * 20,
                 hp: 1, maxHp: 1, damage: dmg, lifeTime: 0.8, projectileType: 'laser', color: COLORS.projectileLaser
             } as Projectile);
 
@@ -1199,7 +1279,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             
             entities.current.projectiles.push({
                 ...base,
-                x, y, w: 16 + (level*4), h: 16 + (level*4), vx: dir * speed, vy: 0,
+                x, y, w: 16 + (level*4), h: 16 + (level*4), vx: vx * speed, vy: vy * speed,
                 hp: 1, maxHp: 1, damage: dmg, lifeTime: 2.0, projectileType: 'wave', color: COLORS.projectileWave
             } as Projectile);
 
@@ -1207,26 +1287,32 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                 // Double Wave
                  entities.current.projectiles.push({
                     ...base,
-                    x: x - 10, y: y + 20, w: 20, h: 20, vx: dir * speed, vy: 0,
+                    x: x - 10, y: y + 20, w: 20, h: 20, vx: vx * speed, vy: vy * speed,
                     hp: 1, maxHp: 1, damage: dmg, lifeTime: 2.0, projectileType: 'wave', color: COLORS.projectileWave
                 } as Projectile);
             }
 
       } else if (type === 'floss') {
-            // WHIP
-            const range = 100 + ((level-1)*50); // 100, 150, 200
+            // WHIP (Only works well horizontally or simple, directional whip is hard)
+            // Just spawn it in front
+            const range = 100 + ((level-1)*50); 
             const dmg = 60 + ((level-1)*20);
             const thickness = 20 + ((level-1)*10);
+            
+            // Adjust dims based on dir
+            let fw = (dx !== 0) ? range : thickness;
+            let fh = (dy !== 0) ? range : thickness;
+            if (dx !== 0 && dy !== 0) { fw=range*0.7; fh=range*0.7; }
 
             entities.current.projectiles.push({
                 ...base,
-                x, y, w: range, h: thickness, vx: 0, vy: 0,
+                x, y, w: fw, h: fh, vx: 0, vy: 0,
                 hp: 1, maxHp: 1, damage: dmg, lifeTime: 0.15, projectileType: 'floss', color: '#fff'
             } as Projectile);
 
       } else if (type === 'toothbrush') {
             // SWORD
-            const size = 60 + ((level-1)*30); // 60, 90, 120
+            const size = 60 + ((level-1)*30);
             const dmg = 80 + ((level-1)*40);
 
             entities.current.projectiles.push({
@@ -1239,20 +1325,25 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         const dmg = 15;
         // Level 3 = Double Shot
         if (level === 3) {
+             const offset = 5;
+             // Perpendicular offset
+             let ox = (dy !== 0) ? offset : 0;
+             let oy = (dx !== 0) ? offset : 0;
+
              entities.current.projectiles.push({
                 ...base,
-                x, y: y - 5, w: 10, h: 6, vx: dir * 12, vy: 0,
+                x: x - ox, y: y - oy, w: 10, h: 6, vx: vx * 12, vy: vy * 12,
                 hp: 1, maxHp: 1, damage: dmg, lifeTime: 1.0, projectileType: 'bullet', color: COLORS.projectilePlayer
             } as Projectile);
              entities.current.projectiles.push({
                 ...base,
-                x, y: y + 5, w: 10, h: 6, vx: dir * 12, vy: 0,
+                x: x + ox, y: y + oy, w: 10, h: 6, vx: vx * 12, vy: vy * 12,
                 hp: 1, maxHp: 1, damage: dmg, lifeTime: 1.0, projectileType: 'bullet', color: COLORS.projectilePlayer
             } as Projectile);
         } else {
              entities.current.projectiles.push({
                 ...base,
-                x, y, w: 10, h: 6, vx: dir * 12, vy: 0,
+                x, y, w: 10, h: 6, vx: vx * 12, vy: vy * 12,
                 hp: 1, maxHp: 1, damage: dmg, lifeTime: 1.0, projectileType: 'bullet', color: COLORS.projectilePlayer
             } as Projectile);
         }
@@ -1557,24 +1648,38 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       const hx = p.x + (facing === 1 ? 22 : 10);
       const hy = p.y + 20;
 
+      ctx.save();
+      ctx.translate(hx, hy);
+      
+      // Aim rotation
+      let rotation = 0;
+      if (inputs.current.aimUp) {
+          if (inputs.current.left || inputs.current.right) {
+              // Diagonal
+              rotation = -Math.PI / 4 * facing;
+          } else {
+              // Straight up
+              rotation = -Math.PI / 2 * facing;
+          }
+          ctx.rotate(rotation);
+      }
+
+      // Draw relative to translated/rotated context
+      const drawX = 0;
+      const drawY = 0;
+
       if (type === 'toothbrush') {
-          // Big Two-handed Toothbrush Sword
-          ctx.save();
-          ctx.translate(hx, hy);
-          // Angle slightly up
-          ctx.rotate(facing === 1 ? -Math.PI / 4 : Math.PI / 4);
+          // Big Two-handed Toothbrush Sword (Always angled slightly if not aiming)
+          if (!inputs.current.aimUp) ctx.rotate(facing === 1 ? -Math.PI / 4 : Math.PI / 4);
           
           // Handle
           ctx.fillStyle = '#38bdf8'; // Light Blue
           ctx.fillRect(0, -3, 30 * facing, 6);
-          
           // Neck
           ctx.fillStyle = '#fff';
           ctx.fillRect(30 * facing, -2, 10 * facing, 4);
-          
           // Head
           ctx.fillRect(40 * facing, -4, 12 * facing, 8);
-          
           // Bristles
           ctx.fillStyle = '#0284c7'; // Darker Blue
           const startX = 42 * facing;
@@ -1583,31 +1688,26 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
               ctx.fillRect(startX + (i*3*facing), -4, 2*facing, bristleH);
           }
 
-          ctx.restore();
       } else if (type === 'floss') {
           // Floss Container
           ctx.fillStyle = '#fff';
           ctx.beginPath();
-          ctx.roundRect(hx - 5, hy - 5, 14, 14, 3);
+          ctx.roundRect(-5, -5, 14, 14, 3);
           ctx.fill();
           // Label
           ctx.fillStyle = '#10b981'; // Mint green label
-          ctx.fillRect(hx - 2, hy - 2, 8, 8);
+          ctx.fillRect(-2, -2, 8, 8);
           
           // String hanging out a bit
           ctx.strokeStyle = '#fff';
           ctx.lineWidth = 1;
           ctx.beginPath();
-          ctx.moveTo(hx + (7*facing), hy);
-          ctx.lineTo(hx + (15*facing), hy + 5);
+          ctx.moveTo(7*facing, 0);
+          ctx.lineTo(15*facing, 5);
           ctx.stroke();
 
       } else if (type === 'mouthwash') {
           // Mouthwash Bottle Cannon
-          ctx.save();
-          ctx.translate(hx, hy);
-          
-          // Main Bottle Body
           ctx.fillStyle = 'rgba(45, 212, 191, 0.8)'; // Teal translucent
           const bw = 24;
           const bh = 14;
@@ -1625,13 +1725,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
           if (facing === 1) ctx.fillRect(bw, -4, 6, 10);
           else ctx.fillRect(-bw-6, -4, 6, 10);
 
-          ctx.restore();
-
       } else if (type === 'laser') {
           // Sci-fi Laser Tool (Curing Light)
-          ctx.save();
-          ctx.translate(hx, hy);
-          
           // Main Body (Tapered)
           ctx.fillStyle = '#64748b'; // Slate
           ctx.beginPath();
@@ -1647,21 +1742,21 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
           if (facing === 1) ctx.fillRect(20, -1, 4, 8);
           else ctx.fillRect(-24, -1, 4, 8);
 
-          ctx.restore();
       } else {
           // Normal/Spread Gun (Drill-like Blaster)
           ctx.fillStyle = '#4b5563'; // Grey Body
-          const gunX = facing === 1 ? hx : hx - 22;
-          ctx.fillRect(gunX, hy - 3, 22, 6);
+          const gunX = facing === 1 ? 0 : -22;
+          ctx.fillRect(gunX, -3, 22, 6);
           
           // Handle grip
           ctx.fillStyle = '#1f2937';
-          ctx.fillRect(facing === 1 ? hx : hx - 6, hy, 6, 8);
+          ctx.fillRect(facing === 1 ? 0 : -6, 0, 6, 8);
 
           // Tip
           ctx.fillStyle = '#9ca3af'; // Silver tip
-          ctx.fillRect(facing === 1 ? gunX + 22 : gunX - 4, hy - 2, 4, 4);
+          ctx.fillRect(facing === 1 ? gunX + 22 : gunX - 4, -2, 4, 4);
       }
+      ctx.restore();
   };
 
   const draw = (ctx: CanvasRenderingContext2D) => {
@@ -2057,6 +2152,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             
         } else if (proj.projectileType === 'laser') {
             // Core beam
+            ctx.save();
+            // Rotate if needed (for diagonal lasers)
+            // But currently lasers are axis aligned rects in physics
+            // Visual rotation for diagonal would require saving angle in projectile
+            // We kept lasers simple for now
             ctx.fillStyle = '#fff';
             ctx.fillRect(proj.x, proj.y + proj.h * 0.25, proj.w, proj.h * 0.5);
             // Outer glow
@@ -2064,6 +2164,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             ctx.globalAlpha = 0.5;
             ctx.fillRect(proj.x, proj.y, proj.w, proj.h);
             ctx.globalAlpha = 1.0;
+            ctx.restore();
             
         } else if (proj.projectileType === 'mortar') {
              ctx.fillStyle = '#444';
@@ -2097,8 +2198,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
           case 'left': inputs.current.left = pressed; break;
           case 'right': inputs.current.right = pressed; break;
           case 'jump': 
-            if (!inputs.current.up && pressed) inputs.current.jumpPressed = true;
-            inputs.current.up = pressed;
+            if (!inputs.current.jumpPressed && pressed) inputs.current.jumpPressed = true;
             break;
           case 'shoot': 
             if (!inputs.current.shoot && pressed) inputs.current.shootPressed = true;
@@ -2136,11 +2236,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
               <div className="mt-8 text-xs text-slate-500 flex flex-col items-center gap-2">
                   <p>CONTROLS</p>
                   <div className="flex gap-4 flex-wrap justify-center">
-                      <span className="bg-slate-700 px-2 py-1 rounded">WASD / ARROWS : Move</span>
+                      <span className="bg-slate-700 px-2 py-1 rounded">A / D : Move</span>
+                      <span className="bg-slate-700 px-2 py-1 rounded">W : Aim Up</span>
                       <span className="bg-slate-700 px-2 py-1 rounded">SPACE : Jump (x2)</span>
-                      <span className="bg-slate-700 px-2 py-1 rounded">F / K : Shoot</span>
-                      <span className="bg-slate-700 px-2 py-1 rounded">SHIFT / L : Dash</span>
-                      <span className="bg-slate-700 px-2 py-1 rounded">ESC : Pause</span>
+                      <span className="bg-slate-700 px-2 py-1 rounded">CLICK / F : Shoot</span>
+                      <span className="bg-slate-700 px-2 py-1 rounded">SHIFT : Dash</span>
                   </div>
               </div>
           </div>
@@ -2153,7 +2253,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         ref={canvasRef}
         width={CANVAS_WIDTH}
         height={CANVAS_HEIGHT}
-        className="w-full h-full max-w-[800px] max-h-[450px] bg-black shadow-2xl border-4 border-slate-700"
+        className="w-full h-full max-w-[800px] max-h-[450px] bg-black shadow-2xl border-4 border-slate-700 cursor-crosshair"
       />
       
       {/* HUD */}
