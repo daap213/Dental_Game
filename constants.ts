@@ -9,8 +9,8 @@ export const PLAYER_JUMP = -14;
 export const PLAYER_SIZE = 32;
 
 // Abilities
-export const PLAYER_DASH_SPEED = 22;
-export const PLAYER_DASH_DURATION = 0.2;
+export const PLAYER_DASH_SPEED = 20; // Reduced from 22
+export const PLAYER_DASH_DURATION = 0.15; // Reduced from 0.2
 export const PLAYER_DASH_COOLDOWN = 0.8;
 export const PLAYER_MAX_JUMPS = 2;
 export const MAX_WEAPON_LEVEL = 3;
