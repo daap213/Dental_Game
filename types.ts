@@ -34,7 +34,6 @@ export type WeaponType = 'normal' | 'spread' | 'laser' | 'mouthwash' | 'floss' |
 export interface Player extends Entity {
   type: 'player';
   invincibleTimer: number;
-  slowTimer: number; // New: For Sugar Fiend trap
   weapon: WeaponType;
   weaponLevel: number; // 1 to 3
   ammo: number;
@@ -48,7 +47,7 @@ export interface Player extends Entity {
 
 export interface Enemy extends Entity {
   type: 'enemy';
-  subType: 'bacteria' | 'plaque_monster' | 'candy_bomber' | 'tartar_turret' | 'sugar_rusher' | 'boss' | 'sugar_fiend' | 'acid_spitter' | 'gingivitis_grunt';
+  subType: 'bacteria' | 'plaque_monster' | 'candy_bomber' | 'tartar_turret' | 'sugar_rusher' | 'boss';
   aiTimer: number;
   attackTimer: number;
   bossState: number; // 0: Idle, 1: Chase, 2: Charge, 3: Slam, 4: Shoot
@@ -61,7 +60,7 @@ export interface Projectile extends Entity {
   damage: number;
   owner: 'player' | 'enemy';
   lifeTime: number;
-  projectileType: 'bullet' | 'laser' | 'wave' | 'floss' | 'sword' | 'mortar' | 'acid' | 'sludge';
+  projectileType: 'bullet' | 'laser' | 'wave' | 'floss' | 'sword' | 'mortar';
   hitIds: string[]; // Track which entities have been hit to prevent multi-tick damage on piercing
 }
 
