@@ -66,7 +66,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     dash: false,
     jumpPressed: false,
     shootPressed: false,
-    dashPressed: false
+    dashPressed: false,
+    // Mouse Inputs
+    mouseX: 0,
+    mouseY: 0,
+    usingMouse: false
   });
 
   function createPlayer(): Player {
@@ -171,7 +175,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     inputs.current = {
         left: false, right: false, aimUp: false, down: false,
         shoot: false, dash: false,
-        jumpPressed: false, shootPressed: false, dashPressed: false
+        jumpPressed: false, shootPressed: false, dashPressed: false,
+        mouseX: 0, mouseY: 0, usingMouse: false
     };
 
     setScore(0);
@@ -227,6 +232,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
           e.preventDefault();
       }
 
+      // If directional keys are used, disable mouse aiming
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(e.code)) {
+          inputs.current.usingMouse = false;
+      }
+
       switch (e.code) {
         case 'KeyA':
         case 'ArrowLeft': inputs.current.left = true; break;
@@ -234,7 +244,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         case 'ArrowRight': inputs.current.right = true; break;
         case 'KeyW':
         case 'ArrowUp': 
-            inputs.current.aimUp = true; // Decoupled Jump from Up
+            inputs.current.aimUp = true; 
             break;
         case 'Space':
             if (!inputs.current.jumpPressed) inputs.current.jumpPressed = true;
@@ -267,7 +277,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             inputs.current.aimUp = false; 
             break;
         case 'Space':
-            // jump logic is trigger based, usually doesn't need release handling for state but helpful for hold logic if any
             break;
         case 'KeyS':
         case 'ArrowDown': inputs.current.down = false; break;
@@ -287,6 +296,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         if (gameState !== GameState.PLAYING) return;
         if (!inputs.current.shoot) inputs.current.shootPressed = true;
         inputs.current.shoot = true;
+        inputs.current.usingMouse = true;
     };
 
     const handleMouseUp = (e: MouseEvent) => {
@@ -294,16 +304,32 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         inputs.current.shoot = false;
     };
 
+    const handleMouseMove = (e: MouseEvent) => {
+        if (gameState !== GameState.PLAYING) return;
+        const rect = canvasRef.current?.getBoundingClientRect();
+        if (rect) {
+            // Calculate scale in case canvas is resized via CSS
+            const scaleX = CANVAS_WIDTH / rect.width;
+            const scaleY = CANVAS_HEIGHT / rect.height;
+            
+            inputs.current.mouseX = (e.clientX - rect.left) * scaleX;
+            inputs.current.mouseY = (e.clientY - rect.top) * scaleY;
+            inputs.current.usingMouse = true;
+        }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('mousedown', handleMouseDown);
     window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('mousemove', handleMouseMove);
     
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('mousemove', handleMouseMove);
     };
   }, [gameState, setGameState]);
 
@@ -596,35 +622,58 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
            let dx = 0;
            let dy = 0;
            
-           if (inputs.current.aimUp) {
-               // Shooting UP
-               dy = -1;
-               // If moving sideways, shoot diagonal
-               if (inputs.current.left) dx = -1;
-               else if (inputs.current.right) dx = 1;
-               else dx = 0; // Straight up
+           if (inputs.current.usingMouse) {
+                // Mouse Aiming
+                const mouseWorldX = inputs.current.mouseX + s.camera.x;
+                const mouseWorldY = inputs.current.mouseY + s.camera.y;
+                const pCenterX = p.x + p.w/2;
+                const pCenterY = p.y + p.h/2;
+                
+                dx = mouseWorldX - pCenterX;
+                dy = mouseWorldY - pCenterY;
+                
+                // Normalize
+                const len = Math.sqrt(dx*dx + dy*dy);
+                if (len > 0) {
+                    dx /= len;
+                    dy /= len;
+                } else {
+                    dx = p.facing; dy = 0;
+                }
+
+                // Update facing based on mouse
+                if (mouseWorldX < pCenterX) p.facing = -1;
+                else p.facing = 1;
+
            } else {
-               // Default Horizontal
-               dx = p.facing;
-               dy = 0;
+               // Keyboard Aiming
+               if (inputs.current.aimUp) {
+                   dy = -1;
+                   if (inputs.current.left) dx = -1;
+                   else if (inputs.current.right) dx = 1;
+                   else dx = 0; // Straight up
+               } else {
+                   dx = p.facing;
+                   dy = 0;
+               }
+               // Normalize keyboard diagonal
+               if (dx !== 0 && dy !== 0) {
+                   const len = Math.sqrt(dx*dx + dy*dy);
+                   dx /= len;
+                   dy /= len;
+               }
            }
 
            // Adjust Spawn Point based on direction
            let spawnX = p.x + p.w/2;
            let spawnY = p.y + p.h/2;
            
-           if (dy === -1 && dx === 0) {
-               // Straight Up
-               spawnY = p.y - 10;
-           } else if (dy === 0) {
-               // Straight Side
-               spawnX = p.x + (dx === 1 ? p.w : 0);
-               spawnY = p.y + p.h/2 - 5;
-           } else {
-               // Diagonal
-               spawnX = p.x + (dx === 1 ? p.w : 0);
-               spawnY = p.y;
-           }
+           // If mostly aiming up, spawn higher
+           if (dy < -0.5) spawnY = p.y - 10;
+           else spawnY = p.y + 10;
+           
+           // If mostly aiming side, spawn forward
+           if (Math.abs(dx) > 0.5) spawnX = p.x + p.w/2 + (Math.sign(dx) * 20);
 
            spawnProjectile(spawnX, spawnY, dx, dy, 'player', p.weapon);
            
@@ -1210,13 +1259,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
           type: 'projectile'
       };
 
-      // Normalize diagonal vectors slightly so they don't fly faster
-      let vx = dx;
-      let vy = dy;
-      if (dx !== 0 && dy !== 0) {
-          vx *= 0.707;
-          vy *= 0.707;
-      }
+      // dx, dy are expected to be normalized direction vector (or close to it)
+      // If we are keyboard aiming (integers), normalize first?
+      // But update loop now handles normalization.
 
       if (owner === 'enemy') {
           entities.current.projectiles.push({
@@ -1229,27 +1274,24 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
       // Player Weapons with Level Scaling
       const level = entities.current.player.weaponLevel;
+      const vx = dx;
+      const vy = dy;
 
       if (type === 'spread') {
           const bulletCount = 3 + (level - 1) * 2; // 3, 5, 7
-          const spreadFactor = level === 3 ? 1.5 : 2; 
+          const spreadFactor = level === 3 ? 1.0 : 1.5; 
           const start = -Math.floor(bulletCount/2);
           const end = Math.floor(bulletCount/2);
+          
+          // Perpendicular Vector for Spread (-y, x)
+          const perpX = -dy;
+          const perpY = dx;
 
           for(let i=start; i<=end; i++) {
-            // Spread adds to the base angle
-            // Simple method: add to vy if shooting horizontal, add to vx if shooting vertical
-            let svx = vx * 10;
-            let svy = vy * 10;
+            // Apply spread along perpendicular axis
+            const svx = (vx * 12) + (perpX * i * spreadFactor);
+            const svy = (vy * 12) + (perpY * i * spreadFactor);
             
-            if (dx !== 0 && dy === 0) svy += i * spreadFactor;
-            else if (dx === 0 && dy !== 0) svx += i * spreadFactor;
-            else {
-                // Diagonal spread is tricky, just add to both perpendicular?
-                // Keep it simple for now, spread might look weird on diagonal
-                svx += i; svy -= i; 
-            }
-
             entities.current.projectiles.push({
                 ...base,
                 x, y, w: 8, h: 8, vx: svx, vy: svy,
@@ -1259,17 +1301,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       } else if (type === 'laser') {
             const width = level >= 2 ? (level === 3 ? 12 : 6) : 4;
             const dmg = 8 + ((level-1) * 4);
-            const wLen = level === 3 ? 800 : 30; 
             
-            // Laser needs rotation rect based on dir?
-            // For now, simple laser logic:
-            let lw = (dx !== 0 && dy === 0) ? 30 + (level * 10) : width;
-            let lh = (dx === 0 && dy !== 0) ? 30 + (level * 10) : width;
-            if (dx !== 0 && dy !== 0) { lw = 20; lh = 20; } // Diagonal laser ball
-
+            // Laser is drawn as a rectangle, rotation is purely visual in current rendering
+            // Physics-wise, it's just a fast bullet
+            // Ideally should be raycast, but projectile works for retro feel
+            
+            // For laser, we make a smaller hitbox that moves fast
             entities.current.projectiles.push({
                 ...base,
-                x, y, w: lw, h: lh, vx: vx * 20, vy: vy * 20,
+                x, y, w: width, h: width, vx: vx * 20, vy: vy * 20,
                 hp: 1, maxHp: 1, damage: dmg, lifeTime: 0.8, projectileType: 'laser', color: COLORS.projectileLaser
             } as Projectile);
 
@@ -1284,29 +1324,27 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             } as Projectile);
 
             if (level === 3) {
-                // Double Wave
+                // Double Wave (Offset slightly)
                  entities.current.projectiles.push({
                     ...base,
-                    x: x - 10, y: y + 20, w: 20, h: 20, vx: vx * speed, vy: vy * speed,
+                    x: x - (dy * 20), y: y + (dx * 20), w: 20, h: 20, vx: vx * speed, vy: vy * speed,
                     hp: 1, maxHp: 1, damage: dmg, lifeTime: 2.0, projectileType: 'wave', color: COLORS.projectileWave
                 } as Projectile);
             }
 
       } else if (type === 'floss') {
-            // WHIP (Only works well horizontally or simple, directional whip is hard)
-            // Just spawn it in front
             const range = 100 + ((level-1)*50); 
             const dmg = 60 + ((level-1)*20);
             const thickness = 20 + ((level-1)*10);
             
-            // Adjust dims based on dir
-            let fw = (dx !== 0) ? range : thickness;
-            let fh = (dy !== 0) ? range : thickness;
-            if (dx !== 0 && dy !== 0) { fw=range*0.7; fh=range*0.7; }
-
+            // Whip Logic: Just place a static hitbox in front? 
+            // Better: Projectile with 0 velocity that lives short time
+            // Adjust w/h based on direction? 
+            // We just make a square box for hit detection, visual draws line
+            
             entities.current.projectiles.push({
                 ...base,
-                x, y, w: fw, h: fh, vx: 0, vy: 0,
+                x: x + (dx * 40), y: y + (dy * 40), w: range, h: thickness, vx: 0, vy: 0,
                 hp: 1, maxHp: 1, damage: dmg, lifeTime: 0.15, projectileType: 'floss', color: '#fff'
             } as Projectile);
 
@@ -1325,19 +1363,18 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         const dmg = 15;
         // Level 3 = Double Shot
         if (level === 3) {
+             const perpX = -dy;
+             const perpY = dx;
              const offset = 5;
-             // Perpendicular offset
-             let ox = (dy !== 0) ? offset : 0;
-             let oy = (dx !== 0) ? offset : 0;
 
              entities.current.projectiles.push({
                 ...base,
-                x: x - ox, y: y - oy, w: 10, h: 6, vx: vx * 12, vy: vy * 12,
+                x: x - (perpX*offset), y: y - (perpY*offset), w: 10, h: 6, vx: vx * 12, vy: vy * 12,
                 hp: 1, maxHp: 1, damage: dmg, lifeTime: 1.0, projectileType: 'bullet', color: COLORS.projectilePlayer
             } as Projectile);
              entities.current.projectiles.push({
                 ...base,
-                x: x + ox, y: y + oy, w: 10, h: 6, vx: vx * 12, vy: vy * 12,
+                x: x + (perpX*offset), y: y + (perpY*offset), w: 10, h: 6, vx: vx * 12, vy: vy * 12,
                 hp: 1, maxHp: 1, damage: dmg, lifeTime: 1.0, projectileType: 'bullet', color: COLORS.projectilePlayer
             } as Projectile);
         } else {
@@ -1435,7 +1472,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     ctx.lineTo(x + w, y + h - radius);
     ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
     ctx.lineTo(x + radius, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+    ctx.quadraticCurveTo(x, y, x + h, y + h - radius);
     ctx.lineTo(x, y + radius);
     ctx.quadraticCurveTo(x, y, x + radius, y);
     ctx.closePath();
@@ -1653,16 +1690,44 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       
       // Aim rotation
       let rotation = 0;
-      if (inputs.current.aimUp) {
-          if (inputs.current.left || inputs.current.right) {
-              // Diagonal
-              rotation = -Math.PI / 4 * facing;
-          } else {
-              // Straight up
-              rotation = -Math.PI / 2 * facing;
+      if (inputs.current.usingMouse) {
+          // Calculate angle to mouse
+          const mouseWorldX = inputs.current.mouseX + entities.current.camera.x;
+          const mouseWorldY = inputs.current.mouseY + entities.current.camera.y;
+          const dx = mouseWorldX - hx;
+          const dy = mouseWorldY - hy;
+          rotation = Math.atan2(dy, dx);
+          
+          // If we are facing left, the sprite is usually drawn flipped or expected to point left
+          // But our draw logic below draws relative to facing. 
+          // If facing is -1, the sprite drawing logic below flips X coordinates manually or draws left-pointing.
+          // If we simply rotate, we might get upside down sprites.
+          
+          // To make it look right:
+          // If facing right, rotation is angle.
+          // If facing left, we want to rotate but keep the sprite upright?
+          // Simpler approach: Just rotate and let the sprite be upside down if aiming behind back?
+          // Or:
+          if (facing === -1) {
+              // Adjust rotation because the "base" sprite for left-facing assumes pointing left (PI)
+              // So if we aim left (PI), rotation should be 0 relative to sprite?
+              // Let's assume the sprite drawing for Left is mirrored.
+              // Vector pointing left is PI.
+              rotation = rotation - Math.PI; 
           }
-          ctx.rotate(rotation);
+      } else {
+          // Keyboard Aim
+          if (inputs.current.aimUp) {
+            if (inputs.current.left || inputs.current.right) {
+                // Diagonal
+                rotation = -Math.PI / 4 * facing;
+            } else {
+                // Straight up
+                rotation = -Math.PI / 2 * facing;
+            }
+          }
       }
+      ctx.rotate(rotation);
 
       // Draw relative to translated/rotated context
       const drawX = 0;
@@ -1670,7 +1735,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
       if (type === 'toothbrush') {
           // Big Two-handed Toothbrush Sword (Always angled slightly if not aiming)
-          if (!inputs.current.aimUp) ctx.rotate(facing === 1 ? -Math.PI / 4 : Math.PI / 4);
+          if (!inputs.current.aimUp && !inputs.current.usingMouse) ctx.rotate(facing === 1 ? -Math.PI / 4 : Math.PI / 4);
           
           // Handle
           ctx.fillStyle = '#38bdf8'; // Light Blue
