@@ -61,6 +61,7 @@ export interface Projectile extends Entity {
   owner: 'player' | 'enemy';
   lifeTime: number;
   projectileType: 'bullet' | 'laser' | 'wave' | 'floss' | 'sword' | 'mortar';
+  hitIds: string[]; // Track which entities have been hit to prevent multi-tick damage on piercing
 }
 
 export interface Particle extends Entity {

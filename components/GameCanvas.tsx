@@ -23,6 +23,364 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
   const [briefing, setBriefing] = useState<string>("Loading Mission...");
   const [isMobile, setIsMobile] = useState(false);
 
+  // Audio Context
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const ambientGainRef = useRef<GainNode | null>(null);
+
+  const startAmbient = (ctx: AudioContext) => {
+      if (ambientGainRef.current) return;
+
+      const masterGain = ctx.createGain();
+      masterGain.gain.value = 0;
+      masterGain.connect(ctx.destination);
+      ambientGainRef.current = masterGain;
+
+      const t = ctx.currentTime;
+
+      // Layer 1: Low Rumble (Machinery/Body)
+      const osc1 = ctx.createOscillator();
+      osc1.type = 'sawtooth';
+      osc1.frequency.value = 50;
+      const filter1 = ctx.createBiquadFilter();
+      filter1.type = 'lowpass';
+      filter1.frequency.value = 120;
+      const gain1 = ctx.createGain();
+      gain1.gain.value = 0.15;
+      osc1.connect(filter1).connect(gain1).connect(masterGain);
+      osc1.start(t);
+
+      // Layer 2: High Whine (Drill Standby)
+      const osc2 = ctx.createOscillator();
+      osc2.type = 'sine';
+      osc2.frequency.value = 1000; 
+      const gain2 = ctx.createGain();
+      gain2.gain.value = 0.005; // Very subtle
+      osc2.connect(gain2).connect(masterGain);
+      osc2.start(t);
+
+      // Modulate the rumble slightly
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 0.2;
+      const lfoGain = ctx.createGain();
+      lfoGain.gain.value = 10;
+      lfo.connect(lfoGain).connect(osc1.frequency);
+      lfo.start(t);
+
+      // Layer 3: Suction (Filtered Noise)
+      const bufferSize = ctx.sampleRate * 2;
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+          data[i] = Math.random() * 2 - 1;
+      }
+      const noise = ctx.createBufferSource();
+      noise.buffer = buffer;
+      noise.loop = true;
+      const noiseFilter = ctx.createBiquadFilter();
+      noiseFilter.type = 'bandpass';
+      noiseFilter.frequency.value = 800;
+      noiseFilter.Q.value = 1;
+      const noiseGain = ctx.createGain();
+      noiseGain.gain.value = 0.05;
+      noise.connect(noiseFilter).connect(noiseGain).connect(masterGain);
+      noise.start(t);
+  };
+
+  const initAudio = () => {
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      startAmbient(audioCtxRef.current);
+    }
+    if (audioCtxRef.current.state === 'suspended') {
+      audioCtxRef.current.resume();
+    }
+  };
+
+  // Manage Ambient Volume based on State
+  useEffect(() => {
+      if (!ambientGainRef.current || !audioCtxRef.current) return;
+      
+      const now = audioCtxRef.current.currentTime;
+      const gain = ambientGainRef.current.gain;
+      
+      if (gameState === GameState.PLAYING) {
+          gain.setTargetAtTime(0.15, now, 0.5);
+      } else if (gameState === GameState.PAUSED) {
+          gain.setTargetAtTime(0.05, now, 0.5);
+      } else {
+          gain.setTargetAtTime(0, now, 0.5);
+      }
+  }, [gameState]);
+
+  const playGameOverSound = () => {
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+
+    // Power down slide
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(300, t);
+    osc.frequency.exponentialRampToValueAtTime(10, t + 2);
+    
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.3, t);
+    gain.gain.linearRampToValueAtTime(0, t + 2);
+
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 2);
+
+    // Sad chord arpeggio
+    [300, 250, 200, 150].forEach((freq, i) => {
+         const o = ctx.createOscillator();
+         o.type = 'triangle';
+         o.frequency.value = freq;
+         const g = ctx.createGain();
+         g.gain.setValueAtTime(0, t + i*0.4);
+         g.gain.linearRampToValueAtTime(0.2, t + i*0.4 + 0.1);
+         g.gain.linearRampToValueAtTime(0, t + i*0.4 + 0.8);
+         o.connect(g).connect(ctx.destination);
+         o.start(t + i*0.4);
+         o.stop(t + i*0.4 + 0.8);
+    });
+  };
+
+  const playBossIntroSound = (variant: Enemy['bossVariant']) => {
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+
+    if (variant === 'phantom') {
+        // Ghostly wail
+        const osc = ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(600, t);
+        osc.frequency.linearRampToValueAtTime(1200, t + 1.5);
+        
+        const lfo = ctx.createOscillator();
+        lfo.frequency.value = 10;
+        const lfoGain = ctx.createGain();
+        lfoGain.gain.value = 50;
+        lfo.connect(lfoGain).connect(osc.frequency);
+        lfo.start(t);
+
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0, t);
+        gain.gain.linearRampToValueAtTime(0.3, t + 0.5);
+        gain.gain.linearRampToValueAtTime(0, t + 2);
+
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(t);
+        osc.stop(t + 2);
+
+    } else if (variant === 'tank') {
+        // Mechanical grind/clank
+        const osc = ctx.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(50, t);
+        osc.frequency.linearRampToValueAtTime(20, t + 1);
+        
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.5, t);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + 1);
+
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(t);
+        osc.stop(t + 1);
+
+    } else if (variant === 'general') {
+        // Alarm / Fanfare
+        [440, 554, 659].forEach((f, i) => { // Major triad
+            const osc = ctx.createOscillator();
+            osc.type = 'square';
+            osc.frequency.value = f;
+            const g = ctx.createGain();
+            g.gain.setValueAtTime(0, t + i*0.1);
+            g.gain.linearRampToValueAtTime(0.1, t + i*0.1 + 0.05);
+            g.gain.linearRampToValueAtTime(0, t + i*0.1 + 0.3);
+            osc.connect(g).connect(ctx.destination);
+            osc.start(t + i*0.1);
+            osc.stop(t + i*0.1 + 0.3);
+        });
+
+    } else if (variant === 'deity') {
+        // Doom Drone
+        [55, 110, 165].forEach(f => {
+            const osc = ctx.createOscillator();
+            osc.type = 'sawtooth';
+            osc.frequency.value = f;
+            
+            const filter = ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(100, t);
+            filter.frequency.linearRampToValueAtTime(1000, t + 2);
+
+            const g = ctx.createGain();
+            g.gain.setValueAtTime(0, t);
+            g.gain.linearRampToValueAtTime(0.2, t + 1);
+            g.gain.linearRampToValueAtTime(0, t + 4);
+
+            osc.connect(filter).connect(g).connect(ctx.destination);
+            osc.start(t);
+            osc.stop(t + 4);
+        });
+
+    } else {
+        // King - Heavy Thud
+        const osc = ctx.createOscillator();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(100, t);
+        osc.frequency.exponentialRampToValueAtTime(10, t + 0.5);
+        
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.5, t);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
+
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(t);
+        osc.stop(t + 0.5);
+    }
+  };
+
+  const playBossAttackSound = (attack: 'shoot' | 'slam' | 'charge' | 'laser' | 'summon' | 'mortar') => {
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain).connect(ctx.destination);
+
+    switch (attack) {
+        case 'shoot':
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(200, t);
+            osc.frequency.exponentialRampToValueAtTime(50, t + 0.1);
+            gain.gain.setValueAtTime(0.1, t);
+            gain.gain.linearRampToValueAtTime(0, t + 0.1);
+            osc.start(t);
+            osc.stop(t + 0.1);
+            break;
+        case 'slam': // Deep Impact
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(120, t);
+            osc.frequency.exponentialRampToValueAtTime(30, t + 0.4);
+            gain.gain.setValueAtTime(0.2, t);
+            gain.gain.linearRampToValueAtTime(0, t + 0.4);
+            osc.start(t);
+            osc.stop(t + 0.4);
+            break;
+        case 'charge': // Dash Whoosh
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(100, t);
+            osc.frequency.linearRampToValueAtTime(300, t + 0.3);
+            gain.gain.setValueAtTime(0.1, t);
+            gain.gain.linearRampToValueAtTime(0, t + 0.3);
+            osc.start(t);
+            osc.stop(t + 0.3);
+            break;
+        case 'laser': // Energy Sweep
+             osc.type = 'sawtooth';
+             osc.frequency.setValueAtTime(500, t);
+             osc.frequency.exponentialRampToValueAtTime(100, t + 0.8);
+             gain.gain.setValueAtTime(0.1, t);
+             gain.gain.linearRampToValueAtTime(0, t + 0.8);
+             osc.start(t);
+             osc.stop(t + 0.8);
+             break;
+        case 'summon': // Rising Magic
+             osc.type = 'sine';
+             osc.frequency.setValueAtTime(300, t);
+             osc.frequency.linearRampToValueAtTime(600, t + 0.5);
+             gain.gain.setValueAtTime(0.1, t);
+             gain.gain.linearRampToValueAtTime(0, t + 0.5);
+             osc.start(t);
+             osc.stop(t + 0.5);
+             break;
+        case 'mortar': // Launch Thud
+             osc.type = 'square';
+             osc.frequency.setValueAtTime(150, t);
+             osc.frequency.exponentialRampToValueAtTime(20, t + 0.3);
+             gain.gain.setValueAtTime(0.2, t);
+             gain.gain.linearRampToValueAtTime(0, t + 0.3);
+             osc.start(t);
+             osc.stop(t + 0.3);
+             break;
+    }
+  };
+
+  const playWeaponSound = (type: WeaponType) => {
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
+    
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    switch (type) {
+      case 'normal': // Pew
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(400, t);
+        osc.frequency.exponentialRampToValueAtTime(100, t + 0.1);
+        gain.gain.setValueAtTime(0.05, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+        osc.start(t);
+        osc.stop(t + 0.1);
+        break;
+      case 'spread': // Heavy Shot
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(150, t);
+        osc.frequency.exponentialRampToValueAtTime(50, t + 0.15);
+        gain.gain.setValueAtTime(0.08, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+        osc.start(t);
+        osc.stop(t + 0.15);
+        break;
+      case 'laser': // Sci-fi Slide
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(800, t);
+        osc.frequency.exponentialRampToValueAtTime(100, t + 0.3);
+        gain.gain.setValueAtTime(0.05, t);
+        gain.gain.linearRampToValueAtTime(0, t + 0.3);
+        osc.start(t);
+        osc.stop(t + 0.3);
+        break;
+      case 'mouthwash': // Bubble/Wobble
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(400, t);
+        // Frequency modulation for bubble effect manually
+        osc.frequency.linearRampToValueAtTime(600, t + 0.05);
+        osc.frequency.linearRampToValueAtTime(300, t + 0.2);
+        gain.gain.setValueAtTime(0.05, t);
+        gain.gain.linearRampToValueAtTime(0, t + 0.2);
+        osc.start(t);
+        osc.stop(t + 0.2);
+        break;
+      case 'floss': // Sharp high pitch crack
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(3000, t);
+        osc.frequency.exponentialRampToValueAtTime(100, t + 0.05);
+        gain.gain.setValueAtTime(0.08, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+        osc.start(t);
+        osc.stop(t + 0.05);
+        break;
+      case 'toothbrush': // Swoosh (Low Sine sweep)
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(100, t);
+        osc.frequency.linearRampToValueAtTime(300, t + 0.15);
+        gain.gain.setValueAtTime(0, t);
+        gain.gain.linearRampToValueAtTime(0.08, t + 0.05);
+        gain.gain.linearRampToValueAtTime(0, t + 0.15);
+        osc.start(t);
+        osc.stop(t + 0.15);
+        break;
+    }
+  };
+
   // Mutable Game State
   const entities = useRef<{
     player: Player;
@@ -220,6 +578,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      initAudio(); // Initialize audio on first key press
       if (e.code === 'Escape') {
           if (gameState === GameState.PLAYING) setGameState(GameState.PAUSED);
           else if (gameState === GameState.PAUSED) setGameState(GameState.PLAYING);
@@ -293,15 +652,27 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     };
 
     const handleMouseDown = (e: MouseEvent) => {
+        initAudio(); // Initialize audio on click
         if (gameState !== GameState.PLAYING) return;
-        if (!inputs.current.shoot) inputs.current.shootPressed = true;
-        inputs.current.shoot = true;
+        
         inputs.current.usingMouse = true;
+        
+        // Left Click: Shoot
+        if (e.button === 0) {
+            if (!inputs.current.shoot) inputs.current.shootPressed = true;
+            inputs.current.shoot = true;
+        } 
+        // Right Click: Dash
+        else if (e.button === 2) {
+            if (!inputs.current.dash) inputs.current.dashPressed = true;
+            inputs.current.dash = true;
+        }
     };
 
     const handleMouseUp = (e: MouseEvent) => {
         if (gameState !== GameState.PLAYING) return;
-        inputs.current.shoot = false;
+        if (e.button === 0) inputs.current.shoot = false;
+        if (e.button === 2) inputs.current.dash = false;
     };
 
     const handleMouseMove = (e: MouseEvent) => {
@@ -318,11 +689,18 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         }
     };
 
+    const handleContextMenu = (e: MouseEvent) => {
+        if (gameState === GameState.PLAYING) {
+            e.preventDefault();
+        }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('mousedown', handleMouseDown);
     window.addEventListener('mouseup', handleMouseUp);
     window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('contextmenu', handleContextMenu);
     
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
@@ -330,6 +708,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       window.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('contextmenu', handleContextMenu);
     };
   }, [gameState, setGameState]);
 
@@ -337,6 +716,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
   // --- Game Logic ---
 
   const handleGameOver = async () => {
+    playGameOverSound();
     setGameState(GameState.GAME_OVER);
     const player = entities.current.player;
     const msg = await generateGameOverMessage(player.score, "Tooth Decay");
@@ -390,8 +770,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
   const spawnBoss = (arenaStartX: number) => {
       const stage = entities.current.level.stage;
-      const baseHp = 1000;
-      let maxHp = baseHp + (stage * 500);
+      const baseHp = 1500; // Increased base HP
+      let maxHp = baseHp + (stage * 800); // Higher scaling
       let bossVariant: Enemy['bossVariant'] = 'king';
       let w = 120, h = 160;
       let color = COLORS.enemyBoss;
@@ -400,35 +780,36 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       if (stage === 1) {
           bossVariant = 'king';
           name = "The Cavity King";
-          maxHp = 1000;
+          maxHp = 1500;
           color = '#3f3f46'; // Zinc
       } else if (stage === 2) {
           bossVariant = 'phantom';
           name = "Plaque Phantom";
-          maxHp = 1800;
+          maxHp = 2200;
           color = '#22d3ee'; // Cyan (Ghostly)
           w = 100; h = 100; // Smaller
       } else if (stage === 3) {
           bossVariant = 'tank';
           name = "Tartar Tank";
-          maxHp = 3000;
+          maxHp = 3500;
           color = '#57534e'; // Stone
           w = 160; h = 140; // Wider
       } else if (stage === 4) {
           bossVariant = 'general';
           name = "General Gingivitis";
-          maxHp = 2500;
+          maxHp = 3000;
           color = '#dc2626'; // Red
           w = 100; h = 180; // Tall
       } else {
           bossVariant = 'deity';
           name = "The Decay Deity";
-          maxHp = 5000;
+          maxHp = 6000;
           color = '#0f172a'; // Slate-900
           w = 140; h = 140;
       }
 
       setBossName(name);
+      playBossIntroSound(bossVariant);
 
       entities.current.enemies.push({
           id: 'boss',
@@ -464,21 +845,21 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     
     const rand = Math.random();
     let subType: Enemy['subType'] = 'bacteria';
-    let w = 32, h = 32, hp = 10 + (entities.current.level.stage * 2), color = COLORS.enemyBacteria;
+    let w = 32, h = 32, hp = 20 + (entities.current.level.stage * 4), color = COLORS.enemyBacteria;
     
     // Spawn table based on difficulty
     if (rand > 0.9) {
         subType = 'plaque_monster';
-        w = 48; h = 36; hp = 50 + (entities.current.level.stage * 5); color = COLORS.enemyPlaque;
+        w = 48; h = 36; hp = 80 + (entities.current.level.stage * 10); color = COLORS.enemyPlaque;
     } else if (rand > 0.75) {
         subType = 'tartar_turret';
-        w = 32; h = 48; hp = 25; color = COLORS.enemyTurret;
+        w = 32; h = 48; hp = 50; color = COLORS.enemyTurret;
     } else if (rand > 0.6) {
         subType = 'candy_bomber';
-        w = 40; h = 24; hp = 15; color = COLORS.enemyCandy;
+        w = 40; h = 24; hp = 30; color = COLORS.enemyCandy;
     } else if (rand > 0.45) {
         subType = 'sugar_rusher';
-        w = 24; h = 24; hp = 10; color = COLORS.enemyRusher;
+        w = 24; h = 24; hp = 20; color = COLORS.enemyRusher;
     }
 
     entities.current.enemies.push({
@@ -675,6 +1056,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
            // If mostly aiming side, spawn forward
            if (Math.abs(dx) > 0.5) spawnX = p.x + p.w/2 + (Math.sign(dx) * 20);
 
+           playWeaponSound(p.weapon); // Play Sound
            spawnProjectile(spawnX, spawnY, dx, dy, 'player', p.weapon);
            
            // Fire rate based on weapon AND level
@@ -821,7 +1203,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                             w: 8, h: 8,
                             vx: Math.cos(angle) * 5, vy: Math.sin(angle) * 5,
                             hp: 1, maxHp: 1, type: 'projectile', projectileType: 'bullet',
-                            damage: 10, owner: 'enemy', lifeTime: 3,
+                            damage: 10, owner: 'enemy', lifeTime: 3, hitIds: [],
                             color: COLORS.projectileEnemy, facing: 1, isGrounded: false, frameTimer: 0, state: 0
                         });
                         enemy.attackTimer = 0;
@@ -871,6 +1253,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                              enemy.vx = 0;
                              if (enemy.aiTimer > 0.5) {
                                  enemy.bossState = 2;
+                                 playBossAttackSound('charge'); // CHARGE SOUND
                                  enemy.vx = (p.x < enemy.x) ? -18 : 18; // Faster Dash
                                  enemy.aiTimer = 0;
                              }
@@ -883,6 +1266,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                              }
                         } else if (enemy.bossState === 3) { // Shoot
                              if (enemy.aiTimer > 0.3) {
+                                 playBossAttackSound('shoot'); // SHOOT SOUND
                                  // Fire 5 bullets spread
                                  for(let i=-2; i<=2; i++) {
                                      spawnProjectile(enemy.x + enemy.w/2, enemy.y + enemy.h/2, p.facing, 0, 'enemy', 'normal');
@@ -905,6 +1289,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                         } else if (enemy.bossState === 1) { // Mortar Barrage
                              enemy.vx = 0; enemy.vy += GRAVITY;
                              if (enemy.aiTimer > 0.8) {
+                                  playBossAttackSound('mortar'); // MORTAR SOUND
                                   // Fire 3 Mortars (Carpet Bomb)
                                   for(let i=0; i<3; i++) {
                                       const power = 0.01 + (i * 0.005);
@@ -915,7 +1300,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                                           vx: (p.x - enemy.x) * power * (1 + Math.random()*0.2), 
                                           vy: -14 + (Math.random()*2), 
                                           hp: 1, maxHp: 1, type: 'projectile', projectileType: 'mortar',
-                                          damage: 25, owner: 'enemy', lifeTime: 4,
+                                          damage: 25, owner: 'enemy', lifeTime: 4, hitIds: [],
                                           color: '#78716c', facing: 1, isGrounded: false, frameTimer: 0, state: 0
                                       });
                                   }
@@ -924,6 +1309,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                         } else if (enemy.bossState === 2) { // Ground Wave
                              enemy.vx = 0; enemy.vy += GRAVITY;
                              if (enemy.aiTimer > 0.8) {
+                                  playBossAttackSound('slam'); // SLAM/WAVE SOUND
                                   // Shoot waves in both directions
                                   [-1, 1].forEach(dir => {
                                       s.projectiles.push({
@@ -932,7 +1318,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                                           w: 40, h: 40, // Taller wave
                                           vx: dir * 10, vy: 0,
                                           hp: 1, maxHp: 1, type: 'projectile', projectileType: 'wave',
-                                          damage: 20, owner: 'enemy', lifeTime: 3,
+                                          damage: 20, owner: 'enemy', lifeTime: 3, hitIds: [],
                                           color: COLORS.projectileWave, facing: 1, isGrounded: false, frameTimer: 0, state: 0
                                       });
                                   });
@@ -957,6 +1343,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                          } else if (enemy.bossState === 1) { // Summon Horde
                              enemy.vx = 0;
                              if (enemy.aiTimer > 1.0) {
+                                 playBossAttackSound('summon'); // SUMMON SOUND
                                  // Summon 3 Minions
                                  for(let i=0; i<3; i++) {
                                      const minion: Enemy = {
@@ -973,26 +1360,28 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                          } else if (enemy.bossState === 2) { // Sweeping Laser
                              enemy.vx = 0;
                              if (enemy.aiTimer > 0.5) {
+                                 playBossAttackSound('laser'); // LASER SOUND
                                  // Laser down that moves
                                  s.projectiles.push({
                                     id: Math.random().toString(),
                                     x: enemy.x + enemy.w/2 - 10, y: enemy.y + enemy.h,
                                     w: 30, h: 400, vx: (p.x - enemy.x) * 0.03, vy: 15, // Moves horizontally
                                     hp: 1, maxHp: 1, type: 'projectile', projectileType: 'laser',
-                                    damage: 30, owner: 'enemy', lifeTime: 1.0, // Lasts longer
+                                    damage: 30, owner: 'enemy', lifeTime: 1.0, hitIds: [], // Lasts longer
                                     color: '#ef4444', facing: 1, isGrounded: false, frameTimer: 0, state: 0
                                  });
                                  enemy.bossState = 0; enemy.aiTimer = 0;
                              }
                          } else if (enemy.bossState === 5) { // Homing Infection
                              if (enemy.aiTimer > 0.5) {
+                                 playBossAttackSound('summon'); // ORB SOUND
                                  s.projectiles.push({
                                      id: Math.random().toString(),
                                      x: enemy.x + enemy.w/2, y: enemy.y + enemy.h/2,
                                      w: 24, h: 24,
                                      vx: 0, vy: 5,
                                      hp: 1, maxHp: 1, type: 'projectile', projectileType: 'bullet',
-                                     damage: 25, owner: 'enemy', lifeTime: 5,
+                                     damage: 25, owner: 'enemy', lifeTime: 5, hitIds: [],
                                      color: '#a855f7', facing: 1, isGrounded: false, frameTimer: 0, state: 0
                                  });
                                  enemy.bossState = 0; enemy.aiTimer = 0;
@@ -1007,6 +1396,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                             
                             // Spiral Shoot
                              if (enemy.attackTimer > 0.2) {
+                                 playBossAttackSound('shoot'); // SHOOT SOUND (Frequent)
                                  const angle = (Date.now() / 200);
                                  for(let i=0; i<3; i++) {
                                     const offset = (Math.PI * 2 / 3) * i;
@@ -1016,7 +1406,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                                         w: 12, h: 12,
                                         vx: Math.cos(angle + offset) * 5, vy: Math.sin(angle + offset) * 5,
                                         hp: 1, maxHp: 1, type: 'projectile', projectileType: 'bullet',
-                                        damage: 15, owner: 'enemy', lifeTime: 5,
+                                        damage: 15, owner: 'enemy', lifeTime: 5, hitIds: [],
                                         color: '#ef4444', facing: 1, isGrounded: false, frameTimer: 0, state: 0
                                     });
                                  }
@@ -1050,6 +1440,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                         } else if (enemy.bossState === 4) { // Shoot Pattern
                            enemy.vx = 0;
                             if (enemy.attackTimer > 0.5) {
+                                playBossAttackSound('shoot'); // SHOOT SOUND
                                 for(let i=-2; i<=2; i++) {
                                    s.projectiles.push({
                                        id: Math.random().toString(),
@@ -1057,7 +1448,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                                        w: 12, h: 12,
                                        vx: -8, vy: i * 3,
                                        hp: 1, maxHp: 1, type: 'projectile', projectileType: 'bullet',
-                                       damage: 15, owner: 'enemy', lifeTime: 4,
+                                       damage: 15, owner: 'enemy', lifeTime: 4, hitIds: [],
                                        color: COLORS.enemyCandy, facing: -1, isGrounded: false, frameTimer: 0, state: 0
                                    });
                                 }
@@ -1075,6 +1466,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                            enemy.vy += 1; // Gravity accel
                         } else if (enemy.bossState === 1) { // Summon/Chase
                             if (enemy.aiTimer > 1.0) {
+                               playBossAttackSound('summon'); // SUMMON SOUND
                                const minion: Enemy = {
                                    id: Math.random().toString(),
                                    x: enemy.x + enemy.w/2, y: enemy.y + 20,
@@ -1118,15 +1510,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                          
                          // Slam Effect
                          s.shake = 20; 
+                         playBossAttackSound('slam'); // SLAM IMPACT SOUND
                          s.projectiles.push({
                             id: Math.random().toString(), x: enemy.x, y: enemy.y + enemy.h - 20,
                             w: 40, h: 20, vx: -8, vy: 0, hp: 1, maxHp: 1, type: 'projectile', projectileType: 'wave',
-                            damage: 25, owner: 'enemy', lifeTime: 3, color: COLORS.projectileWave, facing: -1, isGrounded: false, frameTimer: 0, state: 0
+                            damage: 25, owner: 'enemy', lifeTime: 3, hitIds: [], color: COLORS.projectileWave, facing: -1, isGrounded: false, frameTimer: 0, state: 0
                          });
                          s.projectiles.push({
                             id: Math.random().toString(), x: enemy.x + enemy.w, y: enemy.y + enemy.h - 20,
                             w: 40, h: 20, vx: 8, vy: 0, hp: 1, maxHp: 1, type: 'projectile', projectileType: 'wave',
-                            damage: 25, owner: 'enemy', lifeTime: 3, color: COLORS.projectileWave, facing: 1, isGrounded: false, frameTimer: 0, state: 0
+                            damage: 25, owner: 'enemy', lifeTime: 3, hitIds: [], color: COLORS.projectileWave, facing: 1, isGrounded: false, frameTimer: 0, state: 0
                          });
                          enemy.bossState = 0;
                          enemy.aiTimer = 0;
@@ -1156,12 +1549,28 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             s.enemies.forEach(enemy => {
                 // If enemy is 'vanished' (State 5 for Phantom), don't hit
                 if (enemy.bossVariant === 'phantom' && enemy.bossState === 5) return;
+                
+                // --- PIERCING LOGIC FIX: Check if already hit this enemy ---
+                const piercingTypes = ['laser', 'floss', 'sword', 'wave'];
+                if (piercingTypes.includes(proj.projectileType)) {
+                    if (proj.hitIds && proj.hitIds.includes(enemy.id)) {
+                        return; // Already hit this enemy with this piercing shot
+                    }
+                }
 
                 if (checkRectCollide(proj, enemy)) {
                     enemy.hp -= proj.damage;
-                    if (proj.projectileType !== 'laser' && proj.projectileType !== 'floss' && proj.projectileType !== 'sword') {
+                    
+                    // Add to hit list for piercing types
+                    if (piercingTypes.includes(proj.projectileType)) {
+                        proj.hitIds.push(enemy.id);
+                    }
+                    
+                    // Destroy non-piercing projectiles
+                    if (!piercingTypes.includes(proj.projectileType)) {
                         proj.lifeTime = 0; 
                     }
+                    
                     spawnParticle(proj.x, proj.y, '#fff', 3);
                     
                     if (enemy.hp <= 0 && !enemy.dead) {
@@ -1256,7 +1665,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
           isGrounded: false,
           frameTimer: 0,
           state: 0,
-          type: 'projectile'
+          type: 'projectile',
+          hitIds: [] // Initialize empty hit list
       };
 
       // dx, dy are expected to be normalized direction vector (or close to it)
@@ -1295,18 +1705,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             entities.current.projectiles.push({
                 ...base,
                 x, y, w: 8, h: 8, vx: svx, vy: svy,
-                hp: 1, maxHp: 1, damage: 20, lifeTime: 1.0, projectileType: 'bullet', color: COLORS.projectilePlayer
+                hp: 1, maxHp: 1, damage: 6, lifeTime: 1.0, projectileType: 'bullet', color: COLORS.projectilePlayer
             } as Projectile);
           }
       } else if (type === 'laser') {
             const width = level >= 2 ? (level === 3 ? 12 : 6) : 4;
-            const dmg = 8 + ((level-1) * 4);
+            const dmg = 15 + ((level-1) * 5); // Hits once per enemy now
             
-            // Laser is drawn as a rectangle, rotation is purely visual in current rendering
-            // Physics-wise, it's just a fast bullet
-            // Ideally should be raycast, but projectile works for retro feel
-            
-            // For laser, we make a smaller hitbox that moves fast
             entities.current.projectiles.push({
                 ...base,
                 x, y, w: width, h: width, vx: vx * 20, vy: vy * 20,
@@ -1315,7 +1720,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
       } else if (type === 'mouthwash') {
             const speed = 8 + (level * 2);
-            const dmg = 40 + ((level-1)*10);
+            const dmg = 20 + ((level-1)*10);
             
             entities.current.projectiles.push({
                 ...base,
@@ -1334,13 +1739,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
       } else if (type === 'floss') {
             const range = 100 + ((level-1)*50); 
-            const dmg = 60 + ((level-1)*20);
+            const dmg = 25 + ((level-1)*10);
             const thickness = 20 + ((level-1)*10);
-            
-            // Whip Logic: Just place a static hitbox in front? 
-            // Better: Projectile with 0 velocity that lives short time
-            // Adjust w/h based on direction? 
-            // We just make a square box for hit detection, visual draws line
             
             entities.current.projectiles.push({
                 ...base,
@@ -1351,7 +1751,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       } else if (type === 'toothbrush') {
             // SWORD
             const size = 60 + ((level-1)*30);
-            const dmg = 80 + ((level-1)*40);
+            const dmg = 35 + ((level-1)*15);
 
             entities.current.projectiles.push({
                 ...base,
@@ -1360,7 +1760,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             } as Projectile);
       } else {
         // Normal
-        const dmg = 15;
+        const dmg = 8;
         // Level 3 = Double Shot
         if (level === 3) {
              const perpX = -dy;
@@ -1698,21 +2098,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
           const dy = mouseWorldY - hy;
           rotation = Math.atan2(dy, dx);
           
-          // If we are facing left, the sprite is usually drawn flipped or expected to point left
-          // But our draw logic below draws relative to facing. 
-          // If facing is -1, the sprite drawing logic below flips X coordinates manually or draws left-pointing.
-          // If we simply rotate, we might get upside down sprites.
-          
-          // To make it look right:
-          // If facing right, rotation is angle.
-          // If facing left, we want to rotate but keep the sprite upright?
-          // Simpler approach: Just rotate and let the sprite be upside down if aiming behind back?
-          // Or:
           if (facing === -1) {
-              // Adjust rotation because the "base" sprite for left-facing assumes pointing left (PI)
-              // So if we aim left (PI), rotation should be 0 relative to sprite?
-              // Let's assume the sprite drawing for Left is mirrored.
-              // Vector pointing left is PI.
               rotation = rotation - Math.PI; 
           }
       } else {
@@ -2259,6 +2645,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
   // --- Mobile Controls Helpers ---
   const handleTouch = (action: string, pressed: boolean) => (e: React.TouchEvent | React.MouseEvent) => {
       e.preventDefault();
+      initAudio(); // Initialize audio on touch
       switch(action) {
           case 'left': inputs.current.left = pressed; break;
           case 'right': inputs.current.right = pressed; break;
@@ -2305,7 +2692,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                       <span className="bg-slate-700 px-2 py-1 rounded">W : Aim Up</span>
                       <span className="bg-slate-700 px-2 py-1 rounded">SPACE : Jump (x2)</span>
                       <span className="bg-slate-700 px-2 py-1 rounded">CLICK / F : Shoot</span>
-                      <span className="bg-slate-700 px-2 py-1 rounded">SHIFT : Dash</span>
+                      <span className="bg-slate-700 px-2 py-1 rounded">SHIFT / R-CLICK : Dash</span>
                   </div>
               </div>
           </div>
