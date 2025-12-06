@@ -156,9 +156,42 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
           inputs.current.shootPressed = false;
           inputs.current.dashPressed = false;
 
+          const handleKeyUpGlobal = () => {
+             // Re-evaluate keys being held down currently to avoid stuck movement
+             // Note: In a real browser environment, we can't query current key state directly without events,
+             // so forcing false is the safest anti-stick measure. 
+             // The player will just need to press the key again.
+          };
+          handleKeyUpGlobal();
+
           onPerkApplied();
       }
   }, [selectedPerkId]);
+
+  useEffect(() => {
+    // Global listener for key up to prevent stuck keys when menu closes
+    const handleGlobalKeyUp = (e: KeyboardEvent) => {
+        switch (e.code) {
+            case 'KeyA': case 'ArrowLeft': inputs.current.left = false; break;
+            case 'KeyD': case 'ArrowRight': inputs.current.right = false; break;
+            case 'KeyW': case 'ArrowUp': inputs.current.aimUp = false; break;
+            case 'KeyS': case 'ArrowDown': inputs.current.down = false; break;
+            case 'KeyF': case 'KeyK': inputs.current.shoot = false; break;
+            case 'ShiftLeft': case 'ShiftRight': case 'KeyL': inputs.current.dash = false; break;
+        }
+    };
+    const handleGlobalMouseUp = (e: MouseEvent) => {
+        if (e.button === 0) inputs.current.shoot = false;
+        if (e.button === 2) inputs.current.dash = false;
+    };
+    
+    window.addEventListener('keyup', handleGlobalKeyUp);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => {
+        window.removeEventListener('keyup', handleGlobalKeyUp);
+        window.removeEventListener('mouseup', handleGlobalMouseUp);
+    }
+  }, []);
 
   useEffect(() => {
     if (gameState !== GameState.PLAYING && gameState !== GameState.PERK_SELECTION) return;
@@ -180,7 +213,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       
       draw(ctx);
       
-      if (gameState === GameState.PLAYING && entities.current.player.hp <= 0) {
+      if (gameState === GameState.PLAYING && entities.current.player.hp <= 0 && entities.current.player.lives <= 0) {
            handleGameOver();
       } else {
            animationFrameId = requestAnimationFrame(loop);
@@ -366,6 +399,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     }
 
     if (s.transition.phase === 'closing') {
+        if (s.transition.progress === 0) audioManager.current.playChew();
         s.transition.progress += dt * 0.8;
         if (s.transition.progress >= 1) {
             s.transition.progress = 1;
@@ -608,7 +642,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                             triggerPerkSelection();
                             s.levelTransitioning = true;
                             setTimeout(() => { 
-                                if (entities.current.transition.phase === 'none') entities.current.transition.phase = 'closing'; 
+                                if (entities.current.transition.phase === 'none') {
+                                    entities.current.transition.phase = 'closing'; 
+                                }
                             }, 3000); 
                         }
                     }

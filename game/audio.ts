@@ -99,6 +99,52 @@ export class AudioManager {
     osc.start(t); osc.stop(t + 0.3);
   }
 
+  playChew() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    
+    // Simulate multiple chomps/crunches
+    for(let i=0; i<3; i++) {
+        const start = t + (i * 0.12);
+        
+        // Noise (Crunch/Squish)
+        const bufferSize = this.ctx.sampleRate * 0.1;
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let j = 0; j < bufferSize; j++) {
+            data[j] = (Math.random() * 2 - 1) * (1 - j/bufferSize);
+        }
+        
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = buffer;
+        
+        const noiseFilter = this.ctx.createBiquadFilter();
+        noiseFilter.type = 'lowpass';
+        noiseFilter.frequency.setValueAtTime(800, start);
+        noiseFilter.frequency.exponentialRampToValueAtTime(100, start + 0.1);
+        
+        const noiseGain = this.ctx.createGain();
+        noiseGain.gain.setValueAtTime(0.6, start);
+        noiseGain.gain.exponentialRampToValueAtTime(0.01, start + 0.1);
+        
+        noise.connect(noiseFilter).connect(noiseGain).connect(this.ctx.destination);
+        noise.start(start);
+
+        // Low Thud (Jaw closing impact)
+        const osc = this.ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(150, start);
+        osc.frequency.exponentialRampToValueAtTime(40, start + 0.1);
+        
+        const oscGain = this.ctx.createGain();
+        oscGain.gain.setValueAtTime(0.4, start);
+        oscGain.gain.exponentialRampToValueAtTime(0.01, start + 0.1);
+        
+        osc.connect(oscGain).connect(this.ctx.destination);
+        osc.start(start);
+    }
+  }
+
   playWeaponSound(type: WeaponType) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;

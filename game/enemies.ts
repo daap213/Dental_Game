@@ -223,41 +223,55 @@ const drawBoss = (ctx: CanvasRenderingContext2D, e: Enemy) => {
         ctx.fillStyle = '#000'; ctx.beginPath(); ctx.moveTo(e.x, e.y + 30); ctx.lineTo(e.x + e.w, e.y+30); ctx.lineTo(e.x + e.w + 10, e.y + 40); ctx.lineTo(e.x - 10, e.y + 40); ctx.fill();
         ctx.fillStyle = '#fca5a5'; ctx.beginPath(); ctx.arc(e.x + e.w/2, e.y + 70, 25, 0, Math.PI*2); ctx.fill();
         ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(e.x + e.w/2, e.y + 70, 8, 0, Math.PI*2); ctx.fill();
-        if (e.bossState === 6) { // Grid Attack Eyes
+        if (e.bossState === 6 || e.bossState === 7) { // Grid Attack or Rain
             ctx.fillStyle = '#ff0000'; ctx.beginPath(); ctx.arc(e.x + e.w/2, e.y + 70, 5, 0, Math.PI*2); ctx.fill();
         }
     } else if (e.bossVariant === 'deity') {
-        // ENHANCED DEITY ANIMATION
+        // ENHANCED DEITY ANIMATION (LEVEL 5)
         ctx.save();
         ctx.translate(e.x + e.w/2, e.y + e.h/2);
-        const rot = Date.now() / 1000;
-        ctx.rotate(rot);
         
-        // Aura
-        const pulsing = 10 + Math.sin(Date.now() / 200) * 5;
-        ctx.shadowColor = e.phase === 2 ? '#ef4444' : '#6366f1';
-        ctx.shadowBlur = 20 + pulsing;
-
-        ctx.fillStyle = e.phase === 2 ? '#7f1d1d' : '#0f172a';
-        ctx.beginPath(); 
-        const spikes = 20; 
-        const r = e.w/2 + (Math.sin(Date.now()/100)*5);
-        for(let i=0; i<spikes*2; i++) { 
-            const angle = (Math.PI*2*i)/(spikes*2); 
-            const len = i%2===0 ? r : r*0.8; 
-            ctx.lineTo(Math.cos(angle)*len, Math.sin(angle)*len); 
+        // Multi-ring rotation
+        const t = Date.now() / 1000;
+        
+        // Outer Ring
+        ctx.rotate(t * 0.5);
+        ctx.shadowColor = e.phase === 2 ? '#ef4444' : '#818cf8';
+        ctx.shadowBlur = 20 + Math.sin(t*5)*10;
+        ctx.fillStyle = e.phase === 2 ? '#450a0a' : '#020617';
+        
+        // Complex geometry
+        ctx.beginPath();
+        const petals = e.phase === 2 ? 12 : 8;
+        for(let i=0; i<petals*2; i++) {
+            const angle = (Math.PI*2 * i) / (petals*2);
+            const r = (i%2===0) ? e.w*0.6 : e.w*0.3;
+            ctx.lineTo(Math.cos(angle)*r, Math.sin(angle)*r);
         }
         ctx.fill();
+
+        // Inner Ring (Counter Rotate)
+        ctx.rotate(-t * 1.5);
+        ctx.fillStyle = e.phase === 2 ? '#b91c1c' : '#312e81';
+        ctx.beginPath();
+        for(let i=0; i<4; i++) {
+             ctx.rect(-20, -20, 40, 40);
+             ctx.rotate(Math.PI/4);
+        }
+        ctx.fill();
+
+        // Core
+        ctx.rotate(t * 3);
+        ctx.fillStyle = '#fff';
+        ctx.shadowColor = '#fff';
+        ctx.shadowBlur = 30;
+        ctx.beginPath(); ctx.arc(0,0, 15, 0, Math.PI*2); ctx.fill();
         
-        // Void Halo
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(0,0, r + 20, 0, Math.PI*2); ctx.stroke();
-        
-        ctx.rotate(-rot * 2); // Counter rotate center
-        ctx.fillStyle = '#ef4444'; 
-        ctx.beginPath(); ctx.arc(-20, -20, 15, 0, Math.PI*2); ctx.fill();
-        ctx.beginPath(); ctx.arc(20, -20, 15, 0, Math.PI*2); ctx.fill();
+        // Glitch effect in Phase 2
+        if (e.phase === 2 && Math.random() > 0.8) {
+            ctx.fillStyle = '#ef4444';
+            ctx.fillRect(Math.random()*100-50, Math.random()*100-50, 50, 5);
+        }
         
         ctx.restore();
     } else {
@@ -306,14 +320,21 @@ export const updateEnemyAI = (enemy: Enemy, p: any, s: any, audio: AudioManager,
              } else if (enemy.bossVariant==='tank') {
                  // IMPROVED TANK AI (Level 3)
                  if(enemy.bossState===0) { enemy.vx=(p.x-enemy.x)>0?3:-3; enemy.vy+=GRAVITY; if(enemy.aiTimer>2.5) { enemy.bossState=Math.random()>0.5?1:(Math.random()>0.5?2:3); enemy.aiTimer=0; } }
-                 else if(enemy.bossState===1) { // Mortar
+                 else if(enemy.bossState===1) { // Mortar (Enhanced: 3 shells)
                     enemy.vx=0; enemy.vy+=GRAVITY; 
-                    if(enemy.aiTimer>0.8) { audio.playBossAttack('mortar'); for(let i=0;i<3;i++) s.projectiles.push({id:Math.random().toString(),x:enemy.x+enemy.w/2,y:enemy.y,w:16,h:16,vx:(p.x-enemy.x)*(0.01+i*0.005),vy:-14,hp:1,maxHp:1,type:'projectile',projectileType:'mortar',damage:25,owner:'enemy',lifeTime:4,hitIds:[],color:'#78716c',facing:1,isGrounded:false,frameTimer:0,state:0}); enemy.bossState=0; enemy.aiTimer=0; } 
+                    if(enemy.aiTimer>0.8) { 
+                        audio.playBossAttack('mortar'); 
+                        for(let i=-1; i<=1; i++) {
+                            // Spread shots to cover area
+                            s.projectiles.push({id:Math.random().toString(),x:enemy.x+enemy.w/2,y:enemy.y,w:16,h:16,vx:(p.x-enemy.x)*0.015 + (i*4),vy:-14,hp:1,maxHp:1,type:'projectile',projectileType:'mortar',damage:25,owner:'enemy',lifeTime:4,hitIds:[],color:'#78716c',facing:1,isGrounded:false,frameTimer:0,state:0}); 
+                        }
+                        enemy.bossState=0; enemy.aiTimer=0; 
+                    } 
                  }
                  else if(enemy.bossState===2) { // Slam
                     enemy.vx=0; enemy.vy+=GRAVITY; if(enemy.aiTimer>0.8) { audio.playBossAttack('slam'); [-1,1].forEach(d=>s.projectiles.push({id:Math.random().toString(),x:enemy.x,y:enemy.y+enemy.h-10,w:40,h:40,vx:d*12,vy:0,hp:1,maxHp:1,type:'projectile',projectileType:'wave',damage:20,owner:'enemy',lifeTime:3,hitIds:[],color:COLORS.projectileWave,facing:1,isGrounded:false,frameTimer:0,state:0})); enemy.bossState=0; enemy.aiTimer=0; } 
                  }
-                 else if(enemy.bossState===3) { // NEW: Rapid Fire Move
+                 else if(enemy.bossState===3) { // Rapid Fire Move
                      enemy.vx = (p.x - enemy.x) > 0 ? 5 : -5; enemy.vy += GRAVITY;
                      if (Math.floor(Date.now() / 200) % 2 === 0 && enemy.attackTimer > 0.2) {
                          spawnProjectile(s.projectiles, enemy.x + (enemy.vx>0?enemy.w:0), enemy.y + 40, enemy.vx > 0 ? 1 : -1, 0, 'enemy', 'normal');
@@ -324,8 +345,8 @@ export const updateEnemyAI = (enemy: Enemy, p: any, s: any, audio: AudioManager,
              } else if (enemy.bossVariant==='general') {
                  // IMPROVED GENERAL AI (Level 4)
                  enemy.vy = Math.sin(Date.now()/600)*0.5; if(enemy.y>100) enemy.y-=1;
-                 if(enemy.bossState===0) { enemy.vx=(p.x-enemy.x)*0.03; if(enemy.aiTimer>1.5) { const r=Math.random(); enemy.bossState=r<0.3?1:(r<0.6?2:(r<0.8?5:6)); enemy.aiTimer=0; } }
-                 else if(enemy.bossState===1 && enemy.aiTimer>1) { // Summon (Increased from 3 to 4)
+                 if(enemy.bossState===0) { enemy.vx=(p.x-enemy.x)*0.03; if(enemy.aiTimer>1.5) { const r=Math.random(); enemy.bossState=r<0.3?1:(r<0.5?2:(r<0.7?5:(r<0.85?6:7))); enemy.aiTimer=0; } }
+                 else if(enemy.bossState===1 && enemy.aiTimer>1) { // Summon
                     audio.playBossAttack('summon'); 
                     for(let i=0;i<4;i++) s.enemies.push({id:Math.random().toString(),x:enemy.x+enemy.w/2+(i*30-45),y:enemy.y+enemy.h,w:20,h:20,vx:(Math.random()-0.5)*12,vy:-8,hp:15,maxHp:15,type:'enemy',subType:'bacteria',color:COLORS.enemyBacteria,facing:-1,isGrounded:false,aiTimer:0,attackTimer:0,frameTimer:0,state:0,bossState:0}); enemy.bossState=0; enemy.aiTimer=0; 
                  }
@@ -335,24 +356,65 @@ export const updateEnemyAI = (enemy: Enemy, p: any, s: any, audio: AudioManager,
                  else if(enemy.bossState===5 && enemy.aiTimer>0.5) { // Homing Bullet
                     audio.playBossAttack('summon'); s.projectiles.push({id:Math.random().toString(),x:enemy.x,y:enemy.y,w:24,h:24,vx:0,vy:5,hp:1,maxHp:1,type:'projectile',projectileType:'bullet',damage:25,owner:'enemy',lifeTime:5,hitIds:[],color:'#a855f7',facing:1,isGrounded:false,frameTimer:0,state:0}); enemy.bossState=0; enemy.aiTimer=0; 
                  }
-                 else if(enemy.bossState===6 && enemy.aiTimer>1.0) { // NEW: Grid Laser
+                 else if(enemy.bossState===6 && enemy.aiTimer>1.0) { // Grid Laser
                      audio.playBossAttack('laser');
-                     // Vertical
                      s.projectiles.push({id:Math.random().toString(),x:p.x,y:0,w:20,h:CANVAS_HEIGHT,vx:0,vy:0,hp:1,maxHp:1,type:'projectile',projectileType:'laser',damage:20,owner:'enemy',lifeTime:0.5,hitIds:[],color:'#ef4444',facing:1,isGrounded:false,frameTimer:0,state:0});
-                     // Horizontal
                      s.projectiles.push({id:Math.random().toString(),x:0,y:p.y+10,w:s.level.levelWidth,h:20,vx:0,vy:0,hp:1,maxHp:1,type:'projectile',projectileType:'laser',damage:20,owner:'enemy',lifeTime:0.5,hitIds:[],color:'#ef4444',facing:1,isGrounded:false,frameTimer:0,state:0});
+                     enemy.bossState=0; enemy.aiTimer=0;
+                 }
+                 else if(enemy.bossState===7 && enemy.aiTimer>0.5) { // Rain Fire (New Attack)
+                     audio.playBossAttack('summon');
+                     for(let i=0; i<10; i++) {
+                         const rx = Math.random() * CANVAS_WIDTH;
+                         s.projectiles.push({id:Math.random().toString(),x:s.camera.x + rx,y:0,w:10,h:30,vx:0,vy:10,hp:1,maxHp:1,type:'projectile',projectileType:'laser',damage:15,owner:'enemy',lifeTime:2,hitIds:[],color:'#f97316',facing:1,isGrounded:false,frameTimer:0,state:0});
+                     }
                      enemy.bossState=0; enemy.aiTimer=0;
                  }
              } else if (enemy.bossVariant==='deity') {
                  // IMPROVED DEITY AI (Level 5)
-                 if(enemy.phase===1) { 
+                 const phaseMult = enemy.phase === 2 ? 1.5 : 1.0;
+                 
+                 if(enemy.phase===1 && enemy.bossState===0) { 
                      enemy.vx=(CANVAS_WIDTH/2+s.camera.x-enemy.x-enemy.w/2)*0.05; enemy.vy=Math.sin(Date.now()/400); 
-                     if(enemy.attackTimer>0.2) { audio.playBossAttack('shoot'); const ang=Date.now()/200; for(let i=0;i<3;i++) spawnProjectile(s.projectiles, enemy.x+enemy.w/2,enemy.y+enemy.h/2, Math.cos(ang+i*2), Math.sin(ang+i*2), 'enemy', 'normal'); enemy.attackTimer=0; } 
+                     if(enemy.attackTimer>0.2) { 
+                         // Spiral Attack
+                         audio.playBossAttack('shoot'); 
+                         const ang = Date.now()/200; 
+                         for(let i=0;i<3;i++) spawnProjectile(s.projectiles, enemy.x+enemy.w/2,enemy.y+enemy.h/2, Math.cos(ang+i*2), Math.sin(ang+i*2), 'enemy', 'normal'); 
+                         enemy.attackTimer=0; 
+                     } 
                  }
                  else { 
-                     // Phase 2: Berserk
-                     if(enemy.bossState===0) { enemy.vx=(p.x-enemy.x)*0.08; enemy.vy=(p.y-enemy.y)*0.08; if(enemy.aiTimer>2) { enemy.bossState=1; enemy.aiTimer=0; } } 
-                     else if(enemy.bossState===1) { enemy.vy=25; enemy.vx=0; } 
+                     // Phase 2: Berserk Logic
+                     if(enemy.bossState===0) { // Hover & Shoot Nova
+                         enemy.vx=(p.x-enemy.x)*0.08; enemy.vy=(p.y-enemy.y)*0.08; 
+                         if (Math.random() < 0.05 && enemy.attackTimer > 0.5) {
+                             audio.playBossAttack('shoot');
+                             // Nova Burst
+                             for(let i=0; i<8; i++) {
+                                 const ang = (Math.PI*2 * i) / 8;
+                                 s.projectiles.push({id:Math.random().toString(),x:enemy.x+enemy.w/2,y:enemy.y+enemy.h/2,w:15,h:15,vx:Math.cos(ang)*8,vy:Math.sin(ang)*8,hp:1,maxHp:1,type:'projectile',projectileType:'bullet',damage:20,owner:'enemy',lifeTime:3,hitIds:[],color:'#ef4444',facing:1,isGrounded:false,frameTimer:0,state:0});
+                             }
+                             enemy.attackTimer = 0;
+                         }
+                         if(enemy.aiTimer>3) { enemy.bossState=Math.random()>0.5?1:2; enemy.aiTimer=0; } 
+                     } 
+                     else if(enemy.bossState===1) { // Slam
+                         enemy.vy=25; enemy.vx=0; 
+                     }
+                     else if(enemy.bossState===2) { // Void Pulse (Spiral Dense)
+                         enemy.vx = 0; enemy.vy = 0;
+                         if (enemy.attackTimer > 0.1) {
+                             audio.playBossAttack('laser');
+                             const offset = enemy.aiTimer * 10;
+                             for(let i=0; i<4; i++) {
+                                 const ang = offset + (Math.PI*2*i)/4;
+                                 s.projectiles.push({id:Math.random().toString(),x:enemy.x+enemy.w/2,y:enemy.y+enemy.h/2,w:12,h:12,vx:Math.cos(ang)*10,vy:Math.sin(ang)*10,hp:1,maxHp:1,type:'projectile',projectileType:'bullet',damage:15,owner:'enemy',lifeTime:3,hitIds:[],color:'#7f1d1d',facing:1,isGrounded:false,frameTimer:0,state:0});
+                             }
+                             enemy.attackTimer = 0;
+                         }
+                         if (enemy.aiTimer > 2.0) { enemy.bossState = 0; enemy.aiTimer = 0; }
+                     }
                  }
              } else { // King
                  if(enemy.bossState===0) { enemy.vy=Math.sin(Date.now()/500)*0.5; enemy.vx=(p.x-enemy.x)*0.02; if(enemy.aiTimer>2) { enemy.aiTimer=0; const r=Math.random(); enemy.bossState=r<0.3?4:(r<0.6?2:1); } }

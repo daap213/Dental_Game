@@ -26,7 +26,14 @@ export const TEXT = {
             ctrl_aim: "Aim Up",
             ctrl_jump: "Jump (x2)",
             ctrl_shoot: "Shoot",
-            ctrl_dash: "Dash"
+            ctrl_dash: "Dash",
+            select_char: "Select Class"
+        },
+        characters: {
+            molar: "THE GRINDER (Molar)",
+            incisor: "THE CUTTER (Incisor)",
+            canine: "THE RIPPER (Canine)",
+            premolar: "THE CRUSHER (Premolar)"
         },
         database: {
             title: "TACTICAL KNOWLEDGE",
@@ -50,7 +57,11 @@ export const TEXT = {
             stage: "STAGE",
             score: "SCORE",
             lvl: "LVL",
-            slow: "SLOW"
+            slow: "SLOW",
+            stat_dmg: "DMG",
+            stat_spd: "SPD",
+            stat_def: "DEF",
+            stat_dash: "DASH"
         },
         pause: {
             title: "PAUSED",
@@ -158,7 +169,14 @@ export const TEXT = {
             ctrl_aim: "Apuntar Arriba",
             ctrl_jump: "Saltar (x2)",
             ctrl_shoot: "Disparar",
-            ctrl_dash: "Impulso/Dash"
+            ctrl_dash: "Impulso/Dash",
+            select_char: "Clase de Diente"
+        },
+        characters: {
+            molar: "EL TRITURADOR (Molar)",
+            incisor: "EL CORTADOR (Incisivo)",
+            canine: "EL DESGARRADOR (Canino)",
+            premolar: "EL APLASTADOR (Premolar)"
         },
         database: {
             title: "CONOCIMIENTO TÁCTICO",
@@ -182,7 +200,11 @@ export const TEXT = {
             stage: "FASE",
             score: "PUNTAJE",
             lvl: "NVL",
-            slow: "LENTO"
+            slow: "LENTO",
+            stat_dmg: "DAÑO",
+            stat_spd: "VEL",
+            stat_def: "DEF",
+            stat_dash: "DASH"
         },
         pause: {
             title: "PAUSA",

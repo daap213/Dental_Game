@@ -24,6 +24,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStart, briefing, inputMeth
   const [showIntel, setShowIntel] = useState(false);
   const [showCredits, setShowCredits] = useState(false);
   const t = TEXT[lang].menu;
+  const c = TEXT[lang].characters;
 
   if (showCredits) {
     return <Credits onClose={() => setShowCredits(false)} lang={lang} />;
@@ -89,12 +90,12 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStart, briefing, inputMeth
           
           {/* CHARACTER SELECTION */}
           <div className="flex flex-col items-center gap-2 w-full">
-            <h3 className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">SELECT OPERATIVE</h3>
-            <div className="flex flex-wrap justify-center gap-2">
-                <LoadoutBtn active={character === 'molar'} onClick={() => setCharacter('molar')} icon={<Box className="w-5 h-5"/>} label="MOLAR" color="text-white" />
-                <LoadoutBtn active={character === 'incisor'} onClick={() => setCharacter('incisor')} icon={<Square className="w-5 h-5"/>} label="INCISOR" color="text-cyan-300" />
-                <LoadoutBtn active={character === 'canine'} onClick={() => setCharacter('canine')} icon={<Triangle className="w-5 h-5"/>} label="CANINE" color="text-red-300" />
-                <LoadoutBtn active={character === 'premolar'} onClick={() => setCharacter('premolar')} icon={<Hexagon className="w-5 h-5"/>} label="PREMOLAR" color="text-purple-300" />
+            <h3 className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">{t.select_char}</h3>
+            <div className="grid grid-cols-2 gap-2 w-full max-w-md">
+                <CharacterBtn active={character === 'molar'} onClick={() => setCharacter('molar')} label={c.molar} />
+                <CharacterBtn active={character === 'incisor'} onClick={() => setCharacter('incisor')} label={c.incisor} />
+                <CharacterBtn active={character === 'canine'} onClick={() => setCharacter('canine')} label={c.canine} />
+                <CharacterBtn active={character === 'premolar'} onClick={() => setCharacter('premolar')} label={c.premolar} />
             </div>
           </div>
 
@@ -189,6 +190,18 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStart, briefing, inputMeth
     </div>
   );
 };
+
+const CharacterBtn = ({active, onClick, label}: any) => (
+    <button 
+        onClick={onClick}
+        className={`
+            px-4 py-3 rounded border-2 transition-all text-xs font-bold uppercase tracking-wider
+            ${active ? 'bg-pink-600 border-pink-400 text-white shadow-lg scale-105' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'}
+        `}
+    >
+        {label}
+    </button>
+);
 
 const LoadoutBtn = ({active, onClick, icon, label, color}: any) => (
     <button 
