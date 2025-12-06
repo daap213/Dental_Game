@@ -49,11 +49,28 @@ const drawRoundRect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: n
     ctx.fill();
 };
 
-export const drawBackground = (ctx: CanvasRenderingContext2D, cameraX: number) => {
-    // 1. Dark Interior Throat
+export const drawBackground = (ctx: CanvasRenderingContext2D, cameraX: number, stage: number) => {
+    // 1. DYNAMIC THROAT BACKGROUND
     const throatGrad = ctx.createRadialGradient(CANVAS_WIDTH/2, CANVAS_HEIGHT/2, 50, CANVAS_WIDTH/2, CANVAS_HEIGHT/2, CANVAS_WIDTH);
-    throatGrad.addColorStop(0, '#580505');
-    throatGrad.addColorStop(1, '#250202');
+    
+    // Colors change based on Stage
+    if (stage === 1) { // Normal
+        throatGrad.addColorStop(0, '#580505');
+        throatGrad.addColorStop(1, '#250202');
+    } else if (stage === 2) { // Inflamed
+        throatGrad.addColorStop(0, '#991b1b');
+        throatGrad.addColorStop(1, '#450a0a');
+    } else if (stage === 3) { // Tartar / Infected
+        throatGrad.addColorStop(0, '#713f12'); // Brown/Yellowish
+        throatGrad.addColorStop(1, '#422006');
+    } else if (stage === 4) { // Deep Infection
+        throatGrad.addColorStop(0, '#4c0519'); // Dark Pink/Purple
+        throatGrad.addColorStop(1, '#1e1b4b');
+    } else { // The Void (Decay)
+        throatGrad.addColorStop(0, '#0f172a');
+        throatGrad.addColorStop(1, '#020617');
+    }
+    
     ctx.fillStyle = throatGrad;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
@@ -72,7 +89,7 @@ export const drawBackground = (ctx: CanvasRenderingContext2D, cameraX: number) =
     ctx.ellipse(openingX, openingY, 250, 180, 0, 0, Math.PI*2);
     const lightGrad = ctx.createRadialGradient(openingX, openingY, 50, openingX, openingY, 250);
     lightGrad.addColorStop(0, '#bae6fd'); 
-    lightGrad.addColorStop(0.7, '#f472b6');
+    lightGrad.addColorStop(0.7, stage >= 4 ? '#4c1d95' : '#f472b6'); // Purple light for later stages
     lightGrad.addColorStop(1, 'rgba(88, 5, 5, 0)');
     ctx.fillStyle = lightGrad;
     ctx.fill();
@@ -125,31 +142,31 @@ export const drawBackground = (ctx: CanvasRenderingContext2D, cameraX: number) =
     const toothW = 90;
     const startToothX = -(midBgOffsetX % toothW);
     
+    let toothColorTop = '#94a3b8'; let toothColorBot = '#e2e8f0';
+    if (stage === 3) { toothColorTop = '#b45309'; toothColorBot = '#fcd34d'; } // Yellow tartar
+
     const topToothGrad = ctx.createLinearGradient(0, -20, 0, 60);
-    topToothGrad.addColorStop(0, '#94a3b8'); // Root/Gum shadow
+    topToothGrad.addColorStop(0, toothColorTop); 
     topToothGrad.addColorStop(0.3, '#cbd5e1');
-    topToothGrad.addColorStop(1, '#e2e8f0'); // Tip
+    topToothGrad.addColorStop(1, toothColorBot); 
 
     const botToothGrad = ctx.createLinearGradient(0, CANVAS_HEIGHT + 20, 0, CANVAS_HEIGHT - 60);
-    botToothGrad.addColorStop(0, '#94a3b8');
+    botToothGrad.addColorStop(0, toothColorTop);
     botToothGrad.addColorStop(0.3, '#cbd5e1');
-    botToothGrad.addColorStop(1, '#e2e8f0');
+    botToothGrad.addColorStop(1, toothColorBot);
 
     for (let x = startToothX - toothW; x < CANVAS_WIDTH; x += toothW) {
         // TOP MOLARS
         ctx.fillStyle = topToothGrad;
         ctx.beginPath();
         ctx.moveTo(x, -30);
-        // Left Cusp
         ctx.quadraticCurveTo(x + 5, 50, x + toothW * 0.3, 55);
-        // Central Fissure (Valley)
         ctx.quadraticCurveTo(x + toothW * 0.5, 45, x + toothW * 0.7, 55);
-        // Right Cusp
         ctx.quadraticCurveTo(x + toothW - 5, 50, x + toothW, -30);
         ctx.fill();
 
         // Top Gums
-        ctx.fillStyle = '#9f1239'; // Dark pink
+        ctx.fillStyle = stage === 2 ? '#dc2626' : '#9f1239'; // Brighter red if inflamed
         ctx.beginPath();
         ctx.moveTo(x, -30);
         ctx.quadraticCurveTo(x + toothW/2, 0, x + toothW, -30);
@@ -159,16 +176,13 @@ export const drawBackground = (ctx: CanvasRenderingContext2D, cameraX: number) =
         ctx.fillStyle = botToothGrad;
         ctx.beginPath();
         ctx.moveTo(x, CANVAS_HEIGHT + 30);
-        // Left Cusp
         ctx.quadraticCurveTo(x + 5, CANVAS_HEIGHT - 50, x + toothW * 0.3, CANVAS_HEIGHT - 55);
-        // Central Fissure
         ctx.quadraticCurveTo(x + toothW * 0.5, CANVAS_HEIGHT - 45, x + toothW * 0.7, CANVAS_HEIGHT - 55);
-        // Right Cusp
         ctx.quadraticCurveTo(x + toothW - 5, CANVAS_HEIGHT - 50, x + toothW, CANVAS_HEIGHT + 30);
         ctx.fill();
 
         // Bottom Gums
-        ctx.fillStyle = '#9f1239';
+        ctx.fillStyle = stage === 2 ? '#dc2626' : '#9f1239';
         ctx.beginPath();
         ctx.moveTo(x, CANVAS_HEIGHT + 30);
         ctx.quadraticCurveTo(x + toothW/2, CANVAS_HEIGHT, x + toothW, CANVAS_HEIGHT + 30);

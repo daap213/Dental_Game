@@ -6,7 +6,7 @@ import { GameOver } from './components/views/GameOver';
 import { PauseMenu } from './components/views/PauseMenu';
 import { PerkMenu } from './components/views/PerkMenu';
 import { Credits } from './components/views/Credits';
-import { GameState, InputMethod, Perk, LoadoutType, Language } from './types';
+import { GameState, InputMethod, Perk, LoadoutType, Language, Difficulty, CharacterType } from './types';
 import { generateBriefing } from './services/geminiService';
 
 const App: React.FC = () => {
@@ -17,9 +17,11 @@ const App: React.FC = () => {
   const [briefing, setBriefing] = useState<string>("Loading Mission...");
   const [inputMethod, setInputMethod] = useState<InputMethod>('mouse');
   const [loadout, setLoadout] = useState<LoadoutType>('all');
+  const [difficulty, setDifficulty] = useState<Difficulty>('normal');
   const [availablePerks, setAvailablePerks] = useState<Perk[]>([]);
   const [selectedPerkId, setSelectedPerkId] = useState<string | null>(null);
   const [language, setLanguage] = useState<Language>('en');
+  const [character, setCharacter] = useState<CharacterType>('molar');
 
   useEffect(() => {
     if (gameState === GameState.MENU) {
@@ -46,7 +48,6 @@ const App: React.FC = () => {
 
   const handlePerkSelect = (perkId: string) => {
       setSelectedPerkId(perkId);
-      // Actual application handled in GameCanvas via effect, then it calls back
   };
 
   const handlePerkApplied = () => {
@@ -62,6 +63,8 @@ const App: React.FC = () => {
         sessionId={sessionId}
         inputMethod={inputMethod}
         loadout={loadout}
+        difficulty={difficulty}
+        character={character}
         onPerkSelectStart={handlePerkSelectionStart}
         selectedPerkId={selectedPerkId}
         onPerkApplied={handlePerkApplied}
@@ -78,6 +81,10 @@ const App: React.FC = () => {
             setInputMethod={setInputMethod}
             loadout={loadout}
             setLoadout={setLoadout}
+            difficulty={difficulty}
+            setDifficulty={setDifficulty}
+            character={character}
+            setCharacter={setCharacter}
             lang={language}
             setLang={setLanguage}
           />

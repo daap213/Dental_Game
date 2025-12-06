@@ -13,7 +13,7 @@ export const PLAYER_DASH_SPEED = 20; // Reduced from 22
 export const PLAYER_DASH_DURATION = 0.15; // Reduced from 0.2
 export const PLAYER_DASH_COOLDOWN = 0.8;
 export const PLAYER_MAX_JUMPS = 2;
-export const MAX_WEAPON_LEVEL = 3;
+export const MAX_WEAPON_LEVEL = 5;
 
 // Perk Thresholds
 export const SCORE_MILESTONE_START = 6200;

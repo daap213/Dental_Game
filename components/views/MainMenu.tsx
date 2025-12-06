@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { InputMethod, LoadoutType, Language } from '../../types';
-import { MousePointer, Keyboard, Info, X, ShieldAlert, Crosshair, Skull, Sword, Zap, Wind, Waves, Rocket, User, Trophy, Gift, Star, Activity, Shield, Heart, Infinity, Globe } from 'lucide-react';
+import { InputMethod, LoadoutType, Language, Difficulty, CharacterType } from '../../types';
+import { MousePointer, Keyboard, Info, X, ShieldAlert, Crosshair, Skull, Sword, Zap, Wind, Waves, Rocket, User, Trophy, Gift, Star, Activity, Shield, Heart, Infinity, Globe, Gauge, Hexagon, Triangle, Square, Box } from 'lucide-react';
 import { Credits } from './Credits';
 import { TEXT } from '../../utils/locales';
 
@@ -12,11 +12,15 @@ interface MainMenuProps {
   setInputMethod: (method: InputMethod) => void;
   loadout: LoadoutType;
   setLoadout: (l: LoadoutType) => void;
+  difficulty: Difficulty;
+  setDifficulty: (d: Difficulty) => void;
+  character: CharacterType;
+  setCharacter: (c: CharacterType) => void;
   lang: Language;
   setLang: (l: Language) => void;
 }
 
-export const MainMenu: React.FC<MainMenuProps> = ({ onStart, briefing, inputMethod, setInputMethod, loadout, setLoadout, lang, setLang }) => {
+export const MainMenu: React.FC<MainMenuProps> = ({ onStart, briefing, inputMethod, setInputMethod, loadout, setLoadout, difficulty, setDifficulty, character, setCharacter, lang, setLang }) => {
   const [showIntel, setShowIntel] = useState(false);
   const [showCredits, setShowCredits] = useState(false);
   const t = TEXT[lang].menu;
@@ -79,6 +83,48 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStart, briefing, inputMeth
                 >
                     <Keyboard className="w-4 h-4" />
                     <span className="text-xs font-bold">{t.keyboard_aim}</span>
+                </button>
+            </div>
+          </div>
+          
+          {/* CHARACTER SELECTION */}
+          <div className="flex flex-col items-center gap-2 w-full">
+            <h3 className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">SELECT OPERATIVE</h3>
+            <div className="flex flex-wrap justify-center gap-2">
+                <LoadoutBtn active={character === 'molar'} onClick={() => setCharacter('molar')} icon={<Box className="w-5 h-5"/>} label="MOLAR" color="text-white" />
+                <LoadoutBtn active={character === 'incisor'} onClick={() => setCharacter('incisor')} icon={<Square className="w-5 h-5"/>} label="INCISOR" color="text-cyan-300" />
+                <LoadoutBtn active={character === 'canine'} onClick={() => setCharacter('canine')} icon={<Triangle className="w-5 h-5"/>} label="CANINE" color="text-red-300" />
+                <LoadoutBtn active={character === 'premolar'} onClick={() => setCharacter('premolar')} icon={<Hexagon className="w-5 h-5"/>} label="PREMOLAR" color="text-purple-300" />
+            </div>
+          </div>
+
+          {/* DIFFICULTY SELECTION */}
+          <div className="flex flex-col items-center gap-2 w-full">
+            <h3 className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">{t.select_difficulty}</h3>
+            <div className="flex flex-wrap justify-center gap-2">
+                <button 
+                    onClick={() => setDifficulty('easy')} 
+                    className={`px-3 py-2 text-xs font-bold rounded border-2 transition-all ${difficulty === 'easy' ? 'bg-green-600 border-green-400 text-white' : 'bg-slate-800 border-slate-600 text-slate-400'}`}
+                >
+                    {t.diff_easy}
+                </button>
+                <button 
+                    onClick={() => setDifficulty('normal')} 
+                    className={`px-3 py-2 text-xs font-bold rounded border-2 transition-all ${difficulty === 'normal' ? 'bg-blue-600 border-blue-400 text-white' : 'bg-slate-800 border-slate-600 text-slate-400'}`}
+                >
+                    {t.diff_normal}
+                </button>
+                <button 
+                    onClick={() => setDifficulty('hard')} 
+                    className={`px-3 py-2 text-xs font-bold rounded border-2 transition-all ${difficulty === 'hard' ? 'bg-orange-600 border-orange-400 text-white' : 'bg-slate-800 border-slate-600 text-slate-400'}`}
+                >
+                    {t.diff_hard}
+                </button>
+                <button 
+                    onClick={() => setDifficulty('legend')} 
+                    className={`px-3 py-2 text-xs font-bold rounded border-2 transition-all ${difficulty === 'legend' ? 'bg-purple-600 border-purple-400 text-white' : 'bg-slate-800 border-slate-600 text-slate-400'}`}
+                >
+                    {t.diff_legend}
                 </button>
             </div>
           </div>

@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useState } from 'react';
-import { GameState, Entity, Player, Enemy, Projectile, Platform, Particle, PowerUp, LevelState, Rect, WeaponType, InputMethod, Perk, LoadoutType, Language } from '../types';
+import { GameState, Entity, Player, Enemy, Projectile, Platform, Particle, PowerUp, LevelState, Rect, WeaponType, InputMethod, Perk, LoadoutType, Language, Difficulty, CharacterType } from '../types';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, GRAVITY, COLORS, PLAYER_SPEED, PLAYER_JUMP, FRICTION, TERMINAL_VELOCITY, PLAYER_SIZE, PLAYER_DASH_SPEED, PLAYER_DASH_DURATION, PLAYER_DASH_COOLDOWN, PLAYER_MAX_JUMPS, MAX_WEAPON_LEVEL, SCORE_MILESTONE_START, SCORE_MILESTONE_INCREMENT, KILL_MILESTONE_START, KILL_MILESTONE_INCREMENT_START, SHIELD_REGEN_DELAY, SHIELD_REGEN_RATE } from '../constants';
 import { generateGameOverMessage } from '../services/geminiService';
 import { checkRectCollide } from '../utils/physics';
@@ -20,6 +20,8 @@ interface GameCanvasProps {
   sessionId: number;
   inputMethod: InputMethod;
   loadout: LoadoutType;
+  difficulty: Difficulty;
+  character: CharacterType;
   onPerkSelectStart: (perks: Perk[]) => void;
   selectedPerkId: string | null;
   onPerkApplied: () => void;
@@ -27,7 +29,14 @@ interface GameCanvasProps {
   lang: Language;
 }
 
-export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, setGameState, sessionId, inputMethod, loadout, onPerkSelectStart, selectedPerkId, onPerkApplied, onVictory, lang }) => {
+const DIFFICULTY_CONFIG = {
+    easy: { dropRate: 0.25, dmgDealt: 1.15, dmgTaken: 0.85, hpMult: 1.25, milestoneMult: 0.75 },
+    normal: { dropRate: 0.15, dmgDealt: 1.0, dmgTaken: 1.0, hpMult: 1.0, milestoneMult: 1.0 },
+    hard: { dropRate: 0.08, dmgDealt: 0.98, dmgTaken: 1.0, hpMult: 1.0, milestoneMult: 1.0 },
+    legend: { dropRate: 0.05, dmgDealt: 0.95, dmgTaken: 1.05, hpMult: 1.0, milestoneMult: 1.30 }
+};
+
+export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, setGameState, sessionId, inputMethod, loadout, difficulty, character, onPerkSelectStart, selectedPerkId, onPerkApplied, onVictory, lang }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [score, setScore] = useState(0);
   const [hp, setHp] = useState(100);
@@ -79,9 +88,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     const startingWeapon: WeaponType = (loadout === 'all') ? 'normal' : loadout;
     const initialLevels = { normal: 1, spread: 1, laser: 1, mouthwash: 1, floss: 1, toothbrush: 1 };
     
+    // Apply Difficulty Modifiers
+    const config = DIFFICULTY_CONFIG[difficulty] || DIFFICULTY_CONFIG.normal;
+    const initialMaxHp = 100 * config.hpMult;
+    
     return {
       id: 'player', x: 100, y: 200, w: PLAYER_SIZE, h: PLAYER_SIZE, vx: 0, vy: 0,
-      hp: 100, maxHp: 100, type: 'player', color: COLORS.player, facing: 1, isGrounded: false,
+      hp: initialMaxHp, maxHp: initialMaxHp, type: 'player', color: COLORS.player, facing: 1, isGrounded: false,
+      character: character,
       invincibleTimer: 0, slowTimer: 0, 
       shield: 0, maxShield: 0, shieldRegenTimer: 0,
       lives: 0,
@@ -90,8 +104,20 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       ammo: -1, score: 0,
       frameTimer: 0, state: 0, jumpCount: 0, maxJumps: PLAYER_MAX_JUMPS, 
       dashTimer: 0, dashCooldown: 0, consecutiveDashes: 1,
-      stats: { speedMultiplier: 1, damageMultiplier: 1, dashCooldownMultiplier: 1, maxDashes: 1, damageReduction: 0 },
-      runStats: { killCount: 0, nextScoreMilestone: SCORE_MILESTONE_START, nextKillMilestone: KILL_MILESTONE_START, currentKillStep: KILL_MILESTONE_INCREMENT_START }
+      stats: { 
+          speedMultiplier: 1, 
+          damageMultiplier: 1 * config.dmgDealt, 
+          dashCooldownMultiplier: 1, 
+          maxDashes: 1, 
+          damageReduction: 0,
+          damageTakenMultiplier: config.dmgTaken
+      },
+      runStats: { 
+          killCount: 0, 
+          nextScoreMilestone: SCORE_MILESTONE_START * config.milestoneMult, 
+          nextKillMilestone: KILL_MILESTONE_START * config.milestoneMult, 
+          currentKillStep: KILL_MILESTONE_INCREMENT_START 
+      }
     };
   }
 
@@ -119,7 +145,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
           applyPerk(entities.current.player, selectedPerkId);
           setHp(entities.current.player.hp); // Update UI
           
-          // Force reset inputs to prevent "stuck" movement if keys were held/released during menu
+          // Force reset inputs
           inputs.current.left = false;
           inputs.current.right = false;
           inputs.current.aimUp = false;
@@ -148,15 +174,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       const dt = Math.min((time - lastTime) / 1000, 0.1);
       lastTime = time;
       
-      // Only update logic if playing, but draw always (for background in perk menu)
       if (gameState === GameState.PLAYING) {
           update(dt);
       }
       
       draw(ctx);
       
-      // Game Over Logic Check
-      // If HP is <= 0 after update logic, it means revive failed or no lives left.
       if (gameState === GameState.PLAYING && entities.current.player.hp <= 0) {
            handleGameOver();
       } else {
@@ -182,7 +205,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         jumpPressed: false, shootPressed: false, dashPressed: false, mouseX: 0, mouseY: 0
     };
 
-    setScore(0); setHp(100); setStage(1); setBossHp(0);
+    setScore(0); setHp(s.player.maxHp); setStage(1); setBossHp(0);
   };
 
   const performLevelReset = () => {
@@ -246,7 +269,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      // Allow key release events even if paused/in menu to prevent stuck inputs
       switch (e.code) {
         case 'KeyA': case 'ArrowLeft': inputs.current.left = false; break;
         case 'KeyD': case 'ArrowRight': inputs.current.right = false; break;
@@ -268,9 +290,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     };
 
     const handleMouseUp = (e: MouseEvent) => {
-        // Allow mouse release even if paused/in menu
         if (inputMethod === 'keyboard' && !isMobile) return;
-
         if (e.button === 0) inputs.current.shoot = false;
         if (e.button === 2) inputs.current.dash = false;
     };
@@ -321,34 +341,30 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       }
   };
 
-  // --- Update Loop ---
-
   const update = (dt: number) => {
     const s = entities.current;
     if (s.platforms.length === 0) s.platforms = generateLevel(s.level.levelWidth);
     
     const p = s.player;
+    const config = DIFFICULTY_CONFIG[difficulty] || DIFFICULTY_CONFIG.normal;
 
-    // --- Shield Logic ---
     if (p.shieldRegenTimer > 0) p.shieldRegenTimer -= dt;
     else if (p.shield < p.maxShield) {
         p.shield = Math.min(p.maxShield, p.shield + (SHIELD_REGEN_RATE * dt));
     }
 
-    // --- Milestone Checks ---
     if (p.score >= p.runStats.nextScoreMilestone) {
-        p.runStats.nextScoreMilestone += SCORE_MILESTONE_INCREMENT;
+        p.runStats.nextScoreMilestone += (SCORE_MILESTONE_INCREMENT * config.milestoneMult);
         triggerPerkSelection();
-        return; // Pause update for this frame
+        return; 
     }
     if (p.runStats.killCount >= p.runStats.nextKillMilestone) {
         p.runStats.currentKillStep += 10;
-        p.runStats.nextKillMilestone += p.runStats.currentKillStep;
+        p.runStats.nextKillMilestone += (p.runStats.currentKillStep * config.milestoneMult);
         triggerPerkSelection();
         return;
     }
 
-    // Transition Logic
     if (s.transition.phase === 'closing') {
         s.transition.progress += dt * 0.8;
         if (s.transition.progress >= 1) {
@@ -365,11 +381,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         return;
     }
 
-    // Player Physics
     if (p.slowTimer > 0) p.slowTimer -= dt;
     if (p.dashCooldown > 0) p.dashCooldown -= dt;
     
-    // Dash Mechanics (Multi-Dash Support)
     if (p.dashCooldown <= 0 && p.consecutiveDashes < p.stats.maxDashes && p.isGrounded) {
          p.consecutiveDashes = p.stats.maxDashes; 
     }
@@ -432,17 +446,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         if (p.x > s.level.levelWidth - p.w) p.x = s.level.levelWidth - p.w;
     }
     
-    // Pit Fall Logic
     if (p.y > CANVAS_HEIGHT + 100) {
         p.hp = 0; 
     }
 
-    // Shooting Logic (Strictly separated by Input Method)
     if (inputs.current.shootPressed && p.frameTimer <= 0) {
         let dx = 0, dy = 0;
 
         if (inputMethod === 'mouse' && !isMobile) {
-            // MOUSE AIMING (Desktop)
             const mWX = inputs.current.mouseX + s.camera.x; 
             const mWY = inputs.current.mouseY + s.camera.y;
             const pCX = p.x + p.w/2; 
@@ -451,13 +462,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             dy = mWY - pCY;
             const len = Math.sqrt(dx*dx + dy*dy);
             if (len > 0) { dx /= len; dy /= len; } else { dx = p.facing; dy = 0; }
-            p.facing = mWX < pCX ? -1 : 1; // Face mouse
+            p.facing = mWX < pCX ? -1 : 1; 
         } else {
-            // KEYBOARD / MOBILE AIMING (Directional)
             if (inputs.current.aimUp) { 
                 dy = -1; 
                 dx = inputs.current.left ? -1 : (inputs.current.right ? 1 : 0); 
-                // Normalize diagonal
                 if (dx !== 0) { const len = Math.sqrt(dx*dx + dy*dy); dx /= len; dy /= len; }
             } else { 
                 dx = p.facing; 
@@ -473,7 +482,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         const dmgMult = p.stats.damageMultiplier;
         spawnProjectile(s.projectiles, sX, sY, dx, dy, 'player', p.weapon, p);
         
-        // Apply Damage Multiplier to last spawned projectiles
         const lastProj = s.projectiles[s.projectiles.length-1];
         if (lastProj && lastProj.owner === 'player') {
              for(let i=s.projectiles.length-1; i>=0; i--) {
@@ -493,7 +501,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     if (p.frameTimer > 0) p.frameTimer--;
     if (p.invincibleTimer > 0) p.invincibleTimer -= dt;
 
-    // Camera
     if (!s.level.bossSpawned) {
         let targetX = p.x - CANVAS_WIDTH * 0.3;
         targetX = Math.max(0, Math.min(targetX, s.level.levelWidth - CANVAS_WIDTH));
@@ -507,7 +514,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         s.shake *= 0.9; if (s.shake < 0.5) s.shake = 0;
     } else s.camera.y = 0;
 
-    // Spawning
     if (!s.level.bossSpawned && !s.levelTransitioning && p.x > s.level.levelWidth - 600) {
         s.level.bossSpawned = true;
         spawnBoss(s.level, setBossName, setBossMaxHp, setBossHp, audioManager.current, s.enemies, lang);
@@ -521,7 +527,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         s.waveTimer = 0;
     }
 
-    // --- Entity Updates (Projectiles, Enemies, Particles) ---
     s.projectiles.forEach(proj => {
         if (proj.projectileType === 'sword' || proj.projectileType === 'floss') {
              if (proj.owner === 'player') {
@@ -535,7 +540,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         }
         proj.lifeTime -= dt;
         if (proj.projectileType === 'wave') proj.y += Math.sin(Date.now() / 50) * 5;
-        // Boss Homing
         if (proj.projectileType === 'bullet' && proj.owner === 'enemy' && proj.damage > 20) {
              const dx = p.x - proj.x; const dy = p.y - proj.y; const dist = Math.sqrt(dx*dx + dy*dy);
              if (dist > 0 && dist < 400) { proj.vx += (dx/dist)*0.2; proj.vy += (dy/dist)*0.2; }
@@ -595,19 +599,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                         p.runStats.killCount++;
                         setScore(p.score); s.shake = 5;
                         
-                        // Pass loadout constraint to drop logic (if loadout is not 'all', limit drop)
                         const limitType = loadout === 'all' ? undefined : loadout;
-                        spawnPowerUp(entities.current.powerups, enemy.x, enemy.y, limitType);
+                        spawnPowerUp(entities.current.powerups, enemy.x, enemy.y, config.dropRate, limitType);
                         
                         for(let i=0; i<8; i++) spawnParticle(enemy.x+enemy.w/2, enemy.y+enemy.h/2, enemy.color, 10);
                         
-                        // Boss Defeated Logic
                         if (enemy.subType === 'boss' && !s.levelTransitioning) {
-                            // Boss Reward Trigger
                             triggerPerkSelection();
-                            
                             s.levelTransitioning = true;
-                            // Wait a moment before starting transition to let player pick perk
                             setTimeout(() => { 
                                 if (entities.current.transition.phase === 'none') entities.current.transition.phase = 'closing'; 
                             }, 3000); 
@@ -628,9 +627,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         }
     });
     
-    // Shield / HP Damage Logic
     if (playerHit && p.invincibleTimer <= 0) {
-        // Apply Damage Reduction
+        hitDamage = hitDamage * p.stats.damageTakenMultiplier;
         hitDamage = Math.max(1, hitDamage * (1 - p.stats.damageReduction));
 
         if (p.shield > 0) {
@@ -645,11 +643,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
              p.hp -= hitDamage; 
         }
         
-        // Check for Revive Logic if died
         if (p.hp <= 0 && p.lives > 0) {
              p.lives--;
              p.hp = p.maxHp;
-             p.invincibleTimer = 3.0; // Long Invincibility on revive
+             p.invincibleTimer = 3.0; 
              spawnParticle(p.x, p.y, '#ffd700', 30);
              s.shake = 20;
              audioManager.current.playPowerUp();
@@ -691,14 +688,65 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     s.particles = s.particles.filter(p => p.lifeTime > 0);
   };
 
-  // --- Drawing ---
+  const drawPlayerSprite = (ctx: CanvasRenderingContext2D, p: Player, px: number, py: number) => {
+      // Shape based on CharacterType
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      
+      if (p.character === 'incisor') {
+          // Flat top, rectangular
+          ctx.moveTo(px, py);
+          ctx.lineTo(px + p.w, py);
+          ctx.lineTo(px + p.w - 5, py + p.h);
+          ctx.lineTo(px + 5, py + p.h);
+          ctx.closePath();
+      } else if (p.character === 'canine') {
+          // Pointy
+          ctx.moveTo(px, py + p.h/3);
+          ctx.lineTo(px + p.w/2, py - 5);
+          ctx.lineTo(px + p.w, py + p.h/3);
+          ctx.lineTo(px + p.w - 5, py + p.h);
+          ctx.lineTo(px + 5, py + p.h);
+          ctx.closePath();
+      } else if (p.character === 'premolar') {
+          // Two cusps
+          ctx.moveTo(px + 2, py + 5);
+          ctx.lineTo(px + p.w/4, py - 2);
+          ctx.lineTo(px + p.w/2, py + 5);
+          ctx.lineTo(px + p.w*0.75, py - 2);
+          ctx.lineTo(px + p.w - 2, py + 5);
+          ctx.lineTo(px + p.w - 4, py + p.h);
+          ctx.lineTo(px + 4, py + p.h);
+          ctx.closePath();
+      } else {
+          // MOLAR (Default)
+          ctx.moveTo(px + 4, py + 8);
+          ctx.quadraticCurveTo(px + p.w/4, py, px + p.w/2, py + 6);
+          ctx.quadraticCurveTo(px + 3*p.w/4, py, px + p.w - 4, py + 8);
+          ctx.quadraticCurveTo(px + p.w, py + p.h/2, px + p.w - 6, py + p.h - 4);
+          ctx.lineTo(px + p.w/2 + 4, py + p.h);
+          ctx.lineTo(px + p.w/2, py + p.h - 8);
+          ctx.lineTo(px + p.w/2 - 4, py + p.h);
+          ctx.lineTo(px + 6, py + p.h - 4);
+          ctx.quadraticCurveTo(px, py + p.h/2, px + 4, py + 8);
+      }
+      ctx.fill();
+
+      // Shading
+      const grad = ctx.createLinearGradient(px, py, px, py + p.h);
+      grad.addColorStop(0, 'rgba(255,255,255,0.8)');
+      grad.addColorStop(1, 'rgba(200,200,200,0.2)');
+      ctx.fillStyle = grad; ctx.fill();
+  };
+
   const draw = (ctx: CanvasRenderingContext2D) => {
     const s = entities.current;
     const p = s.player;
 
     ctx.fillStyle = '#0f172a';
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    drawBackground(ctx, s.camera.x);
+    // Pass stage for dynamic background
+    drawBackground(ctx, s.camera.x, s.level.stage);
 
     ctx.save();
     ctx.translate(-s.camera.x, -s.camera.y);
@@ -721,14 +769,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     // Draw Player
     if (p.hp > 0 && (p.invincibleTimer <= 0 || Math.floor(Date.now() / 100) % 2 === 0)) {
         ctx.save();
-        // Player Sprite (Detailed Retro Tooth)
         const px = p.x; const py = p.y;
         
-        // Shadow
         ctx.fillStyle = 'rgba(0,0,0,0.3)';
         ctx.beginPath(); ctx.ellipse(px + p.w/2, py + p.h - 2, 10, 4, 0, 0, Math.PI*2); ctx.fill();
 
-        // Shield Aura
         if (p.shield > 0) {
             ctx.shadowColor = '#22d3ee';
             ctx.shadowBlur = 15;
@@ -740,44 +785,21 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             ctx.shadowBlur = 0;
         }
 
-        // Body (Tooth Shape)
-        ctx.fillStyle = '#fff';
-        ctx.beginPath();
-        // Top bumps
-        ctx.moveTo(px + 4, py + 8);
-        ctx.quadraticCurveTo(px + p.w/4, py, px + p.w/2, py + 6);
-        ctx.quadraticCurveTo(px + 3*p.w/4, py, px + p.w - 4, py + 8);
-        // Sides
-        ctx.quadraticCurveTo(px + p.w, py + p.h/2, px + p.w - 6, py + p.h - 4);
-        // Bottom (Roots)
-        ctx.lineTo(px + p.w/2 + 4, py + p.h);
-        ctx.lineTo(px + p.w/2, py + p.h - 8);
-        ctx.lineTo(px + p.w/2 - 4, py + p.h);
-        ctx.lineTo(px + 6, py + p.h - 4);
-        ctx.quadraticCurveTo(px, py + p.h/2, px + 4, py + 8);
-        ctx.fill();
-
-        // Shading/Gradient
-        const grad = ctx.createLinearGradient(px, py, px, py + p.h);
-        grad.addColorStop(0, 'rgba(255,255,255,0.8)');
-        grad.addColorStop(1, 'rgba(200,200,200,0.2)');
-        ctx.fillStyle = grad; ctx.fill();
+        drawPlayerSprite(ctx, p, px, py);
 
         // Face
         const lookOffset = p.facing * 2;
         ctx.fillStyle = '#1e293b';
-        // Eyes (Combat Bandana or Sunglasses look?) - Let's go with Determined Eyes
         ctx.beginPath();
         ctx.ellipse(px + p.w/2 + 4 + lookOffset, py + 14, 3, 4, 0, 0, Math.PI*2); ctx.fill();
         ctx.ellipse(px + p.w/2 - 4 + lookOffset, py + 14, 3, 4, 0, 0, Math.PI*2); ctx.fill();
         
-        // Sweatband (Rambo style)
+        // Sweatband
         ctx.fillStyle = '#ef4444';
         ctx.fillRect(px + 2, py + 8, p.w - 4, 4);
-        if (p.facing === -1) ctx.fillRect(px + p.w - 4, py + 8, 8, 4); // Knot
+        if (p.facing === -1) ctx.fillRect(px + p.w - 4, py + 8, 8, 4); 
         else ctx.fillRect(px - 4, py + 8, 8, 4);
 
-        // Arms (holding weapon) logic is handled by drawHeldWeapon mostly, but let's add simple hands
         ctx.fillStyle = '#fff';
         ctx.beginPath(); ctx.arc(px + p.w/2 + (p.facing*10), py + 22, 5, 0, Math.PI*2); ctx.fill();
 

@@ -11,6 +11,8 @@ export enum GameState {
 export type InputMethod = 'mouse' | 'keyboard';
 export type LoadoutType = 'all' | WeaponType;
 export type Language = 'en' | 'es';
+export type Difficulty = 'easy' | 'normal' | 'hard' | 'legend';
+export type CharacterType = 'incisor' | 'canine' | 'premolar' | 'molar';
 
 export interface Rect {
   x: number;
@@ -38,6 +40,7 @@ export type WeaponType = 'normal' | 'spread' | 'laser' | 'mouthwash' | 'floss' |
 
 export interface Player extends Entity {
   type: 'player';
+  character: CharacterType;
   invincibleTimer: number;
   slowTimer: number;
   
@@ -69,6 +72,7 @@ export interface Player extends Entity {
       dashCooldownMultiplier: number;
       maxDashes: number;
       damageReduction: number; // 0 to 1 (e.g., 0.15 = 15% less damage)
+      damageTakenMultiplier: number; // Base multiplier from difficulty (e.g., 1.05 for Legend)
   };
 
   // Run Progress

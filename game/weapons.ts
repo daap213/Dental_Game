@@ -19,77 +19,87 @@ export const spawnProjectile = (projectiles: Projectile[], x: number, y: number,
     const vx = dx; const vy = dy;
 
     if (type === 'spread') {
+        // Level 1: 3, Lvl 2: 5, Lvl 3: 7, Lvl 4: 9, Lvl 5: 11 bullets
         const bulletCount = 3 + (level - 1) * 2;
-        const spreadFactor = level === 3 ? 1.0 : 1.5; 
+        const spreadFactor = level >= 4 ? 0.8 : (level === 3 ? 1.0 : 1.5); 
         const start = -Math.floor(bulletCount/2); const end = Math.floor(bulletCount/2);
         const perpX = -dy; const perpY = dx;
-        const speed = 16; // Increased from 12
+        const speed = 16; 
 
         for(let i=start; i<=end; i++) {
           const svx = (vx * speed) + (perpX * i * spreadFactor);
           const svy = (vy * speed) + (perpY * i * spreadFactor);
-          projectiles.push({ ...base, x, y, w: 8, h: 8, vx: svx, vy: svy, hp: 1, maxHp: 1, damage: 6, lifeTime: 1.0, projectileType: 'bullet', color: COLORS.projectilePlayer } as Projectile);
+          projectiles.push({ ...base, x, y, w: 8, h: 8, vx: svx, vy: svy, hp: 1, maxHp: 1, damage: 6 + level, lifeTime: 1.0, projectileType: 'bullet', color: COLORS.projectilePlayer } as Projectile);
         }
     } else if (type === 'laser') {
-          const width = level >= 2 ? (level === 3 ? 12 : 6) : 4;
-          const dmg = 15 + ((level-1) * 5);
+          // Lvl 1: 4px, Lvl 5: 20px width
+          const width = 4 + ((level - 1) * 4);
+          const dmg = 15 + ((level-1) * 8); // Significantly higher damage at lvl 5
           // Faster Laser (20 -> 28)
           projectiles.push({ ...base, x, y, w: width, h: width, vx: vx * 28, vy: vy * 28, hp: 1, maxHp: 1, damage: dmg, lifeTime: 0.8, projectileType: 'laser', color: COLORS.projectileLaser } as Projectile);
     } else if (type === 'mouthwash') {
-          const speed = 10 + (level * 2); // Increased base speed
-          const dmg = 20 + ((level-1)*10);
-          projectiles.push({ ...base, x, y, w: 16 + (level*4), h: 16 + (level*4), vx: vx * speed, vy: vy * speed, hp: 1, maxHp: 1, damage: dmg, lifeTime: 2.0, projectileType: 'wave', color: COLORS.projectileWave } as Projectile);
-          if (level === 3) {
-              projectiles.push({ ...base, x: x - (dy * 20), y: y + (dx * 20), w: 20, h: 20, vx: vx * speed, vy: vy * speed, hp: 1, maxHp: 1, damage: dmg, lifeTime: 2.0, projectileType: 'wave', color: COLORS.projectileWave } as Projectile);
+          const speed = 10 + (level * 2); 
+          const dmg = 20 + ((level-1)*12);
+          const size = 16 + (level*5);
+          projectiles.push({ ...base, x, y, w: size, h: size, vx: vx * speed, vy: vy * speed, hp: 1, maxHp: 1, damage: dmg, lifeTime: 2.0, projectileType: 'wave', color: COLORS.projectileWave } as Projectile);
+          if (level >= 3) {
+              projectiles.push({ ...base, x: x - (dy * 20), y: y + (dx * 20), w: 20 + level*2, h: 20 + level*2, vx: vx * speed, vy: vy * speed, hp: 1, maxHp: 1, damage: dmg, lifeTime: 2.0, projectileType: 'wave', color: COLORS.projectileWave } as Projectile);
+          }
+          if (level >= 5) {
+               projectiles.push({ ...base, x: x + (dy * 20), y: y - (dx * 20), w: 20 + level*2, h: 20 + level*2, vx: vx * speed, vy: vy * speed, hp: 1, maxHp: 1, damage: dmg, lifeTime: 2.0, projectileType: 'wave', color: COLORS.projectileWave } as Projectile);
           }
     } else if (type === 'floss') {
-          const range = 100 + ((level-1)*50); const dmg = 25 + ((level-1)*10); const thickness = 20 + ((level-1)*10);
+          const range = 100 + ((level-1)*60); const dmg = 25 + ((level-1)*15); const thickness = 20 + ((level-1)*10);
           const isVertical = Math.abs(dy) > Math.abs(dx);
           const w = isVertical ? thickness : range; const h = isVertical ? range : thickness;
           projectiles.push({ ...base, x, y, w, h, vx: dx, vy: dy, hp: 1, maxHp: 1, damage: dmg, lifeTime: 0.15, projectileType: 'floss', color: '#fff' } as Projectile);
     } else if (type === 'toothbrush') {
-          const size = 60 + ((level-1)*30); const dmg = 35 + ((level-1)*15);
+          const size = 60 + ((level-1)*35); const dmg = 35 + ((level-1)*20);
           projectiles.push({ ...base, x, y, w: size, h: size, vx: dx, vy: dy, hp: 1, maxHp: 1, damage: dmg, lifeTime: 0.2, projectileType: 'sword', color: COLORS.projectileMelee } as Projectile);
     } else {
-        const dmg = 8;
-        const speed = 18; // Increased from 12
-        if (level === 3) {
+        const dmg = 8 + (level * 2);
+        const speed = 18;
+        // Level 3: Dual shot. Level 4: Tri-shot. Level 5: Quad-shot
+        if (level >= 3) {
            const perpX = -dy; const perpY = dx; const offset = 5;
            projectiles.push({ ...base, x: x - (perpX*offset), y: y - (perpY*offset), w: 10, h: 6, vx: vx * speed, vy: vy * speed, hp: 1, maxHp: 1, damage: dmg, lifeTime: 1.0, projectileType: 'bullet', color: COLORS.projectilePlayer } as Projectile);
            projectiles.push({ ...base, x: x + (perpX*offset), y: y + (perpY*offset), w: 10, h: 6, vx: vx * speed, vy: vy * speed, hp: 1, maxHp: 1, damage: dmg, lifeTime: 1.0, projectileType: 'bullet', color: COLORS.projectilePlayer } as Projectile);
+           
+           if (level >= 4) {
+               projectiles.push({ ...base, x, y, w: 10, h: 6, vx: vx * speed, vy: vy * speed, hp: 1, maxHp: 1, damage: dmg, lifeTime: 1.0, projectileType: 'bullet', color: COLORS.projectilePlayer } as Projectile);
+           }
+           if (level >= 5) {
+               projectiles.push({ ...base, x: x - (perpX*offset*2.5), y: y - (perpY*offset*2.5), w: 10, h: 6, vx: vx * speed, vy: vy * speed, hp: 1, maxHp: 1, damage: dmg, lifeTime: 1.0, projectileType: 'bullet', color: COLORS.projectilePlayer } as Projectile);
+               projectiles.push({ ...base, x: x + (perpX*offset*2.5), y: y + (perpY*offset*2.5), w: 10, h: 6, vx: vx * speed, vy: vy * speed, hp: 1, maxHp: 1, damage: dmg, lifeTime: 1.0, projectileType: 'bullet', color: COLORS.projectilePlayer } as Projectile);
+           }
         } else {
            projectiles.push({ ...base, x, y, w: 10, h: 6, vx: vx * speed, vy: vy * speed, hp: 1, maxHp: 1, damage: dmg, lifeTime: 1.0, projectileType: 'bullet', color: COLORS.projectilePlayer } as Projectile);
         }
     }
 };
 
-export const spawnPowerUp = (powerups: PowerUp[], x: number, y: number, limitToType?: WeaponType) => {
-    // INCREASED DROP RATE: 15% chance
-    if (Math.random() > 0.15) return;
+export const spawnPowerUp = (powerups: PowerUp[], x: number, y: number, dropRate: number, limitToType?: WeaponType) => {
+    // Dynamic drop rate based on difficulty
+    if (Math.random() > dropRate) return;
     
     let sub: PowerUp['subType'] = 'health'; 
     let c = '#ef4444';
 
     if (limitToType) {
-        // If user selected a specific loadout, only drop that weapon or health
-        // 40% chance of Health, 60% chance of Weapon Upgrade
         if (Math.random() > 0.4) {
             sub = limitToType;
         } else {
             sub = 'health';
         }
     } else {
-        // Standard "All" drop logic
         const r = Math.random(); 
         if (r > 0.85) { sub = 'spread'; } 
         else if (r > 0.7) { sub = 'laser'; }
         else if (r > 0.55) { sub = 'mouthwash'; } 
         else if (r > 0.4) { sub = 'floss'; }
         else if (r > 0.25) { sub = 'toothbrush'; }
-        // else health (default)
     }
     
-    // Assign color based on subType
     switch(sub) {
         case 'spread': c = '#3b82f6'; break;
         case 'laser': c = '#06b6d4'; break;
@@ -97,7 +107,7 @@ export const spawnPowerUp = (powerups: PowerUp[], x: number, y: number, limitToT
         case 'floss': c = '#10b981'; break;
         case 'toothbrush': c = '#f97316'; break;
         case 'health': c = '#ef4444'; break;
-        case 'normal': c = '#9ca3af'; break; // Gray
+        case 'normal': c = '#9ca3af'; break; 
         default: c = '#ef4444'; break;
     }
 
