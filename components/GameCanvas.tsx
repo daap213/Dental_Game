@@ -1127,10 +1127,21 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     // Projectiles
     s.projectiles.forEach(proj => {
         if (proj.projectileType === 'sword' || proj.projectileType === 'floss') {
-            // Melee weapons follow player
+            // Melee weapons follow player with offset based on direction (vx, vy stored the aim direction)
              if (proj.owner === 'player') {
-                proj.x = p.x + (p.facing === 1 ? p.w : -proj.w);
-                proj.y = p.y + p.h/2 - proj.h/2;
+                const centerX = p.x + p.w/2;
+                const centerY = p.y + p.h/2;
+                
+                if (proj.projectileType === 'sword') {
+                    const offset = 20;
+                    proj.x = centerX + (proj.vx * offset) - proj.w/2;
+                    proj.y = centerY + (proj.vy * offset) - proj.h/2;
+                } else if (proj.projectileType === 'floss') {
+                    const range = Math.max(proj.w, proj.h);
+                    const dist = range / 2 + 10;
+                    proj.x = centerX + (proj.vx * dist) - proj.w/2;
+                    proj.y = centerY + (proj.vy * dist) - proj.h/2;
+                }
             }
         } else {
             proj.x += proj.vx;
@@ -1669,10 +1680,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
           hitIds: [] // Initialize empty hit list
       };
 
-      // dx, dy are expected to be normalized direction vector (or close to it)
-      // If we are keyboard aiming (integers), normalize first?
-      // But update loop now handles normalization.
-
       if (owner === 'enemy') {
           entities.current.projectiles.push({
               ...base,
@@ -1742,9 +1749,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             const dmg = 25 + ((level-1)*10);
             const thickness = 20 + ((level-1)*10);
             
+            // Adjust hitbox dimensions based on attack direction
+            // If attacking more vertically, width is thickness and height is range
+            const isVertical = Math.abs(dy) > Math.abs(dx);
+            const w = isVertical ? thickness : range;
+            const h = isVertical ? range : thickness;
+
             entities.current.projectiles.push({
                 ...base,
-                x: x + (dx * 40), y: y + (dy * 40), w: range, h: thickness, vx: 0, vy: 0,
+                x, y, w, h, vx: dx, vy: dy, // Store direction in vx/vy for rendering
                 hp: 1, maxHp: 1, damage: dmg, lifeTime: 0.15, projectileType: 'floss', color: '#fff'
             } as Projectile);
 
@@ -1755,7 +1768,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
             entities.current.projectiles.push({
                 ...base,
-                x, y, w: size, h: size, vx: 0, vy: 0,
+                x, y, w: size, h: size, vx: dx, vy: dy, // Store direction in vx/vy for rendering
                 hp: 1, maxHp: 1, damage: dmg, lifeTime: 0.2, projectileType: 'sword', color: COLORS.projectileMelee
             } as Projectile);
       } else {
@@ -2529,26 +2542,32 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             const handX = p.x + (p.facing === 1 ? 25 : 5);
             const handY = p.y + 20;
             
-            // The projectile rect is the hitbox area (the whip length)
-            // But visually we want a line
-            const endX = proj.x + (proj.facing === 1 ? proj.w : 0);
+            // Draw line to projectile center
+            const endX = proj.x + proj.w/2;
             const endY = proj.y + proj.h/2;
 
             ctx.moveTo(handX, handY);
-            // Little slack curve
-            ctx.quadraticCurveTo((handX + endX)/2, handY + 10, endX, endY);
+            // Little slack curve based on distance
+            const midX = (handX + endX)/2;
+            const midY = (handY + endY)/2 + 5;
+            ctx.quadraticCurveTo(midX, midY, endX, endY);
             ctx.stroke();
 
             // The Pick at the end
+            ctx.translate(endX, endY);
+            // Rotate pick based on projectile direction (using vx/vy which store direction)
+            const angle = Math.atan2(proj.vy, proj.vx);
+            ctx.rotate(angle);
+
             ctx.fillStyle = '#fff';
             ctx.beginPath();
-            ctx.arc(endX, endY, 4, 0, Math.PI*2);
+            ctx.arc(0, 0, 4, 0, Math.PI*2);
             ctx.fill();
             // Sharp bit
             ctx.beginPath();
-            ctx.moveTo(endX, endY - 4);
-            ctx.lineTo(endX + (5*proj.facing), endY);
-            ctx.lineTo(endX, endY + 4);
+            ctx.moveTo(0, -4);
+            ctx.lineTo(10, 0);
+            ctx.lineTo(0, 4);
             ctx.fill();
 
             ctx.restore();
@@ -2556,25 +2575,37 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         } else if (proj.projectileType === 'sword') {
             // Draw Brush Stroke Arc
             ctx.save();
-            ctx.translate(proj.x, proj.y);
+            
+            // Rotate context to the projectile's direction
+            const centerX = proj.x + proj.w/2;
+            const centerY = proj.y + proj.h/2;
+            ctx.translate(centerX, centerY);
+            
+            const angle = Math.atan2(proj.vy, proj.vx);
+            ctx.rotate(angle);
+
             ctx.strokeStyle = '#22d3ee'; // Cyan
             ctx.lineWidth = 1;
             
-            const startAngle = Math.PI + 0.2;
-            const endAngle = Math.PI * 2 - 0.2;
+            // Draw arc facing "forward" (which is 0 degrees after rotation)
+            // Arc from -45 to +45 degrees
+            const radius = proj.w/2;
+            const startAngle = -Math.PI / 3;
+            const endAngle = Math.PI / 3;
             
             // Draw multiple bristle lines for effect
             for(let i=0; i<3; i++) {
                  ctx.beginPath();
-                 const radius = proj.w - (i*5);
-                 ctx.arc(proj.w/2, proj.h, radius, startAngle, endAngle);
+                 // Scale radius slightly for layering
+                 const r = radius - (i*5);
+                 ctx.arc(0, 0, r, startAngle, endAngle);
                  ctx.strokeStyle = `rgba(34, 211, 238, ${1 - i*0.2})`;
                  ctx.lineWidth = 4 - i;
                  ctx.stroke();
             }
             // White shine
             ctx.beginPath();
-            ctx.arc(proj.w/2, proj.h, proj.w-2, startAngle, endAngle);
+            ctx.arc(0, 0, radius-2, startAngle, endAngle);
             ctx.strokeStyle = 'rgba(255,255,255,0.5)';
             ctx.lineWidth = 2;
             ctx.stroke();
