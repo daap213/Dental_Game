@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect, useState } from 'react';
 import { GameState, Entity, Player, Enemy, Projectile, Platform, Particle, PowerUp, Rect, WeaponType, LevelState } from '../types';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, GRAVITY, COLORS, PLAYER_SPEED, PLAYER_JUMP, FRICTION, TERMINAL_VELOCITY, PLAYER_SIZE, PLAYER_DASH_SPEED, PLAYER_DASH_DURATION, PLAYER_DASH_COOLDOWN, PLAYER_MAX_JUMPS, MAX_WEAPON_LEVEL } from '../constants';
@@ -2040,51 +2039,182 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       const p = entities.current.transition.progress;
       if (p <= 0) return;
 
-      const halfH = CANVAS_HEIGHT / 2;
-      const topY = -halfH + (halfH * p);
-      const botY = CANVAS_HEIGHT - (halfH * p);
+      // Cubic ease
+      const ease = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+      
+      const centerH = CANVAS_HEIGHT / 2;
+      const topY = -150 + ((centerH + 150) * ease); 
+      const botY = CANVAS_HEIGHT + 150 - ((centerH + 150) * ease);
 
       ctx.save();
-      ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform for overlay
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-      // Top Jaw (Gums)
-      ctx.fillStyle = '#db2777'; // Pink
-      ctx.fillRect(0, 0, CANVAS_WIDTH, topY + halfH);
+      // --- Draw Realistic Tooth Helper ---
+      const drawRealisticTooth = (tx: number, ty: number, w: number, h: number, type: 'incisor'|'canine'|'molar', isTop: boolean) => {
+          ctx.save();
+          
+          // Shadow/Depth behind tooth
+          ctx.shadowColor = 'rgba(0,0,0,0.3)';
+          ctx.shadowBlur = 5;
+          ctx.shadowOffsetX = 2;
+          ctx.shadowOffsetY = 2;
+
+          ctx.beginPath();
+          if (isTop) {
+              ctx.moveTo(tx, ty); // Root
+              if (type === 'incisor') {
+                  ctx.bezierCurveTo(tx, ty + h*0.6, tx - 2, ty + h - 5, tx + 5, ty + h);
+                  ctx.lineTo(tx + w - 5, ty + h);
+                  ctx.bezierCurveTo(tx + w + 2, ty + h - 5, tx + w, ty + h*0.6, tx + w, ty);
+              } else if (type === 'canine') {
+                  ctx.bezierCurveTo(tx, ty + h*0.5, tx + 2, ty + h - 10, tx + w/2, ty + h + 5);
+                  ctx.bezierCurveTo(tx + w - 2, ty + h - 10, tx + w, ty + h*0.5, tx + w, ty);
+              } else { 
+                  ctx.bezierCurveTo(tx - 5, ty + h*0.8, tx, ty + h, tx + 5, ty + h - 2);
+                  ctx.quadraticCurveTo(tx + w/4, ty + h + 5, tx + w/2, ty + h - 5);
+                  ctx.quadraticCurveTo(tx + 3*w/4, ty + h + 5, tx + w - 5, ty + h - 2);
+                  ctx.bezierCurveTo(tx + w, ty + h, tx + w + 5, ty + h*0.8, tx + w, ty);
+              }
+          } else {
+               ctx.moveTo(tx, ty); 
+               if (type === 'incisor') {
+                  ctx.bezierCurveTo(tx, ty - h*0.6, tx - 2, ty - h + 5, tx + 5, ty - h); 
+                  ctx.lineTo(tx + w - 5, ty - h); 
+                  ctx.bezierCurveTo(tx + w + 2, ty - h + 5, tx + w, ty - h*0.6, tx + w, ty); 
+              } else if (type === 'canine') {
+                  ctx.bezierCurveTo(tx, ty - h*0.5, tx + 2, ty - h + 10, tx + w/2, ty - h - 5); 
+                  ctx.bezierCurveTo(tx + w - 2, ty - h + 10, tx + w, ty - h*0.5, tx + w, ty); 
+              } else { 
+                  ctx.bezierCurveTo(tx - 5, ty - h*0.8, tx, ty - h, tx + 5, ty - h + 2); 
+                  ctx.quadraticCurveTo(tx + w/4, ty - h - 5, tx + w/2, ty - h + 5); 
+                  ctx.quadraticCurveTo(tx + 3*w/4, ty - h - 5, tx + w - 5, ty - h + 2); 
+                  ctx.bezierCurveTo(tx + w, ty - h, tx + w + 5, ty - h*0.8, tx + w, ty); 
+              }
+          }
+          ctx.closePath();
+
+          // Enamel Gradient (3D effect)
+          const grad = ctx.createRadialGradient(
+              tx + w*0.4, isTop ? ty + h*0.4 : ty - h*0.4, 5,
+              tx + w/2, isTop ? ty + h/2 : ty - h/2, w
+          );
+          grad.addColorStop(0, '#fffff0'); // Highlight
+          grad.addColorStop(0.5, '#fefce8'); // Base
+          grad.addColorStop(1, '#e2e8f0'); // Shadow edge
+          ctx.fillStyle = grad;
+          ctx.fill();
+
+          // Root Stain
+          const stain = ctx.createLinearGradient(0, isTop ? ty : ty - h*0.4, 0, isTop ? ty + h*0.4 : ty);
+          stain.addColorStop(isTop ? 0 : 1, 'rgba(217, 119, 6, 0.15)');
+          stain.addColorStop(isTop ? 1 : 0, 'rgba(255,255,255,0)');
+          ctx.fillStyle = stain;
+          ctx.fill();
+          
+          // Shine
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = 'rgba(255,255,255,0.6)';
+          ctx.beginPath();
+          if (isTop) ctx.ellipse(tx + w*0.3, ty + h*0.35, w*0.15, h*0.2, -0.2, 0, Math.PI*2);
+          else ctx.ellipse(tx + w*0.3, ty - h*0.35, w*0.15, h*0.2, 0.2, 0, Math.PI*2);
+          ctx.fill();
+
+          ctx.restore();
+      };
+
+      const drawJaw = (yPos: number, isTop: boolean) => {
+          const curveHeight = 80;
+          
+          // 1. Gum Base (Fleshy texture)
+          ctx.beginPath();
+          if (isTop) {
+              ctx.moveTo(0, -300);
+              ctx.lineTo(0, yPos); 
+              ctx.bezierCurveTo(CANVAS_WIDTH*0.3, yPos + curveHeight, CANVAS_WIDTH*0.7, yPos + curveHeight, CANVAS_WIDTH, yPos);
+              ctx.lineTo(CANVAS_WIDTH, -300);
+          } else {
+              ctx.moveTo(0, CANVAS_HEIGHT + 300);
+              ctx.lineTo(0, yPos);
+              ctx.bezierCurveTo(CANVAS_WIDTH*0.3, yPos - curveHeight, CANVAS_WIDTH*0.7, yPos - curveHeight, CANVAS_WIDTH, yPos);
+              ctx.lineTo(CANVAS_WIDTH, CANVAS_HEIGHT + 300);
+          }
+          
+          const gumGrad = ctx.createLinearGradient(0, isTop ? yPos - 200 : yPos + 200, 0, yPos);
+          gumGrad.addColorStop(0, '#831843'); // Dark textured
+          gumGrad.addColorStop(1, '#db2777'); // Pink
+          ctx.fillStyle = gumGrad;
+          ctx.fill();
+
+          // Texture dots
+          ctx.save();
+          ctx.clip();
+          ctx.fillStyle = 'rgba(255,255,255,0.08)';
+          for(let i=0; i<100; i++) {
+              ctx.beginPath();
+              ctx.arc(Math.random()*CANVAS_WIDTH, isTop ? yPos - Math.random()*200 : yPos + Math.random()*200, Math.random()*3, 0, Math.PI*2);
+              ctx.fill();
+          }
+          ctx.restore();
+
+          // 2. Teeth
+          const toothCount = 12;
+          const toothW = 45;
+          const totalW = toothCount * toothW;
+          const startX = (CANVAS_WIDTH - totalW) / 2;
+          
+          for(let i=0; i<toothCount; i++) {
+             const t = i / (toothCount - 1);
+             const archOffset = (4 * t * (1-t)) * curveHeight * 0.9;
+             const tx = startX + i * toothW;
+             const ty = isTop ? yPos + archOffset : yPos - archOffset;
+             
+             let type: 'incisor' | 'canine' | 'molar' = 'molar';
+             if (i >= 4 && i <= 7) type = 'incisor';
+             else if (i === 3 || i === 8) type = 'canine';
+             
+             drawRealisticTooth(tx, ty, toothW-4, 70, type, isTop);
+          }
+          
+          // 3. Lips (Glossy)
+          ctx.beginPath();
+          if (isTop) {
+              ctx.moveTo(0, yPos - 30);
+              ctx.bezierCurveTo(CANVAS_WIDTH*0.3, yPos + curveHeight - 30, CANVAS_WIDTH*0.7, yPos + curveHeight - 30, CANVAS_WIDTH, yPos - 30);
+              ctx.bezierCurveTo(CANVAS_WIDTH*0.5, yPos + curveHeight - 80, CANVAS_WIDTH*0.5, yPos + curveHeight - 80, 0, yPos - 30);
+          } else {
+               ctx.moveTo(0, yPos + 30);
+               ctx.bezierCurveTo(CANVAS_WIDTH*0.3, yPos - curveHeight + 30, CANVAS_WIDTH*0.7, yPos - curveHeight + 30, CANVAS_WIDTH, yPos + 30);
+               ctx.bezierCurveTo(CANVAS_WIDTH*0.5, yPos - curveHeight + 80, CANVAS_WIDTH*0.5, yPos - curveHeight + 80, 0, yPos + 30);
+          }
+          ctx.fillStyle = '#be185d';
+          ctx.fill();
+          // Lip Shine
+          ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+          ctx.lineWidth = 4;
+          ctx.stroke();
+      };
+
+      drawJaw(topY, true);
+      drawJaw(botY, false);
       
-      // Bottom Jaw (Gums)
-      ctx.fillRect(0, botY, CANVAS_WIDTH, CANVAS_HEIGHT - botY);
-
-      // Teeth (Top)
-      ctx.fillStyle = '#fff';
-      const toothW = 50;
-      const teethY = topY + halfH;
-      ctx.beginPath();
-      for(let x=0; x<=CANVAS_WIDTH; x+=toothW) {
-          ctx.moveTo(x, teethY);
-          ctx.lineTo(x + toothW/2, teethY + 30); // Point down
-          ctx.lineTo(x + toothW, teethY);
+      // Throat darkness when nearly closed
+      if (p > 0.4) {
+          ctx.globalCompositeOperation = 'destination-over';
+          ctx.fillStyle = '#2a0a18';
+          ctx.fillRect(0,0, CANVAS_WIDTH, CANVAS_HEIGHT);
+          ctx.globalCompositeOperation = 'source-over';
       }
-      ctx.fill();
 
-      // Teeth (Bottom)
-      const teethBotY = botY;
-      ctx.beginPath();
-      for(let x=0; x<=CANVAS_WIDTH; x+=toothW) {
-          ctx.moveTo(x, teethBotY);
-          ctx.lineTo(x + toothW/2, teethBotY - 30); // Point up
-          ctx.lineTo(x + toothW, teethBotY);
-      }
-      ctx.fill();
-
-      // Text Overlay when fully closed
       if (p > 0.95) {
           ctx.fillStyle = '#fff';
-          ctx.font = '20px "Press Start 2P", system-ui';
+          ctx.font = '24px "Press Start 2P", system-ui';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText(`STAGE ${stage} CLEAR`, CANVAS_WIDTH/2, CANVAS_HEIGHT/2 - 20);
+          ctx.shadowColor = '#be185d'; ctx.shadowBlur = 10;
+          ctx.fillText(`STAGE ${stage} COMPLETE`, CANVAS_WIDTH/2, CANVAS_HEIGHT/2 - 25);
           ctx.fillStyle = '#fef08a'; // Yellow
-          ctx.fillText("BRUSHING TEETH...", CANVAS_WIDTH/2, CANVAS_HEIGHT/2 + 20);
+          ctx.fillText("BRUSHING...", CANVAS_WIDTH/2, CANVAS_HEIGHT/2 + 25);
+          ctx.shadowBlur = 0;
       }
 
       ctx.restore();
