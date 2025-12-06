@@ -90,7 +90,7 @@ export interface Enemy extends Entity {
   aiTimer: number;
   attackTimer: number;
   bossState: number; // 0: Idle, 1: Chase, 2: Charge, 3: Slam, 4: Shoot
-  bossVariant?: 'king' | 'phantom' | 'tank' | 'general' | 'deity';
+  bossVariant?: 'king' | 'phantom' | 'tank' | 'general' | 'deity' | 'wisdom_warden';
   phase?: number;
 }
 
@@ -99,7 +99,7 @@ export interface Projectile extends Entity {
   damage: number;
   owner: 'player' | 'enemy';
   lifeTime: number;
-  projectileType: 'bullet' | 'laser' | 'wave' | 'floss' | 'sword' | 'mortar' | 'acid' | 'sludge';
+  projectileType: 'bullet' | 'laser' | 'wave' | 'floss' | 'sword' | 'mortar' | 'acid' | 'sludge' | 'judgment_orb';
   hitIds: string[]; // Track which entities have been hit to prevent multi-tick damage on piercing
 }
 

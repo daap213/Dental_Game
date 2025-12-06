@@ -115,14 +115,16 @@ export const TEXT = {
             phantom: "Plaque Phantom",
             tank: "Tartar Tank",
             general: "General Gingivitis",
-            deity: "The Decay Deity"
+            deity: "The Decay Deity",
+            wisdom: "The Wisdom Warden"
         },
         boss_desc: {
             king: "Jumps and slams. Watch out for shockwaves.",
             phantom: "Teleports and dashes. Hard to hit.",
             tank: "Heavily armored. Fires mortar shells.",
             general: "Summons minions and fires giant lasers.",
-            deity: "Bullet hell nightmare. Good luck."
+            deity: "Bullet hell nightmare. Good luck.",
+            wisdom: "Hidden Judge. Teleports & homing attacks."
         },
         enemy_names: {
             bacteria: "Bacteria",
@@ -258,14 +260,16 @@ export const TEXT = {
             phantom: "Fantasma de Placa",
             tank: "Tanque de Sarro",
             general: "General Gingivitis",
-            deity: "Deidad del Deterioro"
+            deity: "Deidad del Deterioro",
+            wisdom: "El Guardián del Juicio"
         },
         boss_desc: {
             king: "Salta y aplasta. Cuidado con las ondas.",
             phantom: "Se teletransporta y embiste. Difícil de dar.",
             tank: "Fuertemente blindado. Dispara morteros.",
             general: "Invoca esbirros y dispara láseres gigantes.",
-            deity: "Pesadilla Bullet Hell. Buena suerte."
+            deity: "Pesadilla Bullet Hell. Buena suerte.",
+            wisdom: "Juez Oculto. Teletransporte y ataque teledirigido."
         },
         enemy_names: {
             bacteria: "Bacteria",

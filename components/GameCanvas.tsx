@@ -8,7 +8,7 @@ import { checkRectCollide } from '../utils/physics';
 // Modules
 import { AudioManager } from '../game/audio';
 import { generateLevel, drawBackground, drawPlatforms, drawTransition } from '../game/level';
-import { spawnBoss, spawnEnemy, drawEnemies, updateEnemyAI } from '../game/enemies';
+import { spawnBoss, spawnEnemy, drawEnemies, updateEnemyAI, spawnHiddenBoss } from '../game/enemies';
 import { spawnProjectile, drawHeldWeapon, drawProjectiles, spawnPowerUp, drawPowerUp } from '../game/weapons';
 import { getRandomPerks, applyPerk } from '../game/perks';
 import { GameHUD } from './GameHUD';
@@ -48,6 +48,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
   // Audio Manager (Singleton-ish per component mount)
   const audioManager = useRef(new AudioManager());
+
+  // Hidden Boss Tracker
+  const hiddenBossState = useRef({
+      levelStartTime: 0,
+      levelKillCount: 0,
+      bossSpawnTime: 0,
+      triggered: false,
+      lastPlayerX: 0,
+      idleTimer: 0
+  });
 
   // Mutable Game State
   const entities = useRef<{
@@ -233,6 +243,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     s.waveTimer = 0; s.shake = 0; s.levelTransitioning = false;
     s.transition = { phase: 'none', progress: 0 };
     
+    hiddenBossState.current = {
+        levelStartTime: Date.now(),
+        levelKillCount: 0,
+        bossSpawnTime: 0,
+        triggered: false,
+        lastPlayerX: 0,
+        idleTimer: 0
+    };
+
     inputs.current = {
         left: false, right: false, aimUp: false, down: false, shoot: false, dash: false,
         jumpPressed: false, shootPressed: false, dashPressed: false, mouseX: 0, mouseY: 0
@@ -260,6 +279,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       s.platforms = generateLevel(s.level.levelWidth);
       s.camera.x = 0; setStage(s.level.stage); setBossHp(0);
       s.player.invincibleTimer = 3.0;
+
+      // Reset Hidden Boss Trackers for new level
+      hiddenBossState.current = {
+        levelStartTime: Date.now(),
+        levelKillCount: 0,
+        bossSpawnTime: 0,
+        triggered: false,
+        lastPlayerX: s.player.x,
+        idleTimer: 0
+    };
   };
 
   const handleGameOver = async () => {
@@ -380,6 +409,36 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     
     const p = s.player;
     const config = DIFFICULTY_CONFIG[difficulty] || DIFFICULTY_CONFIG.normal;
+
+    // --- Hidden Boss Checks ---
+    if (!hiddenBossState.current.triggered && !s.levelTransitioning) {
+        const timeSinceStart = Date.now() - hiddenBossState.current.levelStartTime;
+        const minutesElapsed = timeSinceStart / 60000;
+        
+        // 1. Sloth: No significant movement for 2 mins
+        if (Math.abs(p.x - hiddenBossState.current.lastPlayerX) < 50) {
+            hiddenBossState.current.idleTimer += dt;
+        } else {
+            hiddenBossState.current.idleTimer = 0;
+            hiddenBossState.current.lastPlayerX = p.x;
+        }
+        if (hiddenBossState.current.idleTimer > 120) { // 2 minutes
+             spawnHiddenBoss(p, setBossName, setBossMaxHp, setBossHp, audioManager.current, s.enemies, lang);
+             hiddenBossState.current.triggered = true;
+        }
+
+        // 2. Stagnant: 3 mins elapsed + low distance
+        if (minutesElapsed > 3 && p.x < 1500 && !s.level.bossSpawned) {
+             spawnHiddenBoss(p, setBossName, setBossMaxHp, setBossHp, audioManager.current, s.enemies, lang);
+             hiddenBossState.current.triggered = true;
+        }
+
+        // 3. Wrath: >30 kills in < 2 mins
+        if (minutesElapsed < 2 && hiddenBossState.current.levelKillCount > 30) {
+             spawnHiddenBoss(p, setBossName, setBossMaxHp, setBossHp, audioManager.current, s.enemies, lang);
+             hiddenBossState.current.triggered = true;
+        }
+    }
 
     if (p.shieldRegenTimer > 0) p.shieldRegenTimer -= dt;
     else if (p.shield < p.maxShield) {
@@ -550,6 +609,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
     if (!s.level.bossSpawned && !s.levelTransitioning && p.x > s.level.levelWidth - 600) {
         s.level.bossSpawned = true;
+        hiddenBossState.current.bossSpawnTime = Date.now();
         spawnBoss(s.level, setBossName, setBossMaxHp, setBossHp, audioManager.current, s.enemies, lang);
     }
     if (s.level.bossSpawned && !s.levelTransitioning) {
@@ -571,13 +631,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         } else if (proj.projectileType !== 'sludge') {
             proj.x += proj.vx; proj.y += proj.vy;
             if (proj.projectileType === 'mortar' || proj.projectileType === 'acid') proj.vy += GRAVITY * 0.5;
+            
+            // Curve logic for high damage bullets (Hidden Boss uses this)
+            if (proj.projectileType === 'bullet' && proj.owner === 'enemy' && proj.damage > 20) {
+                 const dx = p.x - proj.x; const dy = p.y - proj.y; const dist = Math.sqrt(dx*dx + dy*dy);
+                 if (dist > 0 && dist < 400) { proj.vx += (dx/dist)*0.2; proj.vy += (dy/dist)*0.2; }
+            }
         }
         proj.lifeTime -= dt;
         if (proj.projectileType === 'wave') proj.y += Math.sin(Date.now() / 50) * 5;
-        if (proj.projectileType === 'bullet' && proj.owner === 'enemy' && proj.damage > 20) {
-             const dx = p.x - proj.x; const dy = p.y - proj.y; const dist = Math.sqrt(dx*dx + dy*dy);
-             if (dist > 0 && dist < 400) { proj.vx += (dx/dist)*0.2; proj.vy += (dy/dist)*0.2; }
-        }
     });
     s.projectiles = s.projectiles.filter(p => p.lifeTime > 0);
 
@@ -591,9 +653,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             if (enemy.subType !== 'candy_bomber' && enemy.subType !== 'acid_spitter' && enemy.subType !== 'boss') checkPlatformCollisions(enemy, s.platforms, true);
             
             if (enemy.subType === 'boss') {
-                 const arenaLeft = s.level.levelWidth - 800;
-                 if (enemy.x < arenaLeft) enemy.x = arenaLeft;
-                 if (enemy.x > s.level.levelWidth - enemy.w) enemy.x = s.level.levelWidth - enemy.w;
+                 if (enemy.bossVariant !== 'wisdom_warden') {
+                    const arenaLeft = s.level.levelWidth - 800;
+                    if (enemy.x < arenaLeft) enemy.x = arenaLeft;
+                    if (enemy.x > s.level.levelWidth - enemy.w) enemy.x = s.level.levelWidth - enemy.w;
+                 }
+                 
                  enemy.y += enemy.vy;
                  const floorY = CANVAS_HEIGHT - 60; 
                  if (enemy.bossState === 3 || (enemy.bossVariant === 'deity' && enemy.bossState === 1)) {
@@ -630,15 +695,32 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                     if (enemy.hp <= 0 && !enemy.dead) {
                         enemy.dead = true;
                         p.score += (enemy.subType === 'boss' ? 5000 : 100); 
+                        
+                        hiddenBossState.current.levelKillCount++;
                         p.runStats.killCount++;
+                        
                         setScore(p.score); s.shake = 5;
                         
+                        // Force drop if hidden boss
+                        const isHiddenBoss = enemy.bossVariant === 'wisdom_warden';
+                        const dropRate = isHiddenBoss ? 1.0 : config.dropRate;
+                        
                         const limitType = loadout === 'all' ? undefined : loadout;
-                        spawnPowerUp(entities.current.powerups, enemy.x, enemy.y, config.dropRate, limitType);
+                        spawnPowerUp(entities.current.powerups, enemy.x, enemy.y, dropRate, limitType);
                         
                         for(let i=0; i<8; i++) spawnParticle(enemy.x+enemy.w/2, enemy.y+enemy.h/2, enemy.color, 10);
                         
                         if (enemy.subType === 'boss' && !s.levelTransitioning) {
+                            if (!isHiddenBoss && !hiddenBossState.current.triggered) {
+                                // 4. Speedrun Check: < 60s
+                                const timeToKill = Date.now() - hiddenBossState.current.bossSpawnTime;
+                                if (timeToKill < 60000) {
+                                     spawnHiddenBoss(p, setBossName, setBossMaxHp, setBossHp, audioManager.current, s.enemies, lang);
+                                     hiddenBossState.current.triggered = true;
+                                     return; // Don't transition yet
+                                }
+                            }
+
                             triggerPerkSelection();
                             s.levelTransitioning = true;
                             setTimeout(() => { 

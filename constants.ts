@@ -46,6 +46,7 @@ export const COLORS = {
   enemySugarFiend: '#ec4899',
   enemyAcidSpitter: '#a3e635',
   enemyGrunt: '#991b1b',
+  enemyWarden: '#facc15', // Hidden Boss (Gold)
 
   // Projectiles
   projectilePlayer: '#60a5fa',

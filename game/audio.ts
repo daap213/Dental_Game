@@ -206,9 +206,32 @@ export class AudioManager {
     }
   }
 
+  playHiddenBossIntro() {
+      if (!this.ctx) return;
+      const t = this.ctx.currentTime;
+      // Eerie, dissonant chord
+      [330, 415, 494, 622].forEach(f => {
+          const osc = this.ctx!.createOscillator();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(f, t);
+          osc.frequency.linearRampToValueAtTime(f * 0.9, t + 3);
+          const g = this.ctx!.createGain();
+          g.gain.setValueAtTime(0, t);
+          g.gain.linearRampToValueAtTime(0.2, t + 0.5);
+          g.gain.linearRampToValueAtTime(0, t + 4);
+          osc.connect(g).connect(this.ctx!.destination);
+          osc.start(t); osc.stop(t + 4);
+      });
+  }
+
   playBossIntro(variant: Enemy['bossVariant']) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
+
+    if (variant === 'wisdom_warden') {
+        this.playHiddenBossIntro();
+        return;
+    }
 
     if (variant === 'phantom') {
       const osc = this.ctx.createOscillator();

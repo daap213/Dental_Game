@@ -1,9 +1,27 @@
 
-import { Enemy, LevelState, Projectile, Particle, Rect, Language } from '../types';
+import { Enemy, LevelState, Projectile, Particle, Rect, Language, Player } from '../types';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, COLORS, GRAVITY } from '../constants';
 import { AudioManager } from './audio';
 import { spawnProjectile } from './weapons';
 import { TEXT } from '../utils/locales';
+
+export const spawnHiddenBoss = (p: Player, setBossName: (n:string)=>void, setBossMaxHp: (n:number)=>void, setBossHp: (n:number)=>void, audio: AudioManager, enemies: Enemy[], lang: Language) => {
+    const maxHp = 5000;
+    const name = TEXT[lang].bosses.wisdom;
+    setBossName(name);
+    setBossMaxHp(maxHp);
+    setBossHp(maxHp);
+    audio.playBossIntro('wisdom_warden');
+
+    enemies.push({
+        id: 'hidden_boss',
+        x: p.x + 300,
+        y: CANVAS_HEIGHT - 250,
+        w: 120, h: 140, vx: 0, vy: 0, hp: maxHp, maxHp,
+        type: 'enemy', subType: 'boss', bossVariant: 'wisdom_warden', phase: 1,
+        color: COLORS.enemyWarden, facing: -1, isGrounded: false, aiTimer: 0, attackTimer: 0, frameTimer: 0, state: 0, bossState: 0
+    });
+};
 
 export const spawnBoss = (level: LevelState, setBossName: (n:string)=>void, setBossMaxHp: (n:number)=>void, setBossHp: (n:number)=>void, audio: AudioManager, enemies: Enemy[], lang: Language) => {
     const stage = level.stage;
@@ -75,6 +93,7 @@ const drawRoundRect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: n
 export const drawEnemies = (ctx: CanvasRenderingContext2D, enemies: Enemy[]) => {
     enemies.forEach(e => {
         if (e.bossVariant === 'phantom' && e.bossState === 5) ctx.globalAlpha = 0.2;
+        else if (e.bossVariant === 'wisdom_warden') ctx.globalAlpha = 0.8 + Math.sin(Date.now()/200)*0.2;
         else ctx.globalAlpha = 1.0;
 
         if (e.subType === 'bacteria') drawBacteria(ctx, e);
@@ -189,7 +208,46 @@ const drawGingivitisGrunt = (ctx: CanvasRenderingContext2D, e: Enemy) => {
 
 const drawBoss = (ctx: CanvasRenderingContext2D, e: Enemy) => {
     ctx.fillStyle = e.color;
-    if (e.bossVariant === 'phantom') {
+    if (e.bossVariant === 'wisdom_warden') {
+        // HIDDEN BOSS VISUALS
+        ctx.save();
+        ctx.translate(e.x + e.w/2, e.y + e.h/2);
+        
+        // Golden Aura
+        ctx.shadowColor = '#facc15'; ctx.shadowBlur = 20 + Math.sin(Date.now()/100)*10;
+        
+        // Spectral Body
+        const grad = ctx.createLinearGradient(0, -e.h/2, 0, e.h/2);
+        grad.addColorStop(0, '#fef08a'); grad.addColorStop(1, '#ca8a04');
+        ctx.fillStyle = grad;
+        
+        // Tooth Shape
+        ctx.beginPath();
+        ctx.moveTo(-40, -50); 
+        ctx.bezierCurveTo(-20, -70, 20, -70, 40, -50);
+        ctx.bezierCurveTo(60, -20, 50, 40, 20, 70);
+        ctx.lineTo(0, 50);
+        ctx.lineTo(-20, 70);
+        ctx.bezierCurveTo(-50, 40, -60, -20, -40, -50);
+        ctx.fill();
+        
+        // Third Eye
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.ellipse(0, -20, 15, 25, 0, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#dc2626';
+        ctx.beginPath(); ctx.arc(0, -20, 8, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#000';
+        ctx.beginPath(); ctx.arc(0, -20, 3, 0, Math.PI*2); ctx.fill();
+
+        // Standard Eyes (Closed)
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(-30, 10); ctx.lineTo(-15, 10); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(15, 10); ctx.lineTo(30, 10); ctx.stroke();
+        
+        ctx.restore();
+
+    } else if (e.bossVariant === 'phantom') {
         ctx.save();
         ctx.beginPath(); ctx.moveTo(e.x, e.y + e.h); ctx.quadraticCurveTo(e.x, e.y, e.x + e.w/2, e.y); ctx.quadraticCurveTo(e.x + e.w, e.y, e.x + e.w, e.y + e.h);
         for(let i=e.x+e.w; i>e.x; i-=20) { ctx.lineTo(i-10, e.y+e.h-20 + Math.sin(Date.now()/100 + i)*5); ctx.lineTo(i-20, e.y+e.h); }
@@ -310,7 +368,62 @@ export const updateEnemyAI = (enemy: Enemy, p: any, s: any, audio: AudioManager,
              if (setBossHp) setBossHp(enemy.hp);
              if (enemy.bossVariant === 'deity' && enemy.hp < enemy.maxHp/2 && enemy.phase===1) { enemy.phase=2; enemy.color='#7f1d1d'; s.shake=30; }
              
-             if(enemy.bossVariant==='phantom') {
+             if(enemy.bossVariant==='wisdom_warden') {
+                 // HIDDEN BOSS AI
+                 enemy.vy = Math.sin(Date.now()/500) * 0.5; // Float
+                 
+                 if (enemy.bossState === 0) { // Idle/Chase
+                     const targetX = p.x + (Math.sin(Date.now()/1000) * 200);
+                     enemy.vx = (targetX - enemy.x) * 0.05;
+                     
+                     if (enemy.aiTimer > 2.5) {
+                         const r = Math.random();
+                         enemy.bossState = r > 0.6 ? 1 : 2; // 1: Teleport, 2: Judgment
+                         enemy.aiTimer = 0;
+                     }
+                 } else if (enemy.bossState === 1) { // Teleport
+                     if (enemy.aiTimer > 0.5) {
+                         // Teleport near player
+                         const offset = Math.random() > 0.5 ? -250 : 250;
+                         enemy.x = p.x + offset;
+                         enemy.y = p.y - 100;
+                         // Clamp
+                         if (enemy.y < 50) enemy.y = 50;
+                         if (enemy.x < 0) enemy.x = 0;
+                         if (enemy.x > s.level.levelWidth - 100) enemy.x = s.level.levelWidth - 100;
+                         
+                         audio.playBossAttack('charge');
+                         enemy.bossState = 0;
+                         enemy.aiTimer = 0;
+                     }
+                 } else if (enemy.bossState === 2) { // Judgment Orbs (Homing)
+                     enemy.vx = 0;
+                     if (enemy.attackTimer > 0.2) {
+                         audio.playBossAttack('shoot');
+                         const dx = p.x - enemy.x;
+                         const dy = p.y - enemy.y;
+                         const dist = Math.sqrt(dx*dx + dy*dy);
+                         
+                         s.projectiles.push({
+                             id: Math.random().toString(),
+                             x: enemy.x + enemy.w/2,
+                             y: enemy.y + enemy.h/2,
+                             w: 16, h: 16,
+                             vx: (dx/dist) * 6 + (Math.random()-0.5)*2,
+                             vy: (dy/dist) * 6 + (Math.random()-0.5)*2,
+                             hp: 1, maxHp: 1, type: 'projectile', projectileType: 'bullet', // Use standard bullet but high damage curves it in main loop
+                             damage: 25, // Triggers curve logic in GameCanvas
+                             owner: 'enemy', lifeTime: 4, hitIds: [], 
+                             color: '#facc15', facing: 1, isGrounded: false, frameTimer: 0, state: 0
+                         });
+                         enemy.attackTimer = 0;
+                     }
+                     if (enemy.aiTimer > 2) {
+                         enemy.bossState = 0;
+                         enemy.aiTimer = 0;
+                     }
+                 }
+             } else if(enemy.bossVariant==='phantom') {
                  if(enemy.bossState===5) { enemy.vx=0; enemy.vy=0; if(enemy.aiTimer>2) { enemy.x=p.x>400?p.x-200:p.x+200; enemy.y=p.y-100; enemy.bossState=0; enemy.aiTimer=0; } return; }
                  enemy.vy = Math.sin(Date.now()/300)*2;
                  if(enemy.bossState===0) { enemy.vx=(p.x-enemy.x)*0.03; if(enemy.aiTimer>1.5) { enemy.bossState=Math.random()>0.7?5:1; enemy.aiTimer=0; } }
@@ -332,7 +445,7 @@ export const updateEnemyAI = (enemy: Enemy, p: any, s: any, audio: AudioManager,
                     } 
                  }
                  else if(enemy.bossState===2) { // Slam
-                    enemy.vx=0; enemy.vy+=GRAVITY; if(enemy.aiTimer>0.8) { audio.playBossAttack('slam'); [-1,1].forEach(d=>s.projectiles.push({id:Math.random().toString(),x:enemy.x,y:enemy.y+enemy.h-10,w:40,h:40,vx:d*12,vy:0,hp:1,maxHp:1,type:'projectile',projectileType:'wave',damage:20,owner:'enemy',lifeTime:3,hitIds:[],color:COLORS.projectileWave,facing:1,isGrounded:false,frameTimer:0,state:0})); enemy.bossState=0; enemy.aiTimer=0; } 
+                    enemy.vx=0; enemy.vy+=GRAVITY; if(enemy.aiTimer>0.8) { audio.playBossAttack('slam'); [-1,1].forEach(d=>s.projectiles.push({id:Math.random().toString(),x:enemy.x,y:enemy.y+enemy.h-10,w:40,h:40,vx:d*12,vy:0,hp:1,maxHp:1,type:'projectile',projectileType:'wave',damage:20,owner:'enemy',lifeTime:3,hitIds:[],color:COLORS.projectileWave,facing:1,isGrounded:false,frameTimer:0,state:0}); enemy.bossState=0; enemy.aiTimer=0; } 
                  }
                  else if(enemy.bossState===3) { // Rapid Fire Move
                      enemy.vx = (p.x - enemy.x) > 0 ? 5 : -5; enemy.vy += GRAVITY;
