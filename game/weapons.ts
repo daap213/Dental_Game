@@ -64,8 +64,9 @@ export const spawnProjectile = (projectiles: Projectile[], x: number, y: number,
 };
 
 export const spawnPowerUp = (powerups: PowerUp[], x: number, y: number) => {
-    // REDUCED FREQUENCY: 15% chance (was ~40%)
-    if (Math.random() > 0.85) return;
+    // VERY LOW DROP RATE: 6% chance
+    // If random > 0.06, we return (no drop). Only drops if random <= 0.06
+    if (Math.random() > 0.06) return;
     
     const r = Math.random(); 
     let sub: PowerUp['subType'] = 'health'; 
