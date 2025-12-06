@@ -1,8 +1,9 @@
+
 import React, { useRef, useEffect, useState } from 'react';
 import { GameState, Entity, Player, Enemy, Projectile, Platform, Particle, PowerUp, Rect, WeaponType, LevelState } from '../types';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, GRAVITY, COLORS, PLAYER_SPEED, PLAYER_JUMP, FRICTION, TERMINAL_VELOCITY, PLAYER_SIZE, PLAYER_DASH_SPEED, PLAYER_DASH_DURATION, PLAYER_DASH_COOLDOWN, PLAYER_MAX_JUMPS, MAX_WEAPON_LEVEL } from '../constants';
 import { generateBriefing, generateGameOverMessage } from '../services/geminiService';
-import { Rocket, Heart, Zap, Waves, Crosshair, Sword, Wind, ChevronsUp } from 'lucide-react';
+import { Rocket, Heart, Zap, Waves, Crosshair, Sword, Wind, ChevronsUp, Snail } from 'lucide-react';
 
 interface GameCanvasProps {
   onGameOver: (score: number, message: string) => void;
@@ -407,7 +408,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     platforms: [],
     bgProps: [],
     camera: { x: 0, y: 0 },
-    level: { stage: 1, distanceTraveled: 0, bossSpawned: false, levelWidth: 4000 },
+    level: { stage: 1, distanceTraveled: 0, bossSpawned: false, levelWidth: 8000 },
     waveTimer: 0,
     shake: 0,
     levelTransitioning: false,
@@ -446,6 +447,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       facing: 1,
       isGrounded: false,
       invincibleTimer: 0,
+      slowTimer: 0,
       weapon: 'normal',
       weaponLevel: 1,
       ammo: -1,
@@ -516,7 +518,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     entities.current.projectiles = [];
     entities.current.particles = [];
     entities.current.powerups = [];
-    entities.current.level = { stage: 1, distanceTraveled: 0, bossSpawned: false, levelWidth: 3000 };
+    entities.current.level = { stage: 1, distanceTraveled: 0, bossSpawned: false, levelWidth: 8000 };
     
     // Generate initial level immediately
     entities.current.platforms = generateLevel(entities.current.level.levelWidth);
@@ -554,7 +556,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       s.level.stage++;
       s.level.bossSpawned = false;
       s.level.distanceTraveled = 0;
-      s.level.levelWidth += 1000; // Longer levels
+      s.level.levelWidth += 2000; // Longer levels
       s.player.x = 100;
       s.player.y = 200;
       s.player.hp = Math.min(s.player.hp + 50, 100); // Heal
@@ -847,16 +849,25 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     let w = 32, h = 32, hp = 20 + (entities.current.level.stage * 4), color = COLORS.enemyBacteria;
     
     // Spawn table based on difficulty
-    if (rand > 0.9) {
+    if (rand > 0.95) {
         subType = 'plaque_monster';
         w = 48; h = 36; hp = 80 + (entities.current.level.stage * 10); color = COLORS.enemyPlaque;
-    } else if (rand > 0.75) {
+    } else if (rand > 0.9) {
+        subType = 'gingivitis_grunt';
+        w = 40; h = 48; hp = 60 + (entities.current.level.stage * 5); color = COLORS.enemyGrunt;
+    } else if (rand > 0.8) {
         subType = 'tartar_turret';
         w = 32; h = 48; hp = 50; color = COLORS.enemyTurret;
+    } else if (rand > 0.7) {
+        subType = 'acid_spitter';
+        w = 36; h = 36; hp = 40; color = COLORS.enemyAcidSpitter;
     } else if (rand > 0.6) {
         subType = 'candy_bomber';
         w = 40; h = 24; hp = 30; color = COLORS.enemyCandy;
-    } else if (rand > 0.45) {
+    } else if (rand > 0.5) {
+        subType = 'sugar_fiend';
+        w = 28; h = 28; hp = 25; color = COLORS.enemySugarFiend;
+    } else if (rand > 0.4) {
         subType = 'sugar_rusher';
         w = 24; h = 24; hp = 20; color = COLORS.enemyRusher;
     }
@@ -912,6 +923,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
     // --- Player Logic ---
 
+    // Slow Timer
+    if (p.slowTimer > 0) p.slowTimer -= dt;
+
     // Dash Logic
     if (p.dashCooldown > 0) p.dashCooldown -= dt;
     
@@ -942,14 +956,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         }
     } else {
         // Normal Movement
-        if (inputs.current.left) { p.vx -= PLAYER_SPEED * 0.2; p.facing = -1; }
-        if (inputs.current.right) { p.vx += PLAYER_SPEED * 0.2; p.facing = 1; }
+        const speed = p.slowTimer > 0 ? PLAYER_SPEED * 0.5 : PLAYER_SPEED;
+        if (inputs.current.left) { p.vx -= speed * 0.2; p.facing = -1; }
+        if (inputs.current.right) { p.vx += speed * 0.2; p.facing = 1; }
         
         // Friction
         if (!inputs.current.left && !inputs.current.right) p.vx *= FRICTION;
         
         // Clamp Speed
-        p.vx = Math.max(Math.min(p.vx, PLAYER_SPEED), -PLAYER_SPEED);
+        p.vx = Math.max(Math.min(p.vx, speed), -speed);
         
         // Gravity
         p.vy += GRAVITY;
@@ -1143,9 +1158,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                 }
             }
         } else {
-            proj.x += proj.vx;
-            proj.y += proj.vy;
-            if (proj.projectileType === 'mortar') proj.vy += GRAVITY * 0.5;
+            // Standard Movement
+            if (proj.projectileType !== 'sludge') {
+                proj.x += proj.vx;
+                proj.y += proj.vy;
+            }
+            if (proj.projectileType === 'mortar' || proj.projectileType === 'acid') proj.vy += GRAVITY * 0.5;
         }
         
         proj.lifeTime -= dt;
@@ -1223,6 +1241,77 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                     enemy.vx = enemy.x > p.x ? -6 : 6;
                     if (enemy.isGrounded && Math.random() < 0.05) enemy.vy = -12;
                     enemy.vy += GRAVITY;
+                    break;
+                case 'sugar_fiend':
+                    // Runs away if too close, else random movement
+                    // Drops 'Sticky' trails
+                    if (dist < 150) {
+                        enemy.vx = enemy.x > p.x ? 4 : -4; // Run away
+                    } else {
+                        enemy.vx = enemy.x > p.x ? -3 : 3; // Approach
+                    }
+                    
+                    enemy.vy += GRAVITY;
+                    
+                    if (enemy.attackTimer > 1.0) {
+                        // Drop Sticky Puddle
+                        s.projectiles.push({
+                            id: Math.random().toString(),
+                            x: enemy.x, y: enemy.y + enemy.h - 5,
+                            w: 24, h: 10,
+                            vx: 0, vy: 0,
+                            hp: 1, maxHp: 1, type: 'projectile', projectileType: 'sludge',
+                            damage: 0, owner: 'enemy', lifeTime: 4, hitIds: [], // 0 Damage, just slow
+                            color: COLORS.projectileSludge, facing: 1, isGrounded: false, frameTimer: 0, state: 0
+                        });
+                        enemy.attackTimer = 0;
+                    }
+                    break;
+                case 'acid_spitter':
+                    // Stationary, shoots acid blobs
+                    enemy.vx = 0;
+                    enemy.vy += GRAVITY;
+                    if (enemy.attackTimer > 2.5 && dist < 500) {
+                        // Lob Acid
+                        const dx = p.x - enemy.x;
+                        const dy = p.y - enemy.y - 100; // Aim higher for arc
+                        const power = 0.02;
+                        
+                        s.projectiles.push({
+                            id: Math.random().toString(),
+                            x: enemy.x + enemy.w/2, y: enemy.y,
+                            w: 12, h: 12,
+                            vx: dx * power, vy: dy * power - 5, // Upward Lob
+                            hp: 1, maxHp: 1, type: 'projectile', projectileType: 'acid',
+                            damage: 15, owner: 'enemy', lifeTime: 3, hitIds: [],
+                            color: COLORS.projectileAcid, facing: 1, isGrounded: false, frameTimer: 0, state: 0
+                        });
+                        enemy.attackTimer = 0;
+                    }
+                    break;
+                case 'gingivitis_grunt':
+                    // Patrols slowly. Charges if aligned Y.
+                    enemy.vy += GRAVITY;
+                    const yDiff = Math.abs((p.y + p.h) - (enemy.y + enemy.h));
+                    
+                    if (enemy.bossState === 1) { // Charging
+                         enemy.vx = enemy.facing * 8; // Fast
+                         if (enemy.aiTimer > 1.0) { // Charge duration
+                             enemy.bossState = 0; // Tired
+                             enemy.aiTimer = 0;
+                         }
+                    } else { // Patrol
+                         enemy.vx = enemy.x > p.x ? -1 : 1;
+                         enemy.facing = enemy.vx > 0 ? 1 : -1;
+                         
+                         // Check for charge
+                         if (yDiff < 30 && dist < 300 && dist > 50 && enemy.aiTimer > 2.0) {
+                             enemy.bossState = 1;
+                             enemy.aiTimer = 0;
+                             // Charge warning particle?
+                             spawnParticle(enemy.x, enemy.y, '#fff', 5);
+                         }
+                    }
                     break;
                 case 'boss':
                     setBossHp(enemy.hp);
@@ -1496,7 +1585,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
             // Apply movement
             enemy.x += enemy.vx;
-            if (enemy.subType !== 'candy_bomber' && enemy.subType !== 'boss') {
+            if (enemy.subType !== 'candy_bomber' && enemy.subType !== 'acid_spitter' && enemy.subType !== 'boss') {
                 checkPlatformCollisions(enemy, s.platforms, true);
             }
             
@@ -1608,6 +1697,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
     // Enemy/Enemy Projectile vs Player
     let playerHit = false;
+    let hitDamage = 20;
+
     s.enemies.forEach(enemy => {
         if (checkRectCollide(p, enemy)) {
             playerHit = true;
@@ -1615,13 +1706,19 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     });
     s.projectiles.forEach(proj => {
         if (proj.owner === 'enemy' && checkRectCollide(p, proj)) {
-            playerHit = true;
-            proj.lifeTime = 0;
+            if (proj.projectileType === 'sludge') {
+                // Sludge trap logic - No damage, just slow
+                p.slowTimer = 0.5; // Apply slow for 0.5s (refreshes if standing in it)
+            } else {
+                playerHit = true;
+                hitDamage = proj.damage;
+                proj.lifeTime = 0;
+            }
         }
     });
 
     if (playerHit && p.invincibleTimer <= 0) {
-        p.hp -= 20;
+        p.hp -= hitDamage;
         setHp(p.hp);
         p.invincibleTimer = 2.0;
         p.vy = -6;
@@ -2033,6 +2130,70 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       ctx.lineTo(e.x + e.w/2, e.y + e.h - 6);
       ctx.lineTo(e.x + 6, e.y + e.h/2);
       ctx.fill();
+  };
+  
+  const drawSugarFiend = (ctx: CanvasRenderingContext2D, e: Enemy) => {
+      // Jagged Crystal Shards (Pink)
+      ctx.fillStyle = e.color;
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w/2, e.y);
+      ctx.lineTo(e.x + e.w, e.y + e.h * 0.3);
+      ctx.lineTo(e.x + e.w * 0.8, e.y + e.h);
+      ctx.lineTo(e.x + e.w * 0.2, e.y + e.h);
+      ctx.lineTo(e.x, e.y + e.h * 0.3);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Highlights
+      ctx.fillStyle = '#fbcfe8';
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w/2, e.y + 5);
+      ctx.lineTo(e.x + e.w - 5, e.y + e.h * 0.3);
+      ctx.lineTo(e.x + e.w/2, e.y + e.h * 0.6);
+      ctx.fill();
+      
+      // Evil Eyes
+      ctx.fillStyle = '#000';
+      ctx.fillRect(e.x + 8, e.y + 12, 4, 4);
+      ctx.fillRect(e.x + 16, e.y + 12, 4, 4);
+  };
+
+  const drawAcidSpitter = (ctx: CanvasRenderingContext2D, e: Enemy) => {
+      // Bloated Sac
+      ctx.fillStyle = e.color;
+      ctx.beginPath();
+      ctx.arc(e.x + e.w/2, e.y + e.h/2 + 5, e.w/2, 0, Math.PI*2);
+      ctx.fill();
+      
+      // Pulsating Top
+      const pulse = Math.sin(Date.now() / 200) * 3;
+      ctx.fillStyle = '#bef264';
+      ctx.beginPath();
+      ctx.arc(e.x + e.w/2, e.y + 5, 8 + pulse, 0, Math.PI*2);
+      ctx.fill();
+      
+      // Mouth
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2, e.y + 15, 6, 8, 0, 0, Math.PI*2);
+      ctx.fill();
+  };
+
+  const drawGingivitisGrunt = (ctx: CanvasRenderingContext2D, e: Enemy) => {
+      // Armored Body (Red)
+      ctx.fillStyle = e.color;
+      ctx.fillRect(e.x, e.y, e.w, e.h);
+      
+      // Shield
+      ctx.fillStyle = '#7f1d1d'; // Dark red
+      const shieldX = e.facing === -1 ? e.x - 5 : e.x + e.w - 5;
+      ctx.fillRect(shieldX, e.y + 5, 10, e.h - 10);
+      
+      // Helmet Vizor
+      ctx.fillStyle = '#000';
+      ctx.fillRect(e.x + 5, e.y + 8, e.w - 10, 6);
+      ctx.fillStyle = '#ef4444'; // Eye glow
+      ctx.fillRect(e.x + (e.facing === 1 ? 20 : 10), e.y + 9, 6, 4);
   };
 
   const drawTransition = (ctx: CanvasRenderingContext2D) => {
@@ -2486,6 +2647,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             drawTurret(ctx, e);
         } else if (e.subType === 'sugar_rusher') {
             drawRusher(ctx, e);
+        } else if (e.subType === 'sugar_fiend') {
+            drawSugarFiend(ctx, e);
+        } else if (e.subType === 'acid_spitter') {
+            drawAcidSpitter(ctx, e);
+        } else if (e.subType === 'gingivitis_grunt') {
+            drawGingivitisGrunt(ctx, e);
         } else if (e.subType === 'boss') {
             
             ctx.fillStyle = e.color;
@@ -2622,6 +2789,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         if (p.dashTimer > 0) {
             ctx.globalAlpha = 0.5;
             ctx.fillStyle = '#a5f3fc';
+        }
+        
+        // Slow Color Overlay
+        if (p.slowTimer > 0) {
+            ctx.fillStyle = '#f9a8d4'; // Pink Tint
         }
 
         // Tooth Body
@@ -2765,10 +2937,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         } else if (proj.projectileType === 'laser') {
             // Core beam
             ctx.save();
-            // Rotate if needed (for diagonal lasers)
-            // But currently lasers are axis aligned rects in physics
-            // Visual rotation for diagonal would require saving angle in projectile
-            // We kept lasers simple for now
             ctx.fillStyle = '#fff';
             ctx.fillRect(proj.x, proj.y + proj.h * 0.25, proj.w, proj.h * 0.5);
             // Outer glow
@@ -2778,9 +2946,19 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             ctx.globalAlpha = 1.0;
             ctx.restore();
             
-        } else if (proj.projectileType === 'mortar') {
-             ctx.fillStyle = '#444';
-             ctx.beginPath(); ctx.arc(proj.x+proj.w/2, proj.y+proj.h/2, 8, 0, Math.PI*2); ctx.fill();
+        } else if (proj.projectileType === 'mortar' || proj.projectileType === 'acid') {
+             // Blob / Mortar
+             ctx.beginPath(); ctx.arc(proj.x+proj.w/2, proj.y+proj.h/2, proj.w/2, 0, Math.PI*2); ctx.fill();
+        } else if (proj.projectileType === 'sludge') {
+             // Sticky Sludge Puddle
+             ctx.fillStyle = proj.color;
+             ctx.beginPath();
+             ctx.ellipse(proj.x + proj.w/2, proj.y + proj.h/2, proj.w/2, proj.h/3, 0, 0, Math.PI * 2);
+             ctx.fill();
+             // Bubbles
+             ctx.fillStyle = '#fff';
+             if (Math.random() > 0.5) ctx.fillRect(proj.x + 5, proj.y + 4, 2, 2);
+             if (Math.random() > 0.5) ctx.fillRect(proj.x + proj.w - 8, proj.y + 2, 2, 2);
         } else {
              // Standard Bullet
              ctx.beginPath();
@@ -2902,6 +3080,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                   <ChevronsUp className="w-3 h-3 mr-1" />
                   <span className="text-xs font-bold">LVL {entities.current.player.weaponLevel}</span>
               </div>
+              {entities.current.player.slowTimer > 0 && (
+                   <div className="flex items-center text-pink-400 border-l border-slate-600 pl-2 animate-pulse">
+                        <Snail className="w-3 h-3 mr-1" />
+                        <span className="text-xs font-bold">SLOWED</span>
+                   </div>
+              )}
           </div>
       </div>
 
