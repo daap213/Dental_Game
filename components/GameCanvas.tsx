@@ -110,6 +110,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
   // Reset Game when sessionId changes
   useEffect(() => {
       if (sessionId > 0) {
+          // Remove focus from buttons to prevent accidental key triggers
+          if (document.activeElement instanceof HTMLElement) {
+              document.activeElement.blur();
+          }
           resetGame();
       }
   }, [sessionId]);
@@ -152,8 +156,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     entities.current.particles = [];
     entities.current.powerups = [];
     entities.current.level = { stage: 1, distanceTraveled: 0, bossSpawned: false, levelWidth: 3000 };
+    
+    // Generate initial level immediately
     entities.current.platforms = generateLevel(entities.current.level.levelWidth);
     entities.current.bgProps = generateBgProps(entities.current.level.levelWidth);
+    
     entities.current.camera = { x: 0, y: 0 };
     entities.current.waveTimer = 0;
     entities.current.shake = 0;
@@ -294,8 +301,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
   const generateLevel = (width: number): Platform[] => {
     const platforms: Platform[] = [];
     
-    // Continuous Floor with gaps
-    let x = 0;
+    // SAFE START ZONE: Guaranteed ground for the first 800 pixels
+    platforms.push({ x: 0, y: CANVAS_HEIGHT - 40, w: 800, h: 40, type: 'platform', isGround: true });
+    
+    // Continuous Floor with gaps logic, starting AFTER the safe zone
+    let x = 800;
     while(x < width) {
         const gap = Math.random() > 0.8 ? 100 : 0;
         const w = 400 + Math.random() * 400;
@@ -314,7 +324,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         }
     }
     
-    // Boss Arena floor at end
+    // Boss Arena floor at end (ensure overlap)
     platforms.push({ x: width - 800, y: CANVAS_HEIGHT - 40, w: 800, h: 40, type: 'platform', isGround: true });
     
     return platforms;
@@ -447,6 +457,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
   const update = (dt: number) => {
     const s = entities.current;
+    
+    // FAILSAFE: If platforms are missing (bug prevention), regenerate
+    if (s.platforms.length === 0) {
+        s.platforms = generateLevel(s.level.levelWidth);
+    }
+    
     const p = s.player;
 
     // --- Transition Update ---
