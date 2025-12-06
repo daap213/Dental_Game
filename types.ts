@@ -9,6 +9,7 @@ export enum GameState {
 }
 
 export type InputMethod = 'mouse' | 'keyboard';
+export type LoadoutType = 'all' | WeaponType;
 
 export interface Rect {
   x: number;
@@ -105,7 +106,7 @@ export interface Particle extends Entity {
 
 export interface PowerUp extends Entity {
   type: 'powerup';
-  subType: 'health' | 'spread' | 'laser' | 'mouthwash' | 'floss' | 'toothbrush';
+  subType: 'health' | WeaponType;
 }
 
 export interface Platform extends Rect {

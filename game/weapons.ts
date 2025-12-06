@@ -63,20 +63,43 @@ export const spawnProjectile = (projectiles: Projectile[], x: number, y: number,
     }
 };
 
-export const spawnPowerUp = (powerups: PowerUp[], x: number, y: number) => {
-    // VERY LOW DROP RATE: 6% chance
-    // If random > 0.06, we return (no drop). Only drops if random <= 0.06
-    if (Math.random() > 0.06) return;
+export const spawnPowerUp = (powerups: PowerUp[], x: number, y: number, limitToType?: WeaponType) => {
+    // INCREASED DROP RATE: 15% chance
+    if (Math.random() > 0.15) return;
     
-    const r = Math.random(); 
     let sub: PowerUp['subType'] = 'health'; 
     let c = '#ef4444';
+
+    if (limitToType) {
+        // If user selected a specific loadout, only drop that weapon or health
+        // 40% chance of Health, 60% chance of Weapon Upgrade
+        if (Math.random() > 0.4) {
+            sub = limitToType;
+        } else {
+            sub = 'health';
+        }
+    } else {
+        // Standard "All" drop logic
+        const r = Math.random(); 
+        if (r > 0.85) { sub = 'spread'; } 
+        else if (r > 0.7) { sub = 'laser'; }
+        else if (r > 0.55) { sub = 'mouthwash'; } 
+        else if (r > 0.4) { sub = 'floss'; }
+        else if (r > 0.25) { sub = 'toothbrush'; }
+        // else health (default)
+    }
     
-    if (r > 0.85) { sub = 'spread'; c = '#3b82f6'; } 
-    else if (r > 0.7) { sub = 'laser'; c = '#06b6d4'; }
-    else if (r > 0.55) { sub = 'mouthwash'; c = '#a855f7'; } 
-    else if (r > 0.4) { sub = 'floss'; c = '#10b981'; }
-    else if (r > 0.25) { sub = 'toothbrush'; c = '#f97316'; }
+    // Assign color based on subType
+    switch(sub) {
+        case 'spread': c = '#3b82f6'; break;
+        case 'laser': c = '#06b6d4'; break;
+        case 'mouthwash': c = '#a855f7'; break;
+        case 'floss': c = '#10b981'; break;
+        case 'toothbrush': c = '#f97316'; break;
+        case 'health': c = '#ef4444'; break;
+        case 'normal': c = '#9ca3af'; break; // Gray
+        default: c = '#ef4444'; break;
+    }
 
     powerups.push({ 
         id: Math.random().toString(), 
@@ -149,6 +172,7 @@ export const drawPowerUp = (ctx: CanvasRenderingContext2D, pu: PowerUp) => {
         case 'mouthwash': symbol = 'W'; break;
         case 'floss': symbol = 'F'; break;
         case 'toothbrush': symbol = 'T'; break;
+        case 'normal': symbol = 'N'; break;
     }
 
     ctx.fillText(symbol, x + w/2, y + h/2 + 1);

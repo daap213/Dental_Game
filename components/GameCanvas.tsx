@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useState } from 'react';
-import { GameState, Entity, Player, Enemy, Projectile, Platform, Particle, PowerUp, LevelState, Rect, WeaponType, InputMethod, Perk } from '../types';
+import { GameState, Entity, Player, Enemy, Projectile, Platform, Particle, PowerUp, LevelState, Rect, WeaponType, InputMethod, Perk, LoadoutType } from '../types';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, GRAVITY, COLORS, PLAYER_SPEED, PLAYER_JUMP, FRICTION, TERMINAL_VELOCITY, PLAYER_SIZE, PLAYER_DASH_SPEED, PLAYER_DASH_DURATION, PLAYER_DASH_COOLDOWN, PLAYER_MAX_JUMPS, MAX_WEAPON_LEVEL, SCORE_MILESTONE_START, SCORE_MILESTONE_INCREMENT, KILL_MILESTONE_START, KILL_MILESTONE_INCREMENT_START, SHIELD_REGEN_DELAY, SHIELD_REGEN_RATE } from '../constants';
 import { generateGameOverMessage } from '../services/geminiService';
 import { checkRectCollide } from '../utils/physics';
@@ -19,13 +19,14 @@ interface GameCanvasProps {
   setGameState: (state: GameState) => void;
   sessionId: number;
   inputMethod: InputMethod;
+  loadout: LoadoutType;
   onPerkSelectStart: (perks: Perk[]) => void;
   selectedPerkId: string | null;
   onPerkApplied: () => void;
   onVictory: () => void;
 }
 
-export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, setGameState, sessionId, inputMethod, onPerkSelectStart, selectedPerkId, onPerkApplied, onVictory }) => {
+export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, setGameState, sessionId, inputMethod, loadout, onPerkSelectStart, selectedPerkId, onPerkApplied, onVictory }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [score, setScore] = useState(0);
   const [hp, setHp] = useState(100);
@@ -74,14 +75,17 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
   });
 
   function createPlayer(): Player {
+    const startingWeapon: WeaponType = (loadout === 'all') ? 'normal' : loadout;
+    const initialLevels = { normal: 1, spread: 1, laser: 1, mouthwash: 1, floss: 1, toothbrush: 1 };
+    
     return {
       id: 'player', x: 100, y: 200, w: PLAYER_SIZE, h: PLAYER_SIZE, vx: 0, vy: 0,
       hp: 100, maxHp: 100, type: 'player', color: COLORS.player, facing: 1, isGrounded: false,
       invincibleTimer: 0, slowTimer: 0, 
       shield: 0, maxShield: 0, shieldRegenTimer: 0,
       lives: 0,
-      weapon: 'normal', weaponLevel: 1, 
-      weaponLevels: { normal: 1, spread: 1, laser: 1, mouthwash: 1, floss: 1, toothbrush: 1 },
+      weapon: startingWeapon, weaponLevel: 1, 
+      weaponLevels: initialLevels,
       ammo: -1, score: 0,
       frameTimer: 0, state: 0, jumpCount: 0, maxJumps: PLAYER_MAX_JUMPS, 
       dashTimer: 0, dashCooldown: 0, consecutiveDashes: 1,
@@ -113,6 +117,18 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       if (selectedPerkId) {
           applyPerk(entities.current.player, selectedPerkId);
           setHp(entities.current.player.hp); // Update UI
+          
+          // Force reset inputs to prevent "stuck" movement if keys were held/released during menu
+          inputs.current.left = false;
+          inputs.current.right = false;
+          inputs.current.aimUp = false;
+          inputs.current.down = false;
+          inputs.current.shoot = false;
+          inputs.current.dash = false;
+          inputs.current.jumpPressed = false;
+          inputs.current.shootPressed = false;
+          inputs.current.dashPressed = false;
+
           onPerkApplied();
       }
   }, [selectedPerkId]);
@@ -229,7 +245,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (gameState !== GameState.PLAYING) return;
+      // Allow key release events even if paused/in menu to prevent stuck inputs
       switch (e.code) {
         case 'KeyA': case 'ArrowLeft': inputs.current.left = false; break;
         case 'KeyD': case 'ArrowRight': inputs.current.right = false; break;
@@ -251,7 +267,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     };
 
     const handleMouseUp = (e: MouseEvent) => {
-        if (gameState !== GameState.PLAYING) return;
+        // Allow mouse release even if paused/in menu
         if (inputMethod === 'keyboard' && !isMobile) return;
 
         if (e.button === 0) inputs.current.shoot = false;
@@ -577,7 +593,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                         p.score += (enemy.subType === 'boss' ? 5000 : 100); 
                         p.runStats.killCount++;
                         setScore(p.score); s.shake = 5;
-                        spawnPowerUp(entities.current.powerups, enemy.x, enemy.y);
+                        
+                        // Pass loadout constraint to drop logic (if loadout is not 'all', limit drop)
+                        const limitType = loadout === 'all' ? undefined : loadout;
+                        spawnPowerUp(entities.current.powerups, enemy.x, enemy.y, limitType);
+                        
                         for(let i=0; i<8; i++) spawnParticle(enemy.x+enemy.w/2, enemy.y+enemy.h/2, enemy.color, 10);
                         
                         // Boss Defeated Logic

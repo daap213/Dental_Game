@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { InputMethod } from '../../types';
-import { MousePointer, Keyboard, Info, X, ShieldAlert, Crosshair, Skull, Sword, Zap, Wind, Waves, Rocket, User, Trophy, Gift, Star, Activity, Shield, Heart } from 'lucide-react';
+import { InputMethod, LoadoutType } from '../../types';
+import { MousePointer, Keyboard, Info, X, ShieldAlert, Crosshair, Skull, Sword, Zap, Wind, Waves, Rocket, User, Trophy, Gift, Star, Activity, Shield, Heart, Infinity } from 'lucide-react';
 import { Credits } from './Credits';
 
 interface MainMenuProps {
@@ -9,9 +9,11 @@ interface MainMenuProps {
   briefing: string;
   inputMethod: InputMethod;
   setInputMethod: (method: InputMethod) => void;
+  loadout: LoadoutType;
+  setLoadout: (l: LoadoutType) => void;
 }
 
-export const MainMenu: React.FC<MainMenuProps> = ({ onStart, briefing, inputMethod, setInputMethod }) => {
+export const MainMenu: React.FC<MainMenuProps> = ({ onStart, briefing, inputMethod, setInputMethod, loadout, setLoadout }) => {
   const [showIntel, setShowIntel] = useState(false);
   const [showCredits, setShowCredits] = useState(false);
 
@@ -24,13 +26,13 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStart, briefing, inputMeth
   }
 
   return (
-    <div className="flex flex-col items-center justify-center w-full h-full bg-slate-900 text-white p-8 animate-in fade-in">
+    <div className="flex flex-col items-center justify-center w-full h-full bg-slate-900 text-white p-8 animate-in fade-in overflow-y-auto">
       <h1 className="text-4xl md:text-6xl font-bold mb-4 text-pink-400 text-center uppercase tracking-widest shadow-lg" style={{textShadow: '4px 4px 0px #be185d'}}>
           Super Molar
       </h1>
       <h2 className="text-xl md:text-2xl mb-6 text-blue-300">Plaque Attack</h2>
       
-      <div className="max-w-md bg-slate-800 p-6 rounded-lg border-2 border-slate-600 mb-6 w-full relative group overflow-hidden">
+      <div className="max-w-md bg-slate-800 p-6 rounded-lg border-2 border-slate-600 mb-6 w-full relative group overflow-hidden shrink-0">
           <div className="absolute top-0 left-0 w-full h-1 bg-green-500/50 animate-pulse" />
           <h3 className="text-yellow-400 text-sm mb-2 flex items-center gap-2">
             <span className="w-2 h-2 bg-green-500 rounded-full animate-ping"/>
@@ -41,23 +43,43 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStart, briefing, inputMeth
           </p>
       </div>
 
-      <div className="flex flex-col items-center gap-4 mb-8">
-          <h3 className="text-xs text-slate-400 uppercase tracking-widest">Select Aiming Style</h3>
-          <div className="flex gap-4">
-              <button
-                  onClick={() => setInputMethod('mouse')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded border-2 transition-all ${inputMethod === 'mouse' ? 'bg-blue-600 border-blue-400 text-white shadow-lg scale-105' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'}`}
-              >
-                  <MousePointer className="w-4 h-4" />
-                  MOUSE AIM
-              </button>
-              <button
-                  onClick={() => setInputMethod('keyboard')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded border-2 transition-all ${inputMethod === 'keyboard' ? 'bg-blue-600 border-blue-400 text-white shadow-lg scale-105' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'}`}
-              >
-                  <Keyboard className="w-4 h-4" />
-                  KEYBOARD ONLY
-              </button>
+      <div className="flex flex-col items-center gap-6 mb-8 w-full max-w-2xl">
+          {/* CONTROL SELECTION */}
+          <div className="flex flex-col items-center gap-2">
+            <h3 className="text-xs text-slate-400 uppercase tracking-widest">Select Aiming Style</h3>
+            <div className="flex gap-4">
+                <button
+                    onClick={() => setInputMethod('mouse')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded border-2 transition-all ${inputMethod === 'mouse' ? 'bg-blue-600 border-blue-400 text-white shadow-lg scale-105' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'}`}
+                >
+                    <MousePointer className="w-4 h-4" />
+                    MOUSE AIM
+                </button>
+                <button
+                    onClick={() => setInputMethod('keyboard')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded border-2 transition-all ${inputMethod === 'keyboard' ? 'bg-blue-600 border-blue-400 text-white shadow-lg scale-105' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'}`}
+                >
+                    <Keyboard className="w-4 h-4" />
+                    KEYBOARD ONLY
+                </button>
+            </div>
+          </div>
+
+          {/* LOADOUT SELECTION */}
+          <div className="flex flex-col items-center gap-2 w-full">
+            <h3 className="text-xs text-slate-400 uppercase tracking-widest">Select Loadout</h3>
+            <div className="flex flex-wrap justify-center gap-2">
+                <LoadoutBtn active={loadout === 'all'} onClick={() => setLoadout('all')} icon={<Infinity className="w-5 h-5"/>} label="ALL" color="text-white" />
+                <LoadoutBtn active={loadout === 'normal'} onClick={() => setLoadout('normal')} icon={<Rocket className="w-5 h-5"/>} label="Drill" color="text-gray-300" />
+                <LoadoutBtn active={loadout === 'spread'} onClick={() => setLoadout('spread')} icon={<Crosshair className="w-5 h-5"/>} label="Spread" color="text-blue-400" />
+                <LoadoutBtn active={loadout === 'laser'} onClick={() => setLoadout('laser')} icon={<Zap className="w-5 h-5"/>} label="Laser" color="text-cyan-400" />
+                <LoadoutBtn active={loadout === 'mouthwash'} onClick={() => setLoadout('mouthwash')} icon={<Waves className="w-5 h-5"/>} label="Wave" color="text-purple-400" />
+                <LoadoutBtn active={loadout === 'floss'} onClick={() => setLoadout('floss')} icon={<Wind className="w-5 h-5"/>} label="Floss" color="text-green-400" />
+                <LoadoutBtn active={loadout === 'toothbrush'} onClick={() => setLoadout('toothbrush')} icon={<Sword className="w-5 h-5"/>} label="Brush" color="text-orange-400" />
+            </div>
+            <p className="text-[10px] text-slate-500 italic mt-1">
+                {loadout === 'all' ? "Enemies drop all weapon types." : "Enemies ONLY drop upgrade for selected weapon + Health."}
+            </p>
           </div>
       </div>
 
@@ -100,6 +122,19 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStart, briefing, inputMeth
     </div>
   );
 };
+
+const LoadoutBtn = ({active, onClick, icon, label, color}: any) => (
+    <button 
+        onClick={onClick}
+        className={`
+            flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-all w-20 h-20
+            ${active ? `bg-slate-700 border-white scale-110 shadow-[0_0_15px_rgba(255,255,255,0.3)]` : 'bg-slate-800 border-slate-600 opacity-60 hover:opacity-100 hover:bg-slate-700'}
+        `}
+    >
+        <div className={`${color} mb-1`}>{icon}</div>
+        <span className={`text-[10px] font-bold uppercase ${active ? 'text-white' : 'text-slate-400'}`}>{label}</span>
+    </button>
+);
 
 const IntelDatabase: React.FC<{onClose: () => void}> = ({onClose}) => {
     return (

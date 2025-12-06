@@ -6,7 +6,7 @@ import { GameOver } from './components/views/GameOver';
 import { PauseMenu } from './components/views/PauseMenu';
 import { PerkMenu } from './components/views/PerkMenu';
 import { Credits } from './components/views/Credits';
-import { GameState, InputMethod, Perk } from './types';
+import { GameState, InputMethod, Perk, LoadoutType } from './types';
 import { generateBriefing } from './services/geminiService';
 
 const App: React.FC = () => {
@@ -16,6 +16,7 @@ const App: React.FC = () => {
   const [sessionId, setSessionId] = useState(0);
   const [briefing, setBriefing] = useState<string>("Loading Mission...");
   const [inputMethod, setInputMethod] = useState<InputMethod>('mouse');
+  const [loadout, setLoadout] = useState<LoadoutType>('all');
   const [availablePerks, setAvailablePerks] = useState<Perk[]>([]);
   const [selectedPerkId, setSelectedPerkId] = useState<string | null>(null);
 
@@ -59,6 +60,7 @@ const App: React.FC = () => {
         setGameState={setGameState}
         sessionId={sessionId}
         inputMethod={inputMethod}
+        loadout={loadout}
         onPerkSelectStart={handlePerkSelectionStart}
         selectedPerkId={selectedPerkId}
         onPerkApplied={handlePerkApplied}
@@ -72,6 +74,8 @@ const App: React.FC = () => {
             briefing={briefing} 
             inputMethod={inputMethod}
             setInputMethod={setInputMethod}
+            loadout={loadout}
+            setLoadout={setLoadout}
           />
         </div>
       )}
