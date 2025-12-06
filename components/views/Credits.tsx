@@ -1,13 +1,17 @@
 
 import React, { useEffect, useRef } from 'react';
 import { Heart, Cpu, User, ArrowLeft, Gamepad2 } from 'lucide-react';
+import { Language } from '../../types';
+import { TEXT } from '../../utils/locales';
 
 interface CreditsProps {
   onClose: () => void;
+  lang: Language;
 }
 
-export const Credits: React.FC<CreditsProps> = ({ onClose }) => {
+export const Credits: React.FC<CreditsProps> = ({ onClose, lang }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const t = TEXT[lang].credits;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -290,14 +294,14 @@ export const Credits: React.FC<CreditsProps> = ({ onClose }) => {
       {/* Header */}
       <div className="relative z-10 p-6 border-b-4 border-slate-700/50 bg-slate-950/80 backdrop-blur-md flex justify-between items-center shrink-0 shadow-xl">
         <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 tracking-widest uppercase drop-shadow-md">
-          CREDITS
+          {t.title}
         </h2>
         <button 
           onClick={onClose}
           className="flex items-center gap-2 px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded border border-slate-600 transition-all shadow-lg font-bold"
         >
           <ArrowLeft className="w-5 h-5" />
-          BACK
+          {t.back}
         </button>
       </div>
 
@@ -312,7 +316,7 @@ export const Credits: React.FC<CreditsProps> = ({ onClose }) => {
                 <Cpu className="w-10 h-10 text-blue-400" />
             </div>
             <div className="text-center">
-                <h3 className="text-xs font-bold text-blue-400 tracking-[0.3em] uppercase mb-2">Lead Developer (AI)</h3>
+                <h3 className="text-xs font-bold text-blue-400 tracking-[0.3em] uppercase mb-2">{t.dev_role}</h3>
                 <p className="text-4xl md:text-5xl font-black text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] font-sans tracking-wide">GEMINI</p>
             </div>
             </div>
@@ -323,7 +327,7 @@ export const Credits: React.FC<CreditsProps> = ({ onClose }) => {
                 <User className="w-10 h-10 text-emerald-400" />
             </div>
             <div className="text-center">
-                <h3 className="text-xs font-bold text-emerald-400 tracking-[0.3em] uppercase mb-2">Created By</h3>
+                <h3 className="text-xs font-bold text-emerald-400 tracking-[0.3em] uppercase mb-2">{t.creator_role}</h3>
                 <p className="text-4xl md:text-5xl font-black text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] font-sans tracking-wide">DANIEL</p>
             </div>
             </div>
@@ -334,7 +338,7 @@ export const Credits: React.FC<CreditsProps> = ({ onClose }) => {
                 <Gamepad2 className="w-10 h-10 text-yellow-400" />
             </div>
             <div className="text-center">
-                <h3 className="text-xs font-bold text-yellow-400 tracking-[0.3em] uppercase mb-2">Tester & Ideas</h3>
+                <h3 className="text-xs font-bold text-yellow-400 tracking-[0.3em] uppercase mb-2">{t.tester_role}</h3>
                 <p className="text-4xl md:text-5xl font-black text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] font-sans tracking-wide">CALI</p>
             </div>
             </div>
@@ -345,15 +349,15 @@ export const Credits: React.FC<CreditsProps> = ({ onClose }) => {
                 <Heart className="w-12 h-12 text-pink-500 fill-pink-500" />
             </div>
             <div className="text-center">
-                <h3 className="text-xs font-bold text-pink-400 tracking-[0.3em] uppercase mb-3">Special Dedication</h3>
+                <h3 className="text-xs font-bold text-pink-400 tracking-[0.3em] uppercase mb-3">{t.dedication_title}</h3>
                 <p className="text-3xl font-black text-white mb-2 tracking-wide drop-shadow-md">Dr. Melanie</p>
-                <p className="text-xl text-pink-200 italic font-serif opacity-90">"My favorite dentist."</p>
+                <p className="text-xl text-pink-200 italic font-serif opacity-90">{t.dedication_quote}</p>
             </div>
             </div>
 
             {/* Footer */}
             <div className="text-slate-500 text-[10px] font-mono uppercase tracking-widest pt-4">
-                Super Molar: Plaque Attack © {new Date().getFullYear()}
+                {t.footer} {new Date().getFullYear()}
             </div>
         </div>
       </div>

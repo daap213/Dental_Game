@@ -10,6 +10,7 @@ export enum GameState {
 
 export type InputMethod = 'mouse' | 'keyboard';
 export type LoadoutType = 'all' | WeaponType;
+export type Language = 'en' | 'es';
 
 export interface Rect {
   x: number;

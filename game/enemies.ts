@@ -1,29 +1,33 @@
 
-import { Enemy, LevelState, Projectile, Particle, Rect } from '../types';
+import { Enemy, LevelState, Projectile, Particle, Rect, Language } from '../types';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, COLORS, GRAVITY } from '../constants';
 import { AudioManager } from './audio';
 import { spawnProjectile } from './weapons';
+import { TEXT } from '../utils/locales';
 
-export const spawnBoss = (level: LevelState, setBossName: (n:string)=>void, setBossMaxHp: (n:number)=>void, setBossHp: (n:number)=>void, audio: AudioManager, enemies: Enemy[]) => {
+export const spawnBoss = (level: LevelState, setBossName: (n:string)=>void, setBossMaxHp: (n:number)=>void, setBossHp: (n:number)=>void, audio: AudioManager, enemies: Enemy[], lang: Language) => {
     const stage = level.stage;
     const baseHp = 1500;
     let maxHp = baseHp + (stage * 800);
     let bossVariant: Enemy['bossVariant'] = 'king';
     let w = 120, h = 160;
     let color = COLORS.enemyBoss;
-    let name = "The Cavity King";
+    
+    let nameKey: keyof typeof TEXT['en']['bosses'] = 'king';
 
     if (stage === 1) {
-        bossVariant = 'king'; name = "The Cavity King"; maxHp = 1500; color = '#3f3f46';
+        bossVariant = 'king'; nameKey = 'king'; maxHp = 1500; color = '#3f3f46';
     } else if (stage === 2) {
-        bossVariant = 'phantom'; name = "Plaque Phantom"; maxHp = 2200; color = '#22d3ee'; w = 100; h = 100;
+        bossVariant = 'phantom'; nameKey = 'phantom'; maxHp = 2200; color = '#22d3ee'; w = 100; h = 100;
     } else if (stage === 3) {
-        bossVariant = 'tank'; name = "Tartar Tank"; maxHp = 3500; color = '#57534e'; w = 160; h = 140;
+        bossVariant = 'tank'; nameKey = 'tank'; maxHp = 3500; color = '#57534e'; w = 160; h = 140;
     } else if (stage === 4) {
-        bossVariant = 'general'; name = "General Gingivitis"; maxHp = 3000; color = '#dc2626'; w = 100; h = 180;
+        bossVariant = 'general'; nameKey = 'general'; maxHp = 3000; color = '#dc2626'; w = 100; h = 180;
     } else {
-        bossVariant = 'deity'; name = "The Decay Deity"; maxHp = 6000; color = '#0f172a'; w = 140; h = 140;
+        bossVariant = 'deity'; nameKey = 'deity'; maxHp = 6000; color = '#0f172a'; w = 140; h = 140;
     }
+    
+    const name = TEXT[lang].bosses[nameKey];
 
     setBossName(name);
     audio.playBossIntro(bossVariant);

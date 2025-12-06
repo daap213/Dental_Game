@@ -1,103 +1,25 @@
 
-import { Perk, Player } from '../types';
+import { Perk, Player, Language } from '../types';
+import { TEXT } from '../utils/locales';
 
-export const PERKS: Perk[] = [
-    {
-        id: 'enamel_shield',
-        name: 'Enamel Shield',
-        description: 'Grants +25 Max Shield (Toothpaste Barrier).',
-        icon: 'shield',
-        rarity: 'common',
-        color: '#22d3ee', // Cyan
-        weight: 100
-    },
-    {
-        id: 'vitality_root',
-        name: 'Vitality Root',
-        description: 'Increases Max HP by +20 and heals you.',
-        icon: 'heart',
-        rarity: 'common',
-        color: '#ef4444', // Red
-        weight: 100
-    },
-    {
-        id: 'extra_filling',
-        name: 'Extra Filling',
-        description: 'Fully restores Health and Shield.',
-        icon: 'plus',
-        rarity: 'common',
-        color: '#10b981', // Emerald
-        weight: 80
-    },
-    {
-        id: 'fluoride_rush',
-        name: 'Fluoride Rush',
-        description: 'Increases Movement Speed by 10%.',
-        icon: 'zap',
-        rarity: 'rare',
-        color: '#a3e635', // Lime
-        weight: 50
-    },
-    {
-        id: 'aerodynamic_floss',
-        name: 'Aerodynamic Floss',
-        description: 'Reduces Dash Cooldown by 15%.',
-        icon: 'wind',
-        rarity: 'rare',
-        color: '#fbbf24', // Amber
-        weight: 50
-    },
-    {
-        id: 'bristle_rage',
-        name: 'Bristle Rage',
-        description: 'Increases Damage dealt by 15%.',
-        icon: 'sword',
-        rarity: 'rare',
-        color: '#f472b6', // Pink
-        weight: 40
-    },
-    {
-        id: 'thick_enamel',
-        name: 'Thick Enamel',
-        description: 'Take 15% less damage from all sources.',
-        icon: 'shield',
-        rarity: 'legendary',
-        color: '#6366f1', // Indigo
-        weight: 20
-    },
-    {
-        id: 'extra_dash',
-        name: 'Dual Motion',
-        description: 'Gain +1 Max Consecutive Dash.',
-        icon: 'wind',
-        rarity: 'legendary',
-        color: '#f59e0b', // Orange
-        weight: 15
-    },
-    {
-        id: 'temp_immunity',
-        name: 'Fluoride Bath',
-        description: 'Become invincible for 3 seconds now.',
-        icon: 'zap',
-        rarity: 'rare',
-        color: '#e879f9', // Purple
-        weight: 30
-    },
-    {
-        id: 'extra_life',
-        name: 'Crown Implant',
-        description: '+1 Extra Life. Revive on death.',
-        icon: 'heart',
-        rarity: 'legendary',
-        color: '#fcd34d', // Gold
-        weight: 5
-    }
+// We store IDs and Logic here, but Text is retrieved from LOCALES using ID mapping
+const PERK_DEFINITIONS: Omit<Perk, 'name' | 'description'>[] = [
+    { id: 'enamel_shield', icon: 'shield', rarity: 'common', color: '#22d3ee', weight: 100 },
+    { id: 'vitality_root', icon: 'heart', rarity: 'common', color: '#ef4444', weight: 100 },
+    { id: 'extra_filling', icon: 'plus', rarity: 'common', color: '#10b981', weight: 80 },
+    { id: 'fluoride_rush', icon: 'zap', rarity: 'rare', color: '#a3e635', weight: 50 },
+    { id: 'aerodynamic_floss', icon: 'wind', rarity: 'rare', color: '#fbbf24', weight: 50 },
+    { id: 'bristle_rage', icon: 'sword', rarity: 'rare', color: '#f472b6', weight: 40 },
+    { id: 'thick_enamel', icon: 'shield', rarity: 'legendary', color: '#6366f1', weight: 20 },
+    { id: 'extra_dash', icon: 'wind', rarity: 'legendary', color: '#f59e0b', weight: 15 },
+    { id: 'temp_immunity', icon: 'zap', rarity: 'rare', color: '#e879f9', weight: 30 },
+    { id: 'extra_life', icon: 'heart', rarity: 'legendary', color: '#fcd34d', weight: 5 }
 ];
 
-export const getRandomPerks = (count: number = 3): Perk[] => {
+export const getRandomPerks = (count: number = 3, lang: Language): Perk[] => {
     // Weighted Random Selection
     const selected: Perk[] = [];
-    const pool = [...PERKS];
+    const pool = [...PERK_DEFINITIONS];
     
     for(let i=0; i<count; i++) {
         if (pool.length === 0) break;
@@ -105,18 +27,25 @@ export const getRandomPerks = (count: number = 3): Perk[] => {
         const totalWeight = pool.reduce((sum, p) => sum + p.weight, 0);
         let r = Math.random() * totalWeight;
         
-        let chosenPerk = pool[0];
-        for (const perk of pool) {
-            r -= perk.weight;
+        let chosenDef = pool[0];
+        for (const def of pool) {
+            r -= def.weight;
             if (r <= 0) {
-                chosenPerk = perk;
+                chosenDef = def;
                 break;
             }
         }
         
-        selected.push(chosenPerk);
+        // Hydrate with localized text
+        const txt = TEXT[lang].perk_names[chosenDef.id as keyof typeof TEXT['en']['perk_names']];
+        selected.push({
+            ...chosenDef,
+            name: txt.name,
+            description: txt.desc
+        });
+
         // Remove chosen to avoid duplicates in same hand
-        const idx = pool.findIndex(p => p.id === chosenPerk.id);
+        const idx = pool.findIndex(p => p.id === chosenDef.id);
         if (idx > -1) pool.splice(idx, 1);
     }
     

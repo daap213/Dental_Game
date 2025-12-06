@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useState } from 'react';
-import { GameState, Entity, Player, Enemy, Projectile, Platform, Particle, PowerUp, LevelState, Rect, WeaponType, InputMethod, Perk, LoadoutType } from '../types';
+import { GameState, Entity, Player, Enemy, Projectile, Platform, Particle, PowerUp, LevelState, Rect, WeaponType, InputMethod, Perk, LoadoutType, Language } from '../types';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, GRAVITY, COLORS, PLAYER_SPEED, PLAYER_JUMP, FRICTION, TERMINAL_VELOCITY, PLAYER_SIZE, PLAYER_DASH_SPEED, PLAYER_DASH_DURATION, PLAYER_DASH_COOLDOWN, PLAYER_MAX_JUMPS, MAX_WEAPON_LEVEL, SCORE_MILESTONE_START, SCORE_MILESTONE_INCREMENT, KILL_MILESTONE_START, KILL_MILESTONE_INCREMENT_START, SHIELD_REGEN_DELAY, SHIELD_REGEN_RATE } from '../constants';
 import { generateGameOverMessage } from '../services/geminiService';
 import { checkRectCollide } from '../utils/physics';
@@ -24,9 +24,10 @@ interface GameCanvasProps {
   selectedPerkId: string | null;
   onPerkApplied: () => void;
   onVictory: () => void;
+  lang: Language;
 }
 
-export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, setGameState, sessionId, inputMethod, loadout, onPerkSelectStart, selectedPerkId, onPerkApplied, onVictory }) => {
+export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, setGameState, sessionId, inputMethod, loadout, onPerkSelectStart, selectedPerkId, onPerkApplied, onVictory, lang }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [score, setScore] = useState(0);
   const [hp, setHp] = useState(100);
@@ -209,12 +210,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     audioManager.current.playGameOver();
     setGameState(GameState.GAME_OVER);
     const player = entities.current.player;
-    const msg = await generateGameOverMessage(player.score, "Tooth Decay");
+    const msg = await generateGameOverMessage(player.score, "Tooth Decay", lang);
     onGameOver(player.score, msg);
   };
 
   const triggerPerkSelection = () => {
-      const perks = getRandomPerks(3);
+      const perks = getRandomPerks(3, lang);
       onPerkSelectStart(perks);
   };
 
@@ -509,7 +510,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     // Spawning
     if (!s.level.bossSpawned && !s.levelTransitioning && p.x > s.level.levelWidth - 600) {
         s.level.bossSpawned = true;
-        spawnBoss(s.level, setBossName, setBossMaxHp, setBossHp, audioManager.current, s.enemies);
+        spawnBoss(s.level, setBossName, setBossMaxHp, setBossHp, audioManager.current, s.enemies, lang);
     }
     if (s.level.bossSpawned && !s.levelTransitioning) {
         if (!s.enemies.some(e => e.subType === 'boss')) s.level.bossSpawned = false;
@@ -839,6 +840,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         bossName={bossName}
         isMobile={isMobile}
         handleTouch={handleTouch}
+        lang={lang}
       />
     </>
   );

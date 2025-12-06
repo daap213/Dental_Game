@@ -6,7 +6,7 @@ import { GameOver } from './components/views/GameOver';
 import { PauseMenu } from './components/views/PauseMenu';
 import { PerkMenu } from './components/views/PerkMenu';
 import { Credits } from './components/views/Credits';
-import { GameState, InputMethod, Perk, LoadoutType } from './types';
+import { GameState, InputMethod, Perk, LoadoutType, Language } from './types';
 import { generateBriefing } from './services/geminiService';
 
 const App: React.FC = () => {
@@ -19,12 +19,13 @@ const App: React.FC = () => {
   const [loadout, setLoadout] = useState<LoadoutType>('all');
   const [availablePerks, setAvailablePerks] = useState<Perk[]>([]);
   const [selectedPerkId, setSelectedPerkId] = useState<string | null>(null);
+  const [language, setLanguage] = useState<Language>('en');
 
   useEffect(() => {
     if (gameState === GameState.MENU) {
-       generateBriefing().then(setBriefing);
+       generateBriefing(language).then(setBriefing);
     }
-  }, [gameState]);
+  }, [gameState, language]);
 
   const handleGameOver = (score: number, message: string) => {
     setFinalScore(score);
@@ -65,6 +66,7 @@ const App: React.FC = () => {
         selectedPerkId={selectedPerkId}
         onPerkApplied={handlePerkApplied}
         onVictory={() => setGameState(GameState.VICTORY)}
+        lang={language}
       />
 
       {gameState === GameState.MENU && (
@@ -76,6 +78,8 @@ const App: React.FC = () => {
             setInputMethod={setInputMethod}
             loadout={loadout}
             setLoadout={setLoadout}
+            lang={language}
+            setLang={setLanguage}
           />
         </div>
       )}
@@ -85,6 +89,7 @@ const App: React.FC = () => {
           onResume={() => setGameState(GameState.PLAYING)}
           onRestart={startGame}
           onQuit={() => setGameState(GameState.MENU)}
+          lang={language}
         />
       )}
 
@@ -92,6 +97,7 @@ const App: React.FC = () => {
           <PerkMenu 
              perks={availablePerks}
              onSelect={handlePerkSelect}
+             lang={language}
           />
       )}
 
@@ -101,11 +107,12 @@ const App: React.FC = () => {
           message={gameOverMessage}
           onRestart={startGame}
           onQuit={() => setGameState(GameState.MENU)}
+          lang={language}
         />
       )}
 
       {gameState === GameState.VICTORY && (
-          <Credits onClose={() => setGameState(GameState.MENU)} />
+          <Credits onClose={() => setGameState(GameState.MENU)} lang={language} />
       )}
     </div>
   );

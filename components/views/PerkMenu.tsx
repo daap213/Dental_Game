@@ -1,15 +1,18 @@
 
 import React, { useState } from 'react';
-import { Perk } from '../../types';
+import { Perk, Language } from '../../types';
 import { Shield, Heart, Wind, Zap, Sword, Plus } from 'lucide-react';
+import { TEXT } from '../../utils/locales';
 
 interface PerkMenuProps {
   perks: Perk[];
   onSelect: (perkId: string) => void;
+  lang: Language;
 }
 
-export const PerkMenu: React.FC<PerkMenuProps> = ({ perks, onSelect }) => {
+export const PerkMenu: React.FC<PerkMenuProps> = ({ perks, onSelect, lang }) => {
   const [hovered, setHovered] = useState<string | null>(null);
+  const t = TEXT[lang].perks;
 
   const getIcon = (icon: string) => {
       switch(icon) {
@@ -26,9 +29,9 @@ export const PerkMenu: React.FC<PerkMenuProps> = ({ perks, onSelect }) => {
   return (
     <div className="absolute inset-0 z-50 bg-slate-900/90 flex flex-col items-center justify-center p-4 animate-in fade-in duration-300">
       <h2 className="text-3xl md:text-5xl font-bold text-yellow-400 mb-8 uppercase tracking-widest drop-shadow-lg text-center">
-        Level Up!
+        {t.title}
       </h2>
-      <p className="text-slate-300 mb-8 font-mono text-center">CHOOSE AN UPGRADE</p>
+      <p className="text-slate-300 mb-8 font-mono text-center">{t.subtitle}</p>
 
       <div className="flex flex-col md:flex-row gap-6 w-full max-w-4xl justify-center items-stretch">
         {perks.map((perk) => (

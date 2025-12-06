@@ -1,7 +1,8 @@
 
 import React from 'react';
 import { Heart, Rocket, Crosshair, Zap, Waves, Wind, Sword, ChevronsUp, Snail, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Shield } from 'lucide-react';
-import { Player } from '../types';
+import { Player, Language } from '../types';
+import { TEXT } from '../utils/locales';
 
 interface GameHUDProps {
     player: Player;
@@ -13,9 +14,12 @@ interface GameHUDProps {
     bossName: string;
     isMobile: boolean;
     handleTouch: (action: string, pressed: boolean) => (e: React.TouchEvent | React.MouseEvent) => void;
+    lang: Language;
 }
 
-export const GameHUD: React.FC<GameHUDProps> = ({ player, score, stage, hp, bossHp, bossMaxHp, bossName, isMobile, handleTouch }) => {
+export const GameHUD: React.FC<GameHUDProps> = ({ player, score, stage, hp, bossHp, bossMaxHp, bossName, isMobile, handleTouch, lang }) => {
+  const t = TEXT[lang].hud;
+
   return (
     <>
       {/* Top HUD Bar - Retro Style */}
@@ -36,8 +40,8 @@ export const GameHUD: React.FC<GameHUDProps> = ({ player, score, stage, hp, boss
               </div>
               <div className="flex flex-col gap-1 w-full">
                   <div className="flex justify-between w-full">
-                    <span className="text-[8px] md:text-[10px] text-red-400 leading-none hidden sm:block">VITALS</span>
-                    {player.shield > 0 && <span className="text-[8px] md:text-[10px] text-cyan-400 leading-none font-bold">SHIELD ACTIVE</span>}
+                    <span className="text-[8px] md:text-[10px] text-red-400 leading-none hidden sm:block">{t.vitals}</span>
+                    {player.shield > 0 && <span className="text-[8px] md:text-[10px] text-cyan-400 leading-none font-bold">{t.shield_active}</span>}
                   </div>
                   
                   {/* Health Bar Container */}
@@ -62,14 +66,14 @@ export const GameHUD: React.FC<GameHUDProps> = ({ player, score, stage, hp, boss
           {/* 2. STAGE SECTION */}
           <div className="flex items-center gap-2 px-2 md:px-4 border-r-2 border-slate-700 h-10">
                <div className="flex flex-col items-center">
-                   <span className="text-[8px] md:text-[10px] text-yellow-600 leading-none">STAGE</span>
+                   <span className="text-[8px] md:text-[10px] text-yellow-600 leading-none">{t.stage}</span>
                    <span className="text-lg md:text-xl text-yellow-400 drop-shadow-md">{stage}</span>
                </div>
           </div>
               
           {/* 3. SCORE SECTION */}
           <div className="flex flex-col items-center flex-grow">
-              <span className="text-[8px] md:text-[10px] text-slate-500 leading-none tracking-widest mb-1 hidden sm:block">SCORE</span>
+              <span className="text-[8px] md:text-[10px] text-slate-500 leading-none tracking-widest mb-1 hidden sm:block">{t.score}</span>
               <span className="text-base md:text-2xl text-white tracking-[0.1em] font-mono drop-shadow-[2px_2px_0_#000]">
                   {score.toString().padStart(6, '0')}
               </span>
@@ -86,10 +90,12 @@ export const GameHUD: React.FC<GameHUDProps> = ({ player, score, stage, hp, boss
                   {player.weapon === 'toothbrush' && <Sword className="w-6 h-6" />}
               </div>
               <div className="flex flex-col items-end">
-                  <span className="text-[8px] md:text-[10px] text-slate-400 uppercase leading-none mb-1 max-w-[60px] truncate text-right">{player.weapon}</span>
+                  <span className="text-[8px] md:text-[10px] text-slate-400 uppercase leading-none mb-1 max-w-[60px] truncate text-right">
+                      {TEXT[lang].weapons[player.weapon].name}
+                  </span>
                   <div className="flex items-center gap-1 bg-slate-800 px-2 rounded border border-slate-600">
                       <ChevronsUp className="w-3 h-3 text-yellow-500" />
-                      <span className="text-[10px] md:text-xs text-white">LVL</span>
+                      <span className="text-[10px] md:text-xs text-white">{t.lvl}</span>
                       <span className="text-xs md:text-sm font-bold text-yellow-400">{player.weaponLevel}</span>
                   </div>
               </div>
@@ -98,7 +104,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({ player, score, stage, hp, boss
           {/* Status Effects */}
           {player.slowTimer > 0 && (
                <div className="absolute right-4 bottom-[-20px] text-pink-500 text-[10px] font-bold animate-bounce flex items-center gap-1">
-                    <Snail className="w-3 h-3" /> SLOW
+                    <Snail className="w-3 h-3" /> {t.slow}
                </div>
           )}
       </div>
