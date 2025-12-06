@@ -4,7 +4,8 @@ export enum GameState {
   PLAYING,
   GAME_OVER,
   VICTORY,
-  PAUSED
+  PAUSED,
+  PERK_SELECTION
 }
 
 export type InputMethod = 'mouse' | 'keyboard';
@@ -36,17 +37,45 @@ export type WeaponType = 'normal' | 'spread' | 'laser' | 'mouthwash' | 'floss' |
 export interface Player extends Entity {
   type: 'player';
   invincibleTimer: number;
-  slowTimer: number; // New: For Sugar Fiend trap
+  slowTimer: number;
+  
+  // Shield (Toothpaste Barrier)
+  shield: number;
+  maxShield: number;
+  shieldRegenTimer: number;
+  
+  // Lives
+  lives: number;
+
   weapon: WeaponType;
-  weaponLevel: number; // Current effective level
-  weaponLevels: { [key in WeaponType]: number }; // Stored levels for all weapons
+  weaponLevel: number;
+  weaponLevels: { [key in WeaponType]: number };
   ammo: number;
   score: number;
+  
   // Abilities
   jumpCount: number;
   maxJumps: number;
   dashTimer: number;
   dashCooldown: number;
+  consecutiveDashes: number;
+
+  // RPG Stats / Multipliers
+  stats: {
+      speedMultiplier: number;
+      damageMultiplier: number;
+      dashCooldownMultiplier: number;
+      maxDashes: number;
+      damageReduction: number; // 0 to 1 (e.g., 0.15 = 15% less damage)
+  };
+
+  // Run Progress
+  runStats: {
+      killCount: number;
+      nextScoreMilestone: number;
+      nextKillMilestone: number;
+      currentKillStep: number;
+  };
 }
 
 export interface Enemy extends Entity {
@@ -94,4 +123,14 @@ export interface LevelState {
   distanceTraveled: number;
   bossSpawned: boolean;
   levelWidth: number;
+}
+
+export interface Perk {
+    id: string;
+    name: string;
+    description: string;
+    icon: string; // Lucide icon name or simple string key
+    rarity: 'common' | 'rare' | 'legendary';
+    color: string;
+    weight: number; // Probability weight (higher = more common)
 }

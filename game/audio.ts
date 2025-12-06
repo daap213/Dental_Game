@@ -80,6 +80,25 @@ export class AudioManager {
     noise.start(t);
   }
 
+  playPowerUp() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    
+    // Ascending chime sound (Revive/PowerUp)
+    const osc = this.ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(440, t);
+    osc.frequency.linearRampToValueAtTime(880, t + 0.1);
+    osc.frequency.linearRampToValueAtTime(1760, t + 0.3);
+    
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.1, t);
+    gain.gain.linearRampToValueAtTime(0, t + 0.3);
+    
+    osc.connect(gain).connect(this.ctx.destination);
+    osc.start(t); osc.stop(t + 0.3);
+  }
+
   playWeaponSound(type: WeaponType) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;

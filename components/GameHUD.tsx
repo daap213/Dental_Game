@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Heart, Rocket, Crosshair, Zap, Waves, Wind, Sword, ChevronsUp, Snail, ArrowUp, ArrowDown, ArrowLeft, ArrowRight } from 'lucide-react';
+import { Heart, Rocket, Crosshair, Zap, Waves, Wind, Sword, ChevronsUp, Snail, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Shield } from 'lucide-react';
 import { Player } from '../types';
 
 interface GameHUDProps {
@@ -21,13 +21,39 @@ export const GameHUD: React.FC<GameHUDProps> = ({ player, score, stage, hp, boss
       {/* Top HUD Bar - Retro Style */}
       <div className="absolute top-0 left-0 right-0 h-14 md:h-16 bg-[#111] border-b-4 border-slate-600 flex items-center justify-between px-2 md:px-6 pointer-events-none z-20 select-none shadow-xl">
           
-          {/* 1. HEALTH SECTION */}
-          <div className="flex items-center gap-2 md:gap-3 pr-2 md:pr-4 border-r-2 border-slate-700 h-10">
-              <Heart className="text-red-600 w-5 h-5 md:w-6 md:h-6 fill-red-600 animate-pulse drop-shadow-[0_2px_0_rgba(0,0,0,0.5)]" />
-              <div className="flex flex-col gap-1">
-                  <span className="text-[8px] md:text-[10px] text-red-400 leading-none hidden sm:block">HEALTH</span>
-                  <div className="w-16 md:w-32 h-3 md:h-4 bg-slate-900 border-2 border-slate-600 relative">
-                      <div className="h-full bg-gradient-to-r from-red-600 to-red-500 transition-all duration-200" style={{ width: `${hp}%` }} />
+          {/* 1. HEALTH & SHIELD SECTION */}
+          <div className="flex items-center gap-2 md:gap-3 pr-2 md:pr-4 border-r-2 border-slate-700 h-10 min-w-[140px] md:min-w-[200px]">
+              <div className="relative">
+                 <Heart className="text-red-600 w-5 h-5 md:w-6 md:h-6 fill-red-600 animate-pulse drop-shadow-[0_2px_0_rgba(0,0,0,0.5)]" />
+                 {player.shield > 0 && (
+                     <Shield className="absolute -top-1 -right-1 w-3 h-3 md:w-4 md:h-4 text-cyan-400 fill-cyan-400/50 animate-bounce" />
+                 )}
+                 {player.lives > 0 && (
+                     <span className="absolute -bottom-1 -right-2 bg-yellow-500 text-black font-bold text-[8px] md:text-[10px] px-1 rounded-full">
+                         x{player.lives}
+                     </span>
+                 )}
+              </div>
+              <div className="flex flex-col gap-1 w-full">
+                  <div className="flex justify-between w-full">
+                    <span className="text-[8px] md:text-[10px] text-red-400 leading-none hidden sm:block">VITALS</span>
+                    {player.shield > 0 && <span className="text-[8px] md:text-[10px] text-cyan-400 leading-none font-bold">SHIELD ACTIVE</span>}
+                  </div>
+                  
+                  {/* Health Bar Container */}
+                  <div className="w-full h-3 md:h-4 bg-slate-900 border-2 border-slate-600 relative overflow-hidden">
+                      {/* Red HP */}
+                      <div className="h-full bg-gradient-to-r from-red-600 to-red-500 transition-all duration-200" style={{ width: `${(hp/player.maxHp)*100}%` }} />
+                      
+                      {/* Cyan Shield Overlay */}
+                      {player.maxShield > 0 && (
+                        <div 
+                            className="absolute top-0 left-0 h-full bg-cyan-400/80 border-r border-white/50 transition-all duration-200" 
+                            style={{ width: `${Math.min(100, (player.shield / player.maxShield) * 100)}%` }} 
+                        />
+                      )}
+                      
+                      {/* Gloss */}
                       <div className="absolute top-0 left-0 w-full h-[2px] bg-white opacity-20" />
                   </div>
               </div>

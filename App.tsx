@@ -4,7 +4,9 @@ import { GameCanvas } from './components/GameCanvas';
 import { MainMenu } from './components/views/MainMenu';
 import { GameOver } from './components/views/GameOver';
 import { PauseMenu } from './components/views/PauseMenu';
-import { GameState, InputMethod } from './types';
+import { PerkMenu } from './components/views/PerkMenu';
+import { Credits } from './components/views/Credits';
+import { GameState, InputMethod, Perk } from './types';
 import { generateBriefing } from './services/geminiService';
 
 const App: React.FC = () => {
@@ -14,6 +16,8 @@ const App: React.FC = () => {
   const [sessionId, setSessionId] = useState(0);
   const [briefing, setBriefing] = useState<string>("Loading Mission...");
   const [inputMethod, setInputMethod] = useState<InputMethod>('mouse');
+  const [availablePerks, setAvailablePerks] = useState<Perk[]>([]);
+  const [selectedPerkId, setSelectedPerkId] = useState<string | null>(null);
 
   useEffect(() => {
     if (gameState === GameState.MENU) {
@@ -32,6 +36,21 @@ const App: React.FC = () => {
     setGameState(GameState.PLAYING);
   };
 
+  const handlePerkSelectionStart = (perks: Perk[]) => {
+      setAvailablePerks(perks);
+      setSelectedPerkId(null);
+      setGameState(GameState.PERK_SELECTION);
+  };
+
+  const handlePerkSelect = (perkId: string) => {
+      setSelectedPerkId(perkId);
+      // Actual application handled in GameCanvas via effect, then it calls back
+  };
+
+  const handlePerkApplied = () => {
+      setGameState(GameState.PLAYING);
+  };
+
   return (
     <div className="w-full h-screen bg-slate-900 flex flex-col overflow-hidden relative">
       <GameCanvas 
@@ -40,6 +59,10 @@ const App: React.FC = () => {
         setGameState={setGameState}
         sessionId={sessionId}
         inputMethod={inputMethod}
+        onPerkSelectStart={handlePerkSelectionStart}
+        selectedPerkId={selectedPerkId}
+        onPerkApplied={handlePerkApplied}
+        onVictory={() => setGameState(GameState.VICTORY)}
       />
 
       {gameState === GameState.MENU && (
@@ -61,6 +84,13 @@ const App: React.FC = () => {
         />
       )}
 
+      {gameState === GameState.PERK_SELECTION && (
+          <PerkMenu 
+             perks={availablePerks}
+             onSelect={handlePerkSelect}
+          />
+      )}
+
       {gameState === GameState.GAME_OVER && (
         <GameOver 
           score={finalScore}
@@ -68,6 +98,10 @@ const App: React.FC = () => {
           onRestart={startGame}
           onQuit={() => setGameState(GameState.MENU)}
         />
+      )}
+
+      {gameState === GameState.VICTORY && (
+          <Credits onClose={() => setGameState(GameState.MENU)} />
       )}
     </div>
   );

@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { InputMethod } from '../../types';
-import { MousePointer, Keyboard, Info, X, ShieldAlert, Crosshair, Skull, Sword, Zap, Wind, Waves, Rocket, User } from 'lucide-react';
+import { MousePointer, Keyboard, Info, X, ShieldAlert, Crosshair, Skull, Sword, Zap, Wind, Waves, Rocket, User, Trophy, Gift, Star, Activity, Shield, Heart } from 'lucide-react';
 import { Credits } from './Credits';
 
 interface MainMenuProps {
@@ -67,7 +67,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStart, briefing, inputMeth
             className="px-6 py-4 bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold rounded text-lg border-2 border-slate-500 flex items-center gap-2 transition-all"
         >
             <Info className="w-5 h-5" />
-            INTEL DATABASE
+            CONOCIMIENTO
         </button>
         <button 
             onClick={onStart}
@@ -104,11 +104,11 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStart, briefing, inputMeth
 const IntelDatabase: React.FC<{onClose: () => void}> = ({onClose}) => {
     return (
         <div className="absolute inset-0 bg-slate-900 z-50 overflow-y-auto p-4 md:p-8 animate-in slide-in-from-bottom duration-300">
-            <div className="max-w-5xl mx-auto">
+            <div className="max-w-6xl mx-auto">
                 <div className="flex justify-between items-center mb-8 border-b-4 border-slate-700 pb-4">
                     <h2 className="text-3xl font-bold text-green-400 tracking-widest flex items-center gap-3">
                         <ShieldAlert className="w-8 h-8" />
-                        TACTICAL DATABASE
+                        CONOCIMIENTO TÁCTICO
                     </h2>
                     <button onClick={onClose} className="p-2 bg-red-600 hover:bg-red-500 rounded text-white transition-colors">
                         <X className="w-6 h-6" />
@@ -116,6 +116,53 @@ const IntelDatabase: React.FC<{onClose: () => void}> = ({onClose}) => {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    {/* ACHIEVEMENTS (LOGROS) */}
+                    <section className="bg-slate-800/50 rounded-lg p-6 border border-slate-700">
+                        <h3 className="text-xl font-bold text-yellow-400 mb-4 flex items-center gap-2 border-b border-yellow-900 pb-2">
+                            <Trophy className="w-5 h-5" /> LOGROS Y DETONANTES
+                        </h3>
+                        <p className="text-sm text-slate-400 mb-4">
+                            Completa estos objetivos para activar el menú de selección de mejoras (Perks).
+                        </p>
+                        <div className="space-y-3">
+                            <AchievementRow 
+                                icon={<Star className="w-4 h-4" />} 
+                                title="Puntuación Alta" 
+                                desc="6,200 pts, luego cada 8,000 pts." 
+                                color="text-yellow-200" 
+                            />
+                            <AchievementRow 
+                                icon={<Skull className="w-4 h-4" />} 
+                                title="Exterminador" 
+                                desc="20 kills, luego 30, 50, 80... (+10 progresivo)." 
+                                color="text-red-300" 
+                            />
+                            <AchievementRow 
+                                icon={<Trophy className="w-4 h-4" />} 
+                                title="Matagigantes" 
+                                desc="Derrota a cualquier Jefe de Fase." 
+                                color="text-purple-300" 
+                            />
+                        </div>
+                    </section>
+
+                    {/* REWARDS (RECOMPENSAS) */}
+                    <section className="bg-slate-800/50 rounded-lg p-6 border border-slate-700">
+                        <h3 className="text-xl font-bold text-pink-400 mb-4 flex items-center gap-2 border-b border-pink-900 pb-2">
+                            <Gift className="w-5 h-5" /> MEJORAS DISPONIBLES (PERKS)
+                        </h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <PerkCard name="Enamel Shield" desc="+25 Escudo Máximo. Regenera con el tiempo." icon={<Shield className="w-4 h-4"/>} color="text-cyan-400" />
+                            <PerkCard name="Vitality Root" desc="+20 Salud Máxima y curación instantánea." icon={<Activity className="w-4 h-4"/>} color="text-red-400" />
+                            <PerkCard name="Aerodynamic Floss" desc="-15% Tiempo de recarga del Dash." icon={<Wind className="w-4 h-4"/>} color="text-yellow-400" />
+                            <PerkCard name="Dual Motion" desc="+1 Dash consecutivo. (Doble Dash)" icon={<Wind className="w-4 h-4"/>} color="text-orange-400" />
+                            <PerkCard name="Thick Enamel" desc="Recibe 15% menos de daño." icon={<Shield className="w-4 h-4"/>} color="text-indigo-400" />
+                            <PerkCard name="Fluoride Bath" desc="Invulnerabilidad temporal (3s)." icon={<Zap className="w-4 h-4"/>} color="text-purple-400" />
+                            <PerkCard name="Crown Implant" desc="+1 Vida Extra (Revivir)." icon={<Heart className="w-4 h-4"/>} color="text-yellow-300" />
+                            <PerkCard name="Bristle Rage" desc="+15% Daño total infligido." icon={<Sword className="w-4 h-4"/>} color="text-pink-400" />
+                        </div>
+                    </section>
+
                     {/* WEAPONS */}
                     <section className="bg-slate-800/50 rounded-lg p-6 border border-slate-700">
                         <h3 className="text-xl font-bold text-blue-300 mb-4 flex items-center gap-2 border-b border-blue-900 pb-2">
@@ -148,7 +195,7 @@ const IntelDatabase: React.FC<{onClose: () => void}> = ({onClose}) => {
                     {/* ENEMIES */}
                     <section className="bg-slate-800/50 rounded-lg p-6 border border-slate-700 lg:col-span-2">
                          <h3 className="text-xl font-bold text-yellow-300 mb-4 flex items-center gap-2 border-b border-yellow-900/50 pb-2">
-                            <ShieldAlert className="w-5 h-5" /> COMMON THREATS
+                            <ShieldAlert className="w-5 h-5" /> AMENAZAS COMUNES
                         </h3>
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                              <EnemyCard name="Bacteria" desc="Green germs. They jump." />
@@ -165,13 +212,33 @@ const IntelDatabase: React.FC<{onClose: () => void}> = ({onClose}) => {
                 
                 <div className="mt-8 text-center">
                     <button onClick={onClose} className="px-8 py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded border-2 border-slate-500">
-                        CLOSE DATABASE
+                        CERRAR
                     </button>
                 </div>
             </div>
         </div>
     );
 };
+
+const AchievementRow = ({icon, title, desc, color}: any) => (
+    <div className="flex items-center gap-3 bg-slate-900/50 p-3 rounded border border-slate-800">
+        <div className={`p-2 bg-slate-800 rounded-full ${color}`}>{icon}</div>
+        <div>
+            <h4 className={`font-bold text-sm ${color}`}>{title}</h4>
+            <p className="text-xs text-slate-400">{desc}</p>
+        </div>
+    </div>
+);
+
+const PerkCard = ({icon, name, desc, color}: any) => (
+    <div className="flex items-start gap-3 bg-slate-900/50 p-3 rounded border border-slate-800">
+        <div className={`p-1.5 bg-slate-800 rounded ${color}`}>{icon}</div>
+        <div>
+            <h4 className={`font-bold text-xs ${color} uppercase`}>{name}</h4>
+            <p className="text-[10px] text-slate-400 leading-tight">{desc}</p>
+        </div>
+    </div>
+);
 
 const WeaponCard = ({icon, name, desc, color}: any) => (
     <div className="flex items-start gap-3 bg-slate-900/50 p-3 rounded border border-slate-800">
