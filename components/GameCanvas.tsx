@@ -199,7 +199,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     const handleMouseDown = (e: MouseEvent) => {
         audioManager.current.init();
         if (gameState !== GameState.PLAYING) return;
-        if (inputMethod === 'keyboard') return; // Ignore mouse clicks in keyboard mode
+        if (inputMethod === 'keyboard' && !isMobile) return; // Ignore mouse clicks in keyboard mode
 
         if (e.button === 0) { if (!inputs.current.shoot) inputs.current.shootPressed = true; inputs.current.shoot = true; } 
         else if (e.button === 2) { if (!inputs.current.dash) inputs.current.dashPressed = true; inputs.current.dash = true; }
@@ -207,7 +207,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
     const handleMouseUp = (e: MouseEvent) => {
         if (gameState !== GameState.PLAYING) return;
-        if (inputMethod === 'keyboard') return;
+        if (inputMethod === 'keyboard' && !isMobile) return;
 
         if (e.button === 0) inputs.current.shoot = false;
         if (e.button === 2) inputs.current.dash = false;
@@ -215,7 +215,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
     const handleMouseMove = (e: MouseEvent) => {
         if (gameState !== GameState.PLAYING) return;
-        if (inputMethod === 'keyboard') return; // Ignore mouse movement in keyboard mode
+        if (inputMethod === 'keyboard' && !isMobile) return; 
 
         const rect = canvasRef.current?.getBoundingClientRect();
         if (rect) {
@@ -243,7 +243,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('contextmenu', handleContextMenu);
     };
-  }, [gameState, setGameState, inputMethod]); // Added inputMethod dependency
+  }, [gameState, setGameState, inputMethod, isMobile]);
 
   const handleTouch = (action: string, pressed: boolean) => (e: React.TouchEvent | React.MouseEvent) => {
       e.preventDefault();
@@ -251,6 +251,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       switch(action) {
           case 'left': inputs.current.left = pressed; break;
           case 'right': inputs.current.right = pressed; break;
+          case 'up': inputs.current.aimUp = pressed; break;
+          case 'down': inputs.current.down = pressed; break;
           case 'jump': if (!inputs.current.jumpPressed && pressed) inputs.current.jumpPressed = true; break;
           case 'shoot': if (!inputs.current.shoot && pressed) inputs.current.shootPressed = true; inputs.current.shoot = pressed; break;
           case 'dash': if (!inputs.current.dash && pressed) inputs.current.dashPressed = true; inputs.current.dash = pressed; break;
@@ -335,8 +337,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     if (inputs.current.shootPressed && p.frameTimer <= 0) {
         let dx = 0, dy = 0;
 
-        if (inputMethod === 'mouse') {
-            // MOUSE AIMING
+        if (inputMethod === 'mouse' && !isMobile) {
+            // MOUSE AIMING (Desktop)
             const mWX = inputs.current.mouseX + s.camera.x; 
             const mWY = inputs.current.mouseY + s.camera.y;
             const pCX = p.x + p.w/2; 
@@ -347,7 +349,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             if (len > 0) { dx /= len; dy /= len; } else { dx = p.facing; dy = 0; }
             p.facing = mWX < pCX ? -1 : 1; // Face mouse
         } else {
-            // KEYBOARD AIMING
+            // KEYBOARD / MOBILE AIMING (Directional)
             if (inputs.current.aimUp) { 
                 dy = -1; 
                 dx = inputs.current.left ? -1 : (inputs.current.right ? 1 : 0); 
@@ -609,7 +611,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         ctx.beginPath(); ctx.arc(px + p.w/2 + (p.facing*10), py + 22, 5, 0, Math.PI*2); ctx.fill();
 
         drawHeldWeapon(ctx, p, {
-             usingMouse: inputMethod === 'mouse',
+             usingMouse: inputMethod === 'mouse' && !isMobile,
              aimUp: inputs.current.aimUp,
              mouseX: inputs.current.mouseX,
              mouseY: inputs.current.mouseY,
