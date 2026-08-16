@@ -11,6 +11,12 @@ export interface EnemySpawnEntry {
   /** Vida base y cuánto sube por cada stage. */
   baseHp: number;
   hpPerStage: number;
+  /**
+   * Daño por contacto. Antes era un literal 20 igual para todos dentro del
+   * bucle; ahora cada enemigo pega según lo que es. Los proyectiles llevan su
+   * daño aparte, en `data/weapons.ts` y en la IA de los jefes.
+   */
+  contactDamage: number;
 }
 
 /**
@@ -27,6 +33,7 @@ export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
     color: COLORS.enemyPlaque,
     baseHp: 80,
     hpPerStage: 10,
+    contactDamage: 25,
   },
   {
     threshold: 0.9,
@@ -36,6 +43,7 @@ export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
     color: COLORS.enemyGrunt,
     baseHp: 60,
     hpPerStage: 5,
+    contactDamage: 24,
   },
   {
     threshold: 0.8,
@@ -45,6 +53,7 @@ export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
     color: COLORS.enemyTurret,
     baseHp: 50,
     hpPerStage: 0,
+    contactDamage: 18,
   },
   {
     threshold: 0.7,
@@ -54,6 +63,7 @@ export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
     color: COLORS.enemyAcidSpitter,
     baseHp: 40,
     hpPerStage: 0,
+    contactDamage: 18,
   },
   {
     threshold: 0.6,
@@ -63,6 +73,7 @@ export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
     color: COLORS.enemyCandy,
     baseHp: 30,
     hpPerStage: 0,
+    contactDamage: 16,
   },
   {
     threshold: 0.5,
@@ -72,6 +83,7 @@ export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
     color: COLORS.enemySugarFiend,
     baseHp: 25,
     hpPerStage: 0,
+    contactDamage: 16,
   },
   {
     threshold: 0.4,
@@ -81,6 +93,7 @@ export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
     color: COLORS.enemyRusher,
     baseHp: 20,
     hpPerStage: 0,
+    contactDamage: 14,
   },
   {
     threshold: 0,
@@ -90,8 +103,24 @@ export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
     color: COLORS.enemyBacteria,
     baseHp: 20,
     hpPerStage: 4,
+    contactDamage: 12,
   },
 ];
+
+/** Daño por contacto usado cuando un enemigo no está en la tabla. */
+export const DEFAULT_CONTACT_DAMAGE = 20;
+
+/**
+ * Daño por contacto por tipo de enemigo, para consultarlo desde el bucle sin
+ * volver a buscar la entrada de la tabla. Los jefes lo llevan en `STAGE_BOSSES`.
+ */
+export const contactDamageFor = (enemy: Enemy): number => {
+  if (enemy.subType === 'boss') {
+    return findBoss(enemy.bossVariant)?.contactDamage ?? DEFAULT_CONTACT_DAMAGE;
+  }
+  const entry = ENEMY_SPAWN_TABLE.find((e) => e.subType === enemy.subType);
+  return entry?.contactDamage ?? DEFAULT_CONTACT_DAMAGE;
+};
 
 export const pickEnemySpawn = (roll: number): EnemySpawnEntry =>
   ENEMY_SPAWN_TABLE.find((entry) => roll > entry.threshold) ??
@@ -108,15 +137,17 @@ export interface BossEntry {
   w: number;
   h: number;
   color: string;
+  /** Daño por embestida/contacto, aparte del de sus proyectiles. */
+  contactDamage: number;
 }
 
 /** Jefe por stage. Cualquier stage por encima del último usa el final (`deity`). */
 export const STAGE_BOSSES: readonly BossEntry[] = [
-  { variant: 'king', nameKey: 'king', maxHp: 1500, w: 120, h: 160, color: '#3f3f46' },
-  { variant: 'phantom', nameKey: 'phantom', maxHp: 2200, w: 100, h: 100, color: '#22d3ee' },
-  { variant: 'tank', nameKey: 'tank', maxHp: 3500, w: 160, h: 140, color: '#57534e' },
-  { variant: 'general', nameKey: 'general', maxHp: 3000, w: 100, h: 180, color: '#dc2626' },
-  { variant: 'deity', nameKey: 'deity', maxHp: 6000, w: 140, h: 140, color: '#0f172a' },
+  { variant: 'king', nameKey: 'king', maxHp: 1500, w: 120, h: 160, color: '#3f3f46', contactDamage: 25 },
+  { variant: 'phantom', nameKey: 'phantom', maxHp: 2200, w: 100, h: 100, color: '#22d3ee', contactDamage: 24 },
+  { variant: 'tank', nameKey: 'tank', maxHp: 3500, w: 160, h: 140, color: '#57534e', contactDamage: 28 },
+  { variant: 'general', nameKey: 'general', maxHp: 3000, w: 100, h: 180, color: '#dc2626', contactDamage: 24 },
+  { variant: 'deity', nameKey: 'deity', maxHp: 6000, w: 140, h: 140, color: '#0f172a', contactDamage: 30 },
 ];
 
 export const HIDDEN_BOSS: BossEntry = {
@@ -126,7 +157,59 @@ export const HIDDEN_BOSS: BossEntry = {
   w: 120,
   h: 140,
   color: COLORS.enemyWarden,
+  contactDamage: 28,
 };
 
 export const getStageBoss = (stage: number): BossEntry =>
   STAGE_BOSSES[stage - 1] ?? STAGE_BOSSES[STAGE_BOSSES.length - 1];
+
+/** Busca un jefe por su variante, incluido el oculto. */
+export const findBoss = (variant: Enemy['bossVariant']): BossEntry | undefined =>
+  variant === HIDDEN_BOSS.variant
+    ? HIDDEN_BOSS
+    : STAGE_BOSSES.find((boss) => boss.variant === variant);
+
+/**
+ * Umbrales de comportamiento que invocan al jefe oculto. Todos se miden con
+ * tiempo de simulación acumulado, nunca con `Date.now()`: pausar la partida o
+ * cambiar de pestaña no debe acercar la invocación.
+ */
+export const HIDDEN_BOSS_TRIGGERS = {
+  /** Segundos sin avanzar `idleDistance` píxeles. */
+  idleSeconds: 120,
+  idleDistance: 50,
+  /** Segundos de nivel sin pasar de `stagnantX`. */
+  stagnantSeconds: 180,
+  stagnantX: 1500,
+  /** Más de `rushKills` bajas en menos de `rushSeconds`. */
+  rushSeconds: 120,
+  rushKills: 30,
+  /** Matar al jefe del stage en menos de esto. */
+  bossSpeedkillSeconds: 60,
+  /** A qué distancia del jugador aparece. */
+  spawnOffsetX: 300,
+} as const;
+
+/**
+ * Segundos entre oleadas. Baja con la puntuación y con el stage, con un suelo
+ * para que no se vuelva ingobernable. Era una expresión suelta en el bucle.
+ */
+export const WAVE_INTERVAL = {
+  base: 2.0,
+  min: 0.5,
+  perScore: 1 / 10000,
+  perStage: 0.1,
+} as const;
+
+export const waveInterval = (score: number, stage: number): number =>
+  Math.max(
+    WAVE_INTERVAL.min,
+    WAVE_INTERVAL.base - score * WAVE_INTERVAL.perScore - stage * WAVE_INTERVAL.perStage
+  );
+
+/**
+ * Margen por detrás de la cámara a partir del cual un enemigo se descarta. Sin
+ * esto el array crecía durante toda la partida con enemigos que ya no se ven ni
+ * se mueven, pero que seguían comprobándose contra cada proyectil.
+ */
+export const ENEMY_CULL_MARGIN = 600;

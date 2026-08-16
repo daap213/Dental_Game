@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { spawnProjectile } from './weapons';
-import { getWeaponStats } from './data/weapons';
+import { getWeaponStats, ENEMY_BULLET } from './data/weapons';
 import type { Projectile, Player, WeaponType } from '../types';
 
 const makePlayer = (weapon: WeaponType, weaponLevel: number): Player =>
@@ -142,6 +142,60 @@ describe('spawnProjectile — geometría por arma', () => {
     const sword = shoot('toothbrush', 1)[0];
     expect(sword.projectileType).toBe('sword');
     expect(Math.hypot(sword.vx, sword.vy)).toBeCloseTo(1);
+  });
+});
+
+describe('spawnProjectile — multiplicador de daño', () => {
+  const shootWithMult = (weapon: WeaponType, level: number, mult: number): Projectile[] => {
+    const out: Projectile[] = [];
+    const player = makePlayer(weapon, level);
+    player.stats.damageMultiplier = mult;
+    spawnProjectile(out, 0, 0, 1, 0, 'player', weapon, player);
+    return out;
+  };
+
+  it('se aplica al crear el proyectil, una sola vez', () => {
+    for (const weapon of WEAPONS) {
+      const base = getWeaponStats(weapon, 3).damage;
+      for (const proj of shootWithMult(weapon, 3, 1.15)) {
+        expect(proj.damage, `${weapon} L3`).toBeCloseTo(base * 1.15);
+      }
+    }
+  });
+
+  it('disparar en ráfaga no acumula el multiplicador sobre los proyectiles ya vivos', () => {
+    // Regresión del fallo 01: el bucle parcheaba el daño recorriendo el array
+    // después de disparar, así que cada disparo volvía a multiplicar a los
+    // anteriores y un +15% acababa siendo un x3,5.
+    const out: Projectile[] = [];
+    const player = makePlayer('normal', 1);
+    player.stats.damageMultiplier = 1.15;
+    const expected = getWeaponStats('normal', 1).damage * 1.15;
+
+    for (let i = 0; i < 20; i++) spawnProjectile(out, 0, 0, 1, 0, 'player', 'normal', player);
+
+    expect(out).toHaveLength(20);
+    for (const proj of out) expect(proj.damage).toBeCloseTo(expected);
+  });
+
+  it('no toca el daño de las balas enemigas en vuelo', () => {
+    const out: Projectile[] = [];
+    spawnProjectile(out, 0, 0, -1, 0, 'enemy', 'normal');
+
+    const player = makePlayer('normal', 1);
+    player.stats.damageMultiplier = 2;
+    for (let i = 0; i < 10; i++) spawnProjectile(out, 0, 0, 1, 0, 'player', 'normal', player);
+
+    expect(out[0].owner).toBe('enemy');
+    expect(out[0].damage).toBe(ENEMY_BULLET.damage);
+  });
+
+  it('un multiplicador de 1 deja el daño de tabla', () => {
+    for (const weapon of WEAPONS) {
+      for (const proj of shootWithMult(weapon, 5, 1)) {
+        expect(proj.damage, weapon).toBe(getWeaponStats(weapon, 5).damage);
+      }
+    }
   });
 });
 

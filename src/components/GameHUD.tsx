@@ -17,17 +17,18 @@ import {
   TrendingUp,
   Timer,
 } from 'lucide-react';
-import { Player, Language } from '../types';
+import { Language } from '../types';
 import { TEXT } from '../i18n';
+import type { HudSnapshot } from '../game/world';
 
+/**
+ * El HUD se dibuja **solo** con la instantánea que publica el bucle. Antes
+ * recibía además el `Player` mutable y leía de él escudo, vidas, arma y
+ * multiplicadores; como React solo re-renderiza cuando cambia la instantánea,
+ * esos valores se quedaban congelados hasta que cambiaba otra cosa.
+ */
 interface GameHUDProps {
-  player: Player;
-  score: number;
-  stage: number;
-  hp: number;
-  bossHp: number;
-  bossMaxHp: number;
-  bossName: string;
+  hud: HudSnapshot;
   isMobile: boolean;
   handleTouch: (
     action: string,
@@ -36,23 +37,13 @@ interface GameHUDProps {
   lang: Language;
 }
 
-export const GameHUD: React.FC<GameHUDProps> = ({
-  player,
-  score,
-  stage,
-  hp,
-  bossHp,
-  bossMaxHp,
-  bossName,
-  isMobile,
-  handleTouch,
-  lang,
-}) => {
+export const GameHUD: React.FC<GameHUDProps> = ({ hud, isMobile, handleTouch, lang }) => {
   const t = TEXT[lang].hud;
+  const { score, stage, hp, bossHp, bossMaxHp, bossName } = hud;
 
   // Calculate stats for display
-  const cdr = Math.round((1 - player.stats.dashCooldownMultiplier) * 100); // Cooldown Reduction %
-  const def = Math.round(player.stats.damageReduction * 100); // Defense %
+  const cdr = Math.round((1 - hud.dashCooldownMultiplier) * 100); // Cooldown Reduction %
+  const def = Math.round(hud.damageReduction * 100); // Defense %
 
   return (
     <>
@@ -64,12 +55,12 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           <div className="flex items-center gap-2 pr-2 h-full min-w-[130px] md:min-w-[180px]">
             <div className="relative shrink-0">
               <Heart className="text-red-600 w-5 h-5 md:w-6 md:h-6 fill-red-600 animate-pulse drop-shadow-md" />
-              {player.shield > 0 && (
+              {hud.shield > 0 && (
                 <Shield className="absolute -top-1 -right-1 w-3 h-3 text-cyan-400 fill-cyan-400/50 animate-bounce" />
               )}
-              {player.lives > 0 && (
+              {hud.lives > 0 && (
                 <span className="pixel-inset absolute -bottom-2 -right-1 bg-yellow-400 text-black text-[9px] px-1 border-yellow-600">
-                  x{player.lives}
+                  x{hud.lives}
                 </span>
               )}
             </div>
@@ -80,13 +71,13 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 {/* Red HP */}
                 <div
                   className="h-full bg-red-600"
-                  style={{ width: `${(hp / player.maxHp) * 100}%` }}
+                  style={{ width: `${(hp / hud.maxHp) * 100}%` }}
                 />
                 {/* Cyan Shield Overlay */}
-                {player.maxShield > 0 && (
+                {hud.maxShield > 0 && (
                   <div
                     className="absolute top-0 left-0 h-full bg-cyan-400 border-r-2 border-white"
-                    style={{ width: `${Math.min(100, (player.shield / player.maxShield) * 100)}%` }}
+                    style={{ width: `${Math.min(100, (hud.shield / hud.maxShield) * 100)}%` }}
                   />
                 )}
                 {/* Scanline Effect */}
@@ -95,10 +86,10 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               {/* Text Values (HP/Shield) */}
               <div className="flex justify-between text-[8px] leading-none font-mono opacity-80">
                 <span className="text-red-300">
-                  {Math.ceil(hp)}/{Math.ceil(player.maxHp)}
+                  {Math.ceil(hp)}/{Math.ceil(hud.maxHp)}
                 </span>
-                {player.maxShield > 0 && (
-                  <span className="text-cyan-300">SHIELD {Math.ceil(player.shield)}</span>
+                {hud.maxShield > 0 && (
+                  <span className="text-cyan-300">SHIELD {Math.ceil(hud.shield)}</span>
                 )}
               </div>
             </div>
@@ -120,11 +111,11 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             <div className="hidden lg:flex items-center gap-2 text-[9px] text-slate-400 font-mono">
               <StatPill
                 icon={<Sword className="w-3 h-3 text-red-400" />}
-                val={`${t.stat_dmg} x${player.stats.damageMultiplier.toFixed(2)}`}
+                val={`${t.stat_dmg} x${hud.damageMultiplier.toFixed(2)}`}
               />
               <StatPill
                 icon={<TrendingUp className="w-3 h-3 text-green-400" />}
-                val={`${t.stat_spd} x${player.stats.speedMultiplier.toFixed(2)}`}
+                val={`${t.stat_spd} x${hud.speedMultiplier.toFixed(2)}`}
               />
               {def > 0 && (
                 <StatPill
@@ -138,28 +129,28 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                   val={`CD -${cdr}%`}
                 />
               )}
-              {player.maxShield > 0 && (
+              {hud.maxShield > 0 && (
                 <StatPill
                   icon={<Activity className="w-3 h-3 text-cyan-400" />}
-                  val={`SHLD ${player.maxShield}`}
+                  val={`SHLD ${hud.maxShield}`}
                 />
               )}
-              {player.stats.maxDashes > 1 && (
+              {hud.maxDashes > 1 && (
                 <StatPill
                   icon={<Wind className="w-3 h-3 text-white" />}
-                  val={`${t.stat_dash} ${player.stats.maxDashes}`}
+                  val={`${t.stat_dash} ${hud.maxDashes}`}
                 />
               )}
-              {player.lives > 0 && (
+              {hud.lives > 0 && (
                 <StatPill
                   icon={<Heart className="w-3 h-3 text-yellow-500" />}
-                  val={`LIVES ${player.lives}`}
+                  val={`LIVES ${hud.lives}`}
                 />
               )}
-              {player.maxHp > 130 && (
+              {hud.maxHp > 130 && (
                 <StatPill
                   icon={<Heart className="w-3 h-3 text-pink-400" />}
-                  val={`MAX HP ${Math.ceil(player.maxHp)}`}
+                  val={`MAX HP ${Math.ceil(hud.maxHp)}`}
                 />
               )}
             </div>
@@ -178,20 +169,20 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           <div className="flex items-center gap-2 pl-2 border-l border-slate-700 h-full min-w-[90px] justify-end">
             <div className="flex flex-col items-end">
               <span className="text-[8px] md:text-[9px] text-slate-400 uppercase leading-none mb-1 max-w-[80px] truncate text-right font-bold">
-                {TEXT[lang].weapons[player.weapon].name}
+                {TEXT[lang].weapons[hud.weapon].name}
               </span>
               <div className="pixel-inset flex items-center gap-1 bg-slate-800 px-1.5 py-0.5 border-slate-600">
                 <span className="text-[9px] text-slate-400 font-bold">{t.lvl}</span>
-                <span className="text-xs font-bold text-yellow-400">{player.weaponLevel}</span>
+                <span className="text-xs font-bold text-yellow-400">{hud.weaponLevel}</span>
               </div>
             </div>
             <div className="text-cyan-400">
-              {player.weapon === 'normal' && <Rocket className="w-5 h-5 md:w-6 md:h-6" />}
-              {player.weapon === 'spread' && <Crosshair className="w-5 h-5 md:w-6 md:h-6" />}
-              {player.weapon === 'laser' && <Zap className="w-5 h-5 md:w-6 md:h-6" />}
-              {player.weapon === 'mouthwash' && <Waves className="w-5 h-5 md:w-6 md:h-6" />}
-              {player.weapon === 'floss' && <Wind className="w-5 h-5 md:w-6 md:h-6" />}
-              {player.weapon === 'toothbrush' && <Sword className="w-5 h-5 md:w-6 md:h-6" />}
+              {hud.weapon === 'normal' && <Rocket className="w-5 h-5 md:w-6 md:h-6" />}
+              {hud.weapon === 'spread' && <Crosshair className="w-5 h-5 md:w-6 md:h-6" />}
+              {hud.weapon === 'laser' && <Zap className="w-5 h-5 md:w-6 md:h-6" />}
+              {hud.weapon === 'mouthwash' && <Waves className="w-5 h-5 md:w-6 md:h-6" />}
+              {hud.weapon === 'floss' && <Wind className="w-5 h-5 md:w-6 md:h-6" />}
+              {hud.weapon === 'toothbrush' && <Sword className="w-5 h-5 md:w-6 md:h-6" />}
             </div>
           </div>
         </div>
@@ -200,11 +191,11 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         <div className="lg:hidden w-full bg-black border-b-2 border-slate-700 flex justify-center items-center gap-3 py-0.5 px-2 overflow-x-auto h-6 no-scrollbar">
           <StatTiny
             icon={<Sword className="w-2.5 h-2.5 text-red-400" />}
-            text={`x${player.stats.damageMultiplier.toFixed(2)}`}
+            text={`x${hud.damageMultiplier.toFixed(2)}`}
           />
           <StatTiny
             icon={<TrendingUp className="w-2.5 h-2.5 text-green-400" />}
-            text={`x${player.stats.speedMultiplier.toFixed(2)}`}
+            text={`x${hud.speedMultiplier.toFixed(2)}`}
           />
           {def > 0 && (
             <StatTiny icon={<Shield className="w-2.5 h-2.5 text-blue-400" />} text={`+${def}%`} />
@@ -215,34 +206,34 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               text={`CD -${cdr}%`}
             />
           )}
-          {player.maxShield > 0 && (
+          {hud.maxShield > 0 && (
             <StatTiny
               icon={<Activity className="w-2.5 h-2.5 text-cyan-400" />}
-              text={`MAX ${player.maxShield}`}
+              text={`MAX ${hud.maxShield}`}
             />
           )}
-          {player.stats.maxDashes > 1 && (
+          {hud.maxDashes > 1 && (
             <StatTiny
               icon={<Wind className="w-2.5 h-2.5 text-white" />}
-              text={`DASH x${player.stats.maxDashes}`}
+              text={`DASH x${hud.maxDashes}`}
             />
           )}
-          {player.lives > 0 && (
+          {hud.lives > 0 && (
             <StatTiny
               icon={<Heart className="w-2.5 h-2.5 text-yellow-500" />}
-              text={`LIVES ${player.lives}`}
+              text={`LIVES ${hud.lives}`}
             />
           )}
-          {player.maxHp > 130 && (
+          {hud.maxHp > 130 && (
             <StatTiny
               icon={<Heart className="w-2.5 h-2.5 text-pink-400" />}
-              text={`HP ${Math.ceil(player.maxHp)}`}
+              text={`HP ${Math.ceil(hud.maxHp)}`}
             />
           )}
         </div>
 
         {/* Status Effects (Right Side, Below HUD) */}
-        {player.slowTimer > 0 && (
+        {hud.slowed && (
           <div className="pixel-inset pixel-blink absolute right-2 top-20 text-pink-400 text-[9px] flex items-center gap-1 bg-black px-2 py-1 border-pink-700">
             <Snail className="w-3 h-3" /> {t.slow}
           </div>

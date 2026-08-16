@@ -6,9 +6,14 @@ import {
   pickEnemySpawn,
   enemyHpForStage,
   ENEMY_SPAWN_TABLE,
+  STAGE_BOSSES,
+  waveInterval,
+  WAVE_INTERVAL,
+  HIDDEN_BOSS_TRIGGERS,
 } from './enemies';
 import { getWeaponStats, getFireCooldown, MAX_LEVEL } from './weapons';
-import type { Difficulty, WeaponType } from '../../types';
+import { CHARACTER_PROFILES, getCharacter, characterSummary } from './characters';
+import type { CharacterType, Difficulty, WeaponType } from '../../types';
 
 /**
  * Estos tests fijan el balance actual del juego. NO son tests de implementación:
@@ -103,6 +108,83 @@ describe('tabla de enemigos', () => {
       expect(e.h).toBeGreaterThan(0);
       expect(enemyHpForStage(e, 1)).toBeGreaterThan(0);
     }
+  });
+
+  it('todos declaran daño por contacto, y en un rango razonable', () => {
+    for (const e of ENEMY_SPAWN_TABLE) {
+      expect(e.contactDamage, e.subType).toBeGreaterThan(0);
+      expect(e.contactDamage, e.subType).toBeLessThanOrEqual(30);
+    }
+    for (const b of [...STAGE_BOSSES, HIDDEN_BOSS]) {
+      expect(b.contactDamage, b.variant).toBeGreaterThan(0);
+      expect(b.contactDamage, b.variant).toBeLessThanOrEqual(35);
+    }
+  });
+
+  it('los más duros pegan más al tocarte que los básicos', () => {
+    const damage = (subType: string) =>
+      ENEMY_SPAWN_TABLE.find((e) => e.subType === subType)!.contactDamage;
+    expect(damage('plaque_monster')).toBeGreaterThan(damage('bacteria'));
+    expect(damage('gingivitis_grunt')).toBeGreaterThan(damage('sugar_rusher'));
+  });
+});
+
+describe('ritmo de oleadas', () => {
+  it('se acelera con la puntuación y con el stage', () => {
+    expect(waveInterval(0, 1)).toBeGreaterThan(waveInterval(20000, 1));
+    expect(waveInterval(0, 1)).toBeGreaterThan(waveInterval(0, 5));
+  });
+
+  it('nunca baja del suelo, por muy alta que sea la puntuación', () => {
+    expect(waveInterval(0, 1)).toBeCloseTo(WAVE_INTERVAL.base - WAVE_INTERVAL.perStage);
+    expect(waveInterval(1_000_000, 99)).toBe(WAVE_INTERVAL.min);
+    expect(waveInterval(1_000_000, 99)).toBeGreaterThan(0);
+  });
+});
+
+describe('disparadores del jefe oculto', () => {
+  it('los umbrales están en segundos y son positivos', () => {
+    for (const [key, value] of Object.entries(HIDDEN_BOSS_TRIGGERS)) {
+      expect(value, key).toBeGreaterThan(0);
+    }
+  });
+
+  it('la matanza rápida se mide en una ventana menor que el estancamiento', () => {
+    expect(HIDDEN_BOSS_TRIGGERS.rushSeconds).toBeLessThan(HIDDEN_BOSS_TRIGGERS.stagnantSeconds);
+  });
+});
+
+describe('clases de diente', () => {
+  const CLASSES = Object.keys(CHARACTER_PROFILES) as CharacterType[];
+
+  it('las cuatro clases existen y ninguna es idéntica a otra', () => {
+    expect(CLASSES).toHaveLength(4);
+    const perfiles = CLASSES.map((c) => JSON.stringify(CHARACTER_PROFILES[c]));
+    expect(new Set(perfiles).size).toBe(4);
+  });
+
+  it('los multiplicadores se mantienen en un rango sano', () => {
+    for (const c of CLASSES) {
+      const p = CHARACTER_PROFILES[c];
+      expect(p.hpMult, c).toBeGreaterThanOrEqual(0.8);
+      expect(p.hpMult, c).toBeLessThanOrEqual(1.3);
+      expect(p.speedMult, c).toBeGreaterThanOrEqual(0.85);
+      expect(p.speedMult, c).toBeLessThanOrEqual(1.2);
+      expect(p.damageMult, c).toBeGreaterThanOrEqual(0.85);
+      expect(p.damageMult, c).toBeLessThanOrEqual(1.2);
+      expect(p.damageReduction, c).toBeLessThanOrEqual(0.15);
+      expect(p.startingShield, c).toBeLessThanOrEqual(25);
+    }
+  });
+
+  it('cada clase tiene algo que la distingue, y el menú lo puede mostrar', () => {
+    for (const c of CLASSES) {
+      expect(characterSummary(c), c).not.toBe('');
+    }
+  });
+
+  it('una clase inventada cae al molar', () => {
+    expect(getCharacter('incisivo_de_sable' as CharacterType)).toBe(CHARACTER_PROFILES.molar);
   });
 });
 

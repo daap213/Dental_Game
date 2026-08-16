@@ -90,6 +90,51 @@ describe('getRandomPerks', () => {
   });
 });
 
+describe('getRandomPerks — no ofrece mejoras inútiles', () => {
+  /** Todos los ids que pueden salir para este jugador. */
+  const idsOfrecidos = (player: Player): Set<string> => {
+    const ids = new Set<string>();
+    for (let i = 0; i < 500; i++) {
+      for (const perk of getRandomPerks(3, 'es', player)) ids.add(perk.id);
+    }
+    return ids;
+  };
+
+  it('con la vida y el escudo llenos no ofrece la cura total', () => {
+    const p = makePlayer({ hp: 100, maxHp: 100, shield: 25, maxShield: 25 });
+    expect(idsOfrecidos(p).has('extra_filling')).toBe(false);
+  });
+
+  it('si falta vida, la cura total vuelve a la baraja', () => {
+    const p = makePlayer({ hp: 40, maxHp: 100 });
+    expect(idsOfrecidos(p).has('extra_filling')).toBe(true);
+  });
+
+  it('si falta escudo aunque la vida esté llena, también', () => {
+    const p = makePlayer({ hp: 100, maxHp: 100, shield: 5, maxShield: 25 });
+    expect(idsOfrecidos(p).has('extra_filling')).toBe(true);
+  });
+
+  it('con la reducción de daño al tope no ofrece más esmalte', () => {
+    const p = makePlayer();
+    p.stats.damageReduction = 0.6;
+    expect(idsOfrecidos(p).has('thick_enamel')).toBe(false);
+  });
+
+  it('sin jugador se comporta como antes y ofrece todo', () => {
+    const ids = new Set<string>();
+    for (let i = 0; i < 500; i++) for (const perk of getRandomPerks(3, 'es')) ids.add(perk.id);
+    expect(ids.has('extra_filling')).toBe(true);
+    expect(ids.has('thick_enamel')).toBe(true);
+  });
+
+  it('sigue devolviendo la cantidad pedida aunque se filtren mejoras', () => {
+    const p = makePlayer({ hp: 100, maxHp: 100, shield: 25, maxShield: 25 });
+    p.stats.damageReduction = 0.6;
+    expect(getRandomPerks(3, 'en', p)).toHaveLength(3);
+  });
+});
+
 describe('applyPerk', () => {
   it('enamel_shield añade escudo y lo deja lleno', () => {
     const p = makePlayer();

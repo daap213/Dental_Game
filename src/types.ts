@@ -128,6 +128,14 @@ export interface LevelState {
   stage: number;
   distanceTraveled: number;
   bossSpawned: boolean;
+  /**
+   * El jefe del stage ya ha caído. Separado de `bossSpawned` porque el jefe
+   * oculto también es `subType: 'boss'`: sin esta distinción, matarlo contaba
+   * como limpiar el stage (y podía aparecer a media pantalla del inicio),
+   * mientras que matar al jefe del stage con el oculto todavía vivo podía
+   * volver a generar al jefe del stage.
+   */
+  bossDefeated: boolean;
   levelWidth: number;
 }
 

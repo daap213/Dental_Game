@@ -16,11 +16,32 @@ const PERK_DEFINITIONS: Omit<Perk, 'name' | 'description'>[] = [
     { id: 'extra_life', icon: 'heart', rarity: 'legendary', color: '#fcd34d', weight: 5 }
 ];
 
-export const getRandomPerks = (count: number = 3, lang: Language): Perk[] => {
+/**
+ * ¿Este perk haría algo si lo eligiera este jugador ahora mismo?
+ *
+ * Dos de los diez perks son de efecto inmediato en una mano de mejoras
+ * permanentes, así que ofrecerlos cuando no hacen nada es regalar una carta
+ * muerta: curarse del todo con la vida llena, o sumar reducción de daño con el
+ * tope ya alcanzado.
+ */
+const isUseful = (perkId: string, player: Player): boolean => {
+    switch (perkId) {
+        case 'extra_filling':
+            return player.hp < player.maxHp || player.shield < player.maxShield;
+        case 'thick_enamel':
+            return player.stats.damageReduction < 0.6;
+        default:
+            return true;
+    }
+};
+
+export const getRandomPerks = (count: number = 3, lang: Language, player?: Player): Perk[] => {
     // Weighted Random Selection
     const selected: Perk[] = [];
-    const pool = [...PERK_DEFINITIONS];
-    
+    const pool = player
+        ? PERK_DEFINITIONS.filter(def => isUseful(def.id, player))
+        : [...PERK_DEFINITIONS];
+
     for(let i=0; i<count; i++) {
         if (pool.length === 0) break;
         

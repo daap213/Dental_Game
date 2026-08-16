@@ -18,11 +18,21 @@ export const spawnProjectile = (projectiles: Projectile[], x: number, y: number,
     const level = player.weaponLevel;
     const vx = dx; const vy = dy;
 
+    /**
+     * Daño final de un proyectil del jugador.
+     *
+     * El multiplicador se aplica **aquí**, una sola vez por proyectil. Antes lo
+     * parcheaba el bucle recorriendo el array después de disparar, lo que
+     * reaplicaba el multiplicador a los proyectiles que aún estaban en el aire
+     * —incluidos los del enemigo— y convertía un +15% en un x3,5 acumulado.
+     */
+    const scaled = (base: number) => base * player.stats.damageMultiplier;
+
     if (type === 'spread') {
         // Nivel 1: 3 balas ... nivel 5: 11.
         const bulletCount = SPREAD.count(level);
         const spreadFactor = SPREAD.spreadFactor(level);
-        const dmg = SPREAD.damage(level);
+        const dmg = scaled(SPREAD.damage(level));
         const start = -Math.floor(bulletCount/2); const end = Math.floor(bulletCount/2);
         const perpX = -dy; const perpY = dx;
 
@@ -33,11 +43,11 @@ export const spawnProjectile = (projectiles: Projectile[], x: number, y: number,
         }
     } else if (type === 'laser') {
           const width = LASER.width(level);
-          const dmg = LASER.damage(level);
+          const dmg = scaled(LASER.damage(level));
           projectiles.push({ ...base, x, y, w: width, h: width, vx: vx * LASER.speed, vy: vy * LASER.speed, hp: 1, maxHp: 1, damage: dmg, lifeTime: LASER.lifeTime, projectileType: 'laser', color: COLORS.projectileLaser } as Projectile);
     } else if (type === 'mouthwash') {
           const speed = MOUTHWASH.speed(level);
-          const dmg = MOUTHWASH.damage(level);
+          const dmg = scaled(MOUTHWASH.damage(level));
           const off = MOUTHWASH.sideOffset;
           // side === 0 es la onda central (tamaño propio); ±1 son las laterales.
           MOUTHWASH.offsets(level).forEach(side => {
@@ -45,16 +55,16 @@ export const spawnProjectile = (projectiles: Projectile[], x: number, y: number,
               projectiles.push({ ...base, x: x + (side * dy * off), y: y - (side * dx * off), w: size, h: size, vx: vx * speed, vy: vy * speed, hp: 1, maxHp: 1, damage: dmg, lifeTime: MOUTHWASH.lifeTime, projectileType: 'wave', color: COLORS.projectileWave } as Projectile);
           });
     } else if (type === 'floss') {
-          const range = FLOSS.range(level); const dmg = FLOSS.damage(level); const thickness = FLOSS.thickness(level);
+          const range = FLOSS.range(level); const dmg = scaled(FLOSS.damage(level)); const thickness = FLOSS.thickness(level);
           const isVertical = Math.abs(dy) > Math.abs(dx);
           const w = isVertical ? thickness : range; const h = isVertical ? range : thickness;
           projectiles.push({ ...base, x, y, w, h, vx: dx, vy: dy, hp: 1, maxHp: 1, damage: dmg, lifeTime: FLOSS.lifeTime, projectileType: 'floss', color: '#fff' } as Projectile);
     } else if (type === 'toothbrush') {
-          const size = TOOTHBRUSH.size(level); const dmg = TOOTHBRUSH.damage(level);
+          const size = TOOTHBRUSH.size(level); const dmg = scaled(TOOTHBRUSH.damage(level));
           projectiles.push({ ...base, x, y, w: size, h: size, vx: dx, vy: dy, hp: 1, maxHp: 1, damage: dmg, lifeTime: TOOTHBRUSH.lifeTime, projectileType: 'sword', color: COLORS.projectileMelee } as Projectile);
     } else {
         const speed = NORMAL.speed;
-        const bullet = { w: NORMAL.w, h: NORMAL.h, hp: 1, maxHp: 1, damage: NORMAL.damage(level), lifeTime: NORMAL.lifeTime, projectileType: 'bullet' as const, color: COLORS.projectilePlayer, vx: vx * speed, vy: vy * speed };
+        const bullet = { w: NORMAL.w, h: NORMAL.h, hp: 1, maxHp: 1, damage: scaled(NORMAL.damage(level)), lifeTime: NORMAL.lifeTime, projectileType: 'bullet' as const, color: COLORS.projectilePlayer, vx: vx * speed, vy: vy * speed };
         // Abanico: una bala por cada desplazamiento perpendicular de la tabla.
         const perpX = -dy; const perpY = dx;
         NORMAL.offsets(level).forEach(offset => {
@@ -62,6 +72,17 @@ export const spawnProjectile = (projectiles: Projectile[], x: number, y: number,
         });
     }
 };
+
+/**
+ * Descarta los objetos que han quedado muy por detrás de la cámara.
+ *
+ * Como los enemigos: no se recogían ni se borraban nunca, así que el array
+ * crecía durante toda la partida. El margen es generoso —casi una pantalla y
+ * media por detrás del jugador— para no quitar de las manos un botiquín al que
+ * se podía volver.
+ */
+export const cullPowerUps = (powerups: PowerUp[], cameraX: number, margin: number): PowerUp[] =>
+    powerups.filter(pu => pu.x + pu.w > cameraX - margin);
 
 export const spawnPowerUp = (powerups: PowerUp[], x: number, y: number, dropRate: number, limitToType?: WeaponType) => {
     // Dynamic drop rate based on difficulty

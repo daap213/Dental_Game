@@ -5,7 +5,14 @@ import { COLORS } from './data/palette';
 import { AudioManager } from './audio';
 import { spawnProjectile } from './weapons';
 import { TEXT } from '../i18n';
-import { getStageBoss, HIDDEN_BOSS, pickEnemySpawn, enemyHpForStage } from './data/enemies';
+import {
+    getStageBoss,
+    HIDDEN_BOSS,
+    HIDDEN_BOSS_TRIGGERS,
+    pickEnemySpawn,
+    enemyHpForStage,
+    ENEMY_CULL_MARGIN,
+} from './data/enemies';
 import type { World } from './world';
 
 export const spawnHiddenBoss = (world: World, audio: AudioManager, lang: Language) => {
@@ -17,7 +24,7 @@ export const spawnHiddenBoss = (world: World, audio: AudioManager, lang: Languag
 
     world.enemies.push({
         id: 'hidden_boss',
-        x: world.player.x + 300,
+        x: world.player.x + HIDDEN_BOSS_TRIGGERS.spawnOffsetX,
         y: CANVAS_HEIGHT - 250,
         w: boss.w, h: boss.h, vx: 0, vy: 0, hp: boss.maxHp, maxHp: boss.maxHp,
         type: 'enemy', subType: 'boss', bossVariant: boss.variant, phase: 1,
@@ -59,6 +66,18 @@ export const spawnEnemy = (level: LevelState, cameraX: number, enemies: Enemy[])
 };
 
 
+/**
+ * Descarta los enemigos que han quedado muy por detrás de la cámara.
+ *
+ * Sin esto solo se eliminaban al morir: los que se quedaban atrás congelaban su
+ * IA (`updateEnemyAI` no se llama a más de una pantalla de distancia) pero
+ * seguían en el array, dibujándose y comprobándose contra cada proyectil, así
+ * que el coste del bucle crecía durante toda la partida. Los jefes nunca se
+ * descartan.
+ */
+export const cullEnemies = (enemies: Enemy[], cameraX: number): Enemy[] =>
+    enemies.filter(e => e.subType === 'boss' || e.x + e.w > cameraX - ENEMY_CULL_MARGIN);
+
 export const updateEnemyAI = (enemy: Enemy, p: Player, s: World, audio: AudioManager) => {
      switch(enemy.subType) {
         case 'bacteria': enemy.vx = enemy.x > p.x ? -3 : 3; if(enemy.isGrounded && Math.random()<0.01) enemy.vy = -8; enemy.vy += GRAVITY; break;
@@ -79,8 +98,10 @@ export const updateEnemyAI = (enemy: Enemy, p: Player, s: World, audio: AudioMan
         case 'gingivitis_grunt': enemy.vy += GRAVITY; 
             if(enemy.bossState === 1) { enemy.vx = enemy.facing * 12; if(enemy.aiTimer > 1) { enemy.bossState=0; enemy.aiTimer=0; } }
             else { enemy.vx = enemy.x > p.x ? -2 : 2; enemy.facing = enemy.vx > 0 ? 1 : -1; if(Math.abs((p.y+p.h)-(enemy.y+enemy.h))<30 && Math.abs(p.x-enemy.x)<300 && enemy.aiTimer>2) { enemy.bossState=1; enemy.aiTimer=0; } } break;
-        case 'boss': 
-             s.hud.bossHp = enemy.hp;
+        case 'boss':
+             // Entero y sin negativos: el daño con multiplicadores es fraccionario
+             // y el golpe mortal llegaba a pintar un porcentaje negativo.
+             s.hud.bossHp = Math.max(0, Math.ceil(enemy.hp));
              if (enemy.bossVariant === 'deity' && enemy.hp < enemy.maxHp/2 && enemy.phase===1) { enemy.phase=2; enemy.color='#7f1d1d'; s.shake=30; }
              
              if(enemy.bossVariant==='wisdom_warden') {

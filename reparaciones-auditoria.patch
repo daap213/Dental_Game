@@ -1,0 +1,3233 @@
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 9eef1d52f3219a4e974244b91c54301f1bfa4574..9e62b2cc59b4f9fec50015eabac0094b811b64ae 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -30,6 +30,8 @@ This repo is mid-migration under `C:\Users\user\.claude\plans\compiled-sparking-
+ 
+ `src/components/GameCanvas.tsx` still owns the loop, input, physics and camera, and is scheduled for **replacement rather than repair** — Phaser supplies all four. Do not grow it: new simulation logic goes in `src/game/`, new tuning numbers in `src/game/data/`, new drawing in `src/game/render/`. `git tag pre-phaser` marks the last pre-migration commit.
+ 
++A gameplay audit has since been applied on top; every fix it needed was pulled *out* of the monolith into `src/game/` (`triggers.ts`, `progression.ts`, `fallIntoPit`, `findRespawn`, `cullEnemies`, `syncHud`) rather than added to it, and each one carries tests. The behaviours worth knowing before touching the loop: fixed timestep, hold-to-fire governed by `getFireCooldown`, the damage multiplier applied at spawn, and `Escape` only toggling `PLAYING`↔`PAUSED`.
++
+ ## Architecture
+ 
+ A single-page React app. The game lives in `src/game/`, in layers that only depend downward: `data/` (pure tuning tables) ← `game/` (simulation) and `render/` (Canvas 2D drawing). Neither layer imports React. `src/components/GameCanvas.tsx` is the shell that owns the loop and input and bridges the two worlds.
+@@ -39,18 +41,23 @@ A single-page React app. The game lives in `src/game/`, in layers that only depe
+ - **`src/App.tsx`** owns the `GameState` enum machine (`src/types.ts`) and the run configuration: language, difficulty, character, loadout, input method. Every view (`MainMenu`, `PauseMenu`, `PerkMenu`, `GameOver`, `Credits`) is an absolutely-positioned overlay — `GameCanvas` stays mounted the whole time.
+ - Restarting is `setSessionId(s => s + 1)`; `GameCanvas` watches `sessionId` and calls `resetGame()`.
+ - **`src/game/world.ts`** defines `World` — the whole mutable simulation state — and `createWorld(config)` which builds it (including the player, via `src/game/player.ts`). `GameCanvas` holds one in a `useRef` and mutates it in place; restarting is `entities.current = createWorld(runConfig)`.
+-- **The engine never calls React.** `World` carries two outbound channels instead: `world.hud` (continuous values the HUD shows) and `world.events` (one-shots: `perk-offer`, `victory`, …). The rAF loop drains the queue and publishes the HUD snapshot **once per frame**, skipping `setState` when `hudChanged()` reports nothing moved. Adding a HUD value means extending `HudSnapshot` and `hudChanged`, not adding a `useState`.
++- **The engine never calls React.** `World` carries two outbound channels instead: `world.hud` (continuous values the HUD shows) and `world.events` (one-shots: `perk-offer`, `victory`, …). The rAF loop drains the queue and publishes the HUD snapshot **once per frame**, skipping `setState` when `hudChanged()` reports nothing moved. Adding a HUD value means extending `HudSnapshot`, `syncHud` and `hudChanged`, not adding a `useState`.
++- **`GameHUD` only ever sees `HudSnapshot`.** It used to also receive the mutable `Player` and read shield, lives, weapon and multipliers straight off it, which meant those only refreshed when something else in the snapshot changed. Everything the HUD draws must go through the snapshot; `syncHud(world)` copies the player-derived half of it in one place.
++- **The published snapshot must be a copy — `snapshotHud(world)`, never `world.hud`.** The loop keeps the last thing React saw so `hudChanged` can compare against it. Holding the reference instead of a copy means comparing the object with itself: it always reports "nothing moved", `setHud` is never called, and the whole HUD freezes on the values it had when the run started while the engine happily writes correct ones. That shipped once; `world.test.ts` pins it.
+ 
+ ### Game loop
+ 
+-- `requestAnimationFrame` loop in a `useEffect` keyed on `gameState`. It runs during `PLAYING` **and** `PERK_SELECTION`, but only calls `update(dt)` when `PLAYING` — during perk selection it keeps drawing so the frozen frame shows behind the perk cards.
+-- `dt` is clamped to 0.1s.
++- `requestAnimationFrame` loop in a `useEffect` keyed on `gameState`. It runs during `PLAYING` **and** `PERK_SELECTION`, but only steps the simulation when `PLAYING` — during perk selection it keeps drawing so the frozen frame shows behind the perk cards.
++- **Fixed timestep.** `planSteps` (`src/game/loop.ts`) decides how much simulation a frame gets: the loop accumulates real elapsed time and spends it in `FIXED_STEP` (1/60s) chunks, so `update()` always receives the same `dt`. The time entering one frame is capped at `MAX_STEPS_PER_FRAME` steps (33ms) and any excess is **dropped, never chased** — the game may run slow on a machine that can't keep up, but it never fast-forwards. Raising that cap brings back the "everything suddenly sped up" feel after any browser hitch. The stepping loop also breaks as soon as `world.events` is non-empty, so a perk offer freezes the game on the frame it happens instead of simulating past it.
++- **Mixed time base, now safe:** positions integrate per *step* (`p.x += p.vx`, `p.vy += GRAVITY`) while timers and cooldowns are `dt`-scaled, and the weapon cooldown `p.frameTimer` decrements by 1 per step. Both conventions coexist because a step always represents 1/60s — this is what the fixed timestep buys. Preserve whichever convention the surrounding code uses, and do **not** reintroduce `Date.now()` into the simulation (rendering may use it freely).
++- `syncHud(world)` runs once per frame in the loop, right before the `hudChanged` check, so it also refreshes while the game is frozen picking a perk.
+ - The loop stops rescheduling itself when `hp <= 0 && lives <= 0`, which is what triggers `handleGameOver` (it awaits Gemini for the death diagnosis).
+-- **Mixed time base:** positions integrate per *frame* (`p.x += p.vx`, `p.vy += GRAVITY`) while timers and cooldowns are `dt`-scaled, and the weapon cooldown `p.frameTimer` decrements by 1 per frame. Movement is framerate-dependent, timers are not. Preserve whichever convention the surrounding code uses.
+ 
+ ### `src/game/` modules mutate arguments; they are not pure transforms
+ 
+-`spawnProjectile(world.projectiles, …)`, `spawnEnemy(level, cameraX, enemies)` and `updateEnemyAI(enemy, player, world, audio)` receive what they must mutate and push into it. The boss spawners take the whole `World` and write to `world.hud`; they no longer receive React setters.
++`spawnProjectile(world.projectiles, …)`, `spawnEnemy(level, cameraX, enemies)` and `updateEnemyAI(enemy, player, world, audio)` receive what they must mutate and push into it. Same for `fallIntoPit(player, platforms)` and `advanceTriggers(state, dt, …)`. The boss spawners take the whole `World` and write to `world.hud`; they no longer receive React setters.
++
++The exceptions that *do* return a new value are the filters: `cullEnemies(enemies, cameraX)` returns the survivors, mirroring the existing `projectiles.filter(…)` style in the loop.
+ 
+ ### Perk flow (crosses the React boundary both ways)
+ 
+@@ -66,11 +73,13 @@ A single-page React app. The game lives in `src/game/`, in layers that only depe
+ 
+ All drawing lives in `src/game/render/` and nothing outside it draws. There are no image assets — every sprite, enemy, background and transition is Canvas 2D code. `render/scene.ts` composes a frame (fixed background → camera-translated world → screen-space transition); the rest are leaf modules per subject. These are pure `ctx` calls with no state, which is exactly what lets the Phaser port re-run them **once** into baked textures instead of every frame.
+ 
+-Adding an enemy means touching five places: the `subType` union in `src/types.ts`, the table in `data/enemies.ts`, a draw function in `render/enemies.ts`, a case in `updateEnemyAI`, and locale entries.
++Adding an enemy means touching five places: the `subType` union in `src/types.ts`, the table in `data/enemies.ts` (including its `contactDamage`), a draw function in `render/enemies.ts`, a case in `updateEnemyAI`, and locale entries.
+ 
+ ### Hidden boss
+ 
+-`hiddenBossState` (a ref in `GameCanvas`) tracks wall-clock `Date.now()` behavioural triggers — idling, level stagnation, kill rush, boss speedkill — and calls `spawnHiddenBoss`. The `wisdom_warden` variant deliberately bypasses the arena clamps, forces a 100% powerup drop, and relies on the "enemy bullet with `damage > 20` curves toward the player" branch in the main projectile update instead of carrying its own homing logic.
++`world.triggers` (see `src/game/triggers.ts`) accumulates **simulation** time for the behavioural triggers — idling, level stagnation, kill rush — and `advanceTriggers` returns whether to call `spawnHiddenBoss`; the boss speedkill is `isBossSpeedkill`. Thresholds live in `HIDDEN_BOSS_TRIGGERS` (`data/enemies.ts`). It used to be a ref comparing `Date.now()`, which kept counting while paused or backgrounded (a hidden tab gets zero rAF callbacks), so pausing three minutes summoned the boss on return.
++
++The `wisdom_warden` variant deliberately bypasses the arena clamps, forces a 100% powerup drop, and relies on the "enemy bullet with `damage > 20` curves toward the player" branch in the main projectile update instead of carrying its own homing logic. Killing it grants a perk but does **not** clear the stage — `level.bossDefeated` tracks the *stage* boss, and the stage only closes once no boss of any kind is left alive.
+ 
+ ### Localization
+ 
+@@ -82,14 +91,17 @@ All tuning numbers live in `src/game/data/` — nothing should be re-hardcoded a
+ 
+ - `data/difficulty.ts` — drop rate, damage dealt/taken, hp and milestone multipliers. Read it through `getDifficulty()`, which falls back to `normal`.
+ - `data/weapons.ts` — per-weapon level 1–5 damage/speed/size, fire-rate cooldowns (`getFireCooldown`), the enemy bullet, and `HOMING_DAMAGE_THRESHOLD` (enemy bullets above it curve toward the player — that is how the hidden boss homes).
+-- `data/enemies.ts` — enemy spawn thresholds with per-stage HP scaling, plus boss stats (`getStageBoss`, `HIDDEN_BOSS`).
++- `data/enemies.ts` — enemy spawn thresholds with per-stage HP scaling and per-enemy `contactDamage` (read it through `contactDamageFor`), boss stats (`getStageBoss`, `HIDDEN_BOSS`, `findBoss`), the wave cadence (`waveInterval`), the cull margin and `HIDDEN_BOSS_TRIGGERS`.
+ - `data/stages.ts` — the per-stage colour palette the background reads.
+-- `data/physics.ts` and `data/palette.ts` — the former `constants.ts`, split into simulation constants and colours. The palette sits in `data/` rather than `render/` on purpose: entities carry `color` as a field, so the domain would otherwise have to import the presentation layer.
+-- `src/game/perks.ts` — `PERK_DEFINITIONS` weights and the `applyPerk` effects.
+-- `src/constants.ts` — physics, player speed/jump/dash, perk milestones, shield regen, color palette.
++- `data/physics.ts` and `data/palette.ts` — the former `constants.ts`, split into simulation constants and colours. Beyond movement, `physics.ts` also holds the timestep (`FIXED_STEP`, `MAX_STEPS_PER_FRAME`), invulnerability windows, knockback, pit-fall damage, the stage-clear delay and the score awards — all of which used to be literals inside `update()`. The palette sits in `data/` rather than `render/` on purpose: entities carry `color` as a field, so the domain would otherwise have to import the presentation layer.
++- `data/characters.ts` — the four tooth classes. Before this the menu's class choice only picked a sprite.
++- `src/game/perks.ts` — `PERK_DEFINITIONS` weights and the `applyPerk` effects. `getRandomPerks` takes the player so it can drop perks that would do nothing (a full heal at full health).
++- `src/game/progression.ts` — the perk milestones. Score: 6.200 then every 8.000. Kills: 20, 30, 50, 80, 120 (the step is added *then* incremented — getting that backwards is what made the real sequence 20/40/70/110 while the menu advertised the other one).
+ 
+ `data/balance.test.ts` pins these numbers deliberately: it is the acceptance criteria for the Phaser port, not an implementation test. A failure there means the balance changed — decide whether that was intentional before updating it.
+ 
++The rules the simulation has to keep are pinned too, and those *are* implementation tests: `progression.test.ts` (milestone sequences), `triggers.test.ts` (hidden-boss clocks are dt-based, so a paused game never advances them), `player.test.ts` (class profiles differ; a pit fall always lands on solid ground and costs a life instead of hanging the run), `level.test.ts` (`findRespawn` never returns a spot in mid-air), `enemies.test.ts` (culling spares bosses), `weapons.test.ts` (the damage multiplier applies exactly once, at spawn), `loop.test.ts` (a late frame is never recovered as a burst of steps), `world.test.ts` (the published snapshot is a copy, so damage reaches the HUD). Each one covers a bug that shipped; keep them.
++
+ Boss AI state machines still live in `src/game/enemies.ts`; `bossState` numbers mean different things per `bossVariant`.
+ 
+ ## Gotchas
+@@ -97,4 +109,4 @@ Boss AI state machines still live in `src/game/enemies.ts`; `bossState` numbers
+ - All source lives under `src/`, aliased as `@/*`. Paths in this document are relative to it.
+ - Styling is Tailwind v4 through `@tailwindcss/vite`, configured entirely in `src/styles.css` (`@import "tailwindcss"`) — there is no `tailwind.config`. The font is self-hosted via `@fontsource/press-start-2p`. Nothing loads from a CDN; keep it that way so the game works offline.
+ - The markup uses `animate-in` / `fade-in` / `slide-in-from-bottom` classes from `tailwindcss-animate`, which is **not** installed — those classes are inert no-ops (they were inert under the CDN too). Don't assume those transitions render.
+-- `pnpm lint` is green on errors but carries deliberate warnings: `any` in the engine modules, and the `react-hooks` rules that `GameCanvas.tsx` violates by design (simulation state in a ref, mutated during render). Both are scoped in `eslint.config.js` and resolve with the Phaser migration — don't "fix" them by rewriting the monolith piecemeal.
++- `pnpm lint` is green on errors but carries 12 deliberate warnings: `any` in the engine modules, and the `react-hooks/purity` rule that `GameCanvas.tsx` violates by design (`Math.random()` inside the simulation, which runs from the rAF callback rather than during render). They are scoped in `eslint.config.js` and resolve with the Phaser migration — don't "fix" them by rewriting the monolith piecemeal. The `react-hooks/refs` warning is gone: nothing reads `entities.current` during render any more.
+diff --git a/src/components/GameCanvas.tsx b/src/components/GameCanvas.tsx
+index 5b3fa5cc9a9ee0f95f5e9e3bb8537e18b2281083..08f158c48c703d67d1724dde0b917fce9f102d1f 100644
+--- a/src/components/GameCanvas.tsx
++++ b/src/components/GameCanvas.tsx
+@@ -1,7 +1,16 @@
+ 
+ import React, { useRef, useEffect, useState } from 'react';
+-import { GameState, Entity, Platform, WeaponType, InputMethod, Perk, LoadoutType, Language, Difficulty, CharacterType } from '../types';
+-import { CANVAS_WIDTH, CANVAS_HEIGHT, GRAVITY, PLAYER_SPEED, PLAYER_JUMP, FRICTION, TERMINAL_VELOCITY, PLAYER_DASH_SPEED, PLAYER_DASH_DURATION, PLAYER_DASH_COOLDOWN, SCORE_MILESTONE_INCREMENT, SHIELD_REGEN_DELAY, SHIELD_REGEN_RATE } from '../game/data/physics';
++import { GameState, Entity, Platform, Projectile, WeaponType, InputMethod, Perk, LoadoutType, Language, Difficulty, CharacterType } from '../types';
++import {
++    CANVAS_WIDTH, CANVAS_HEIGHT, GRAVITY, PLAYER_SPEED, PLAYER_JUMP, FRICTION, TERMINAL_VELOCITY,
++    PLAYER_DASH_SPEED, PLAYER_DASH_DURATION, PLAYER_DASH_COOLDOWN,
++    SHIELD_REGEN_DELAY, SHIELD_REGEN_RATE,
++    KNOCKBACK_X, KNOCKBACK_Y,
++    FIXED_STEP,
++    HIT_INVULNERABILITY, RESPAWN_INVULNERABILITY,
++    STAGE_CLEAR_DELAY, LEVEL_UP_HEAL, HEALTH_PICKUP,
++    SCORE_PER_KILL, SCORE_PER_BOSS, SCORE_WEAPON_LEVEL_UP, SCORE_WEAPON_MAXED,
++} from '../game/data/physics';
+ import { COLORS } from '../game/data/palette';
+ import { generateGameOverMessage } from '../services/geminiService';
+ import { checkRectCollide } from '../game/physics';
+@@ -9,16 +18,28 @@ import { checkRectCollide } from '../game/physics';
+ // Modules
+ import { AudioManager } from '../game/audio';
+ import { generateLevel } from '../game/level';
+-import { createWorld, hudChanged, type World, type HudSnapshot } from '../game/world';
+-import { type RunConfig } from '../game/player';
++import { createWorld, hudChanged, syncHud, snapshotHud, type World, type HudSnapshot } from '../game/world';
++import { planSteps } from '../game/loop';
++import { fallIntoPit, type RunConfig } from '../game/player';
+ import { renderScene } from '../game/render/scene';
+-import { spawnBoss, spawnEnemy, updateEnemyAI, spawnHiddenBoss } from '../game/enemies';
+-import { spawnProjectile, spawnPowerUp } from '../game/weapons';
++import { spawnBoss, spawnEnemy, updateEnemyAI, spawnHiddenBoss, cullEnemies } from '../game/enemies';
++import { spawnProjectile, spawnPowerUp, cullPowerUps } from '../game/weapons';
+ import { getRandomPerks, applyPerk } from '../game/perks';
+ import { getDifficulty } from '../game/data/difficulty';
++import { contactDamageFor, waveInterval, HIDDEN_BOSS, ENEMY_CULL_MARGIN } from '../game/data/enemies';
+ import { getFireCooldown, HOMING_DAMAGE_THRESHOLD, MAX_LEVEL } from '../game/data/weapons';
++import { createTriggerState, advanceTriggers, isBossSpeedkill } from '../game/triggers';
++import { claimScoreMilestone, claimKillMilestone } from '../game/progression';
++import { TEXT } from '../i18n';
+ import { GameHUD } from './GameHUD';
+ 
++/**
++ * Proyectiles que atraviesan: siguen vivos tras impactar y anotan a quién ya han
++ * golpeado en `hitIds`. Está aquí arriba y como Set porque el bucle de colisiones
++ * lo consulta una vez por cada par proyectil-enemigo de cada frame.
++ */
++const PIERCING_TYPES = new Set<Projectile['projectileType']>(['laser', 'floss', 'sword', 'wave']);
++
+ interface GameCanvasProps {
+   onGameOver: (score: number, message: string) => void;
+   gameState: GameState;
+@@ -37,31 +58,37 @@ interface GameCanvasProps {
+ 
+ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, setGameState, sessionId, inputMethod, loadout, difficulty, character, onPerkSelectStart, selectedPerkId, onPerkApplied, onVictory, lang }) => {
+   const canvasRef = useRef<HTMLCanvasElement>(null);
+-  const [hud, setHud] = useState<HudSnapshot>(() => createWorld({ loadout, difficulty, character }).hud);
+-  const [isMobile, setIsMobile] = useState(false);
+ 
+   // Audio Manager (Singleton-ish per component mount)
+   const audioManager = useRef(new AudioManager());
+ 
+-  // Hidden Boss Tracker
+-  const hiddenBossState = useRef({
+-      levelStartTime: 0,
+-      levelKillCount: 0,
+-      bossSpawnTime: 0,
+-      triggered: false,
+-      lastPlayerX: 0,
+-      idleTimer: 0
+-  });
+-
+   const runConfig: RunConfig = { loadout, difficulty, character };
+ 
+   // Mutable Game State
+-  const entities = useRef<World>(createWorld(runConfig));
++  //
++  // Se crea a la primera y solo a la primera. `useRef(createWorld(...))` evalúa
++  // el argumento en **cada** render y tira el resultado, así que generaba un
++  // mundo entero —con su nivel de hasta 16.000 px de plataformas— por render,
++  // que ahora son muchos: el HUD se publica en cuanto cambia algo.
++  // El molde `null as unknown as World` es el patrón de inicialización perezosa
++  // de refs: se rellena en el primer render, antes de que nadie pueda leerlo.
++  const entities = useRef<World>(null as unknown as World);
++  if (entities.current === null) entities.current = createWorld(runConfig);
++
++  // El HUD arranca con la instantánea de ese mismo mundo, sin construir otro.
++  const [hud, setHud] = useState<HudSnapshot>(() => snapshotHud(entities.current));
++  const [isMobile, setIsMobile] = useState(false);
+ 
+   const inputs = useRef({
+     left: false, right: false, aimUp: false, down: false, shoot: false, dash: false,
+     jumpPressed: false, shootPressed: false, dashPressed: false,
+-    mouseX: 0, mouseY: 0
++    mouseX: 0, mouseY: 0,
++    /**
++     * Si el ratón ya se ha movido dentro de la partida. Hasta entonces
++     * `mouseX/mouseY` son 0,0 y apuntar al ratón significaba disparar hacia la
++     * esquina superior izquierda del nivel: el primer disparo salía hacia atrás.
++     */
++    mouseSeen: false,
+   });
+ 
+ 
+@@ -69,7 +96,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
+   // --- Initialization & Loop ---
+ 
+   useEffect(() => {
+-    setIsMobile('ontouchstart' in window || navigator.maxTouchPoints > 0);
++    // `ontouchstart`/`maxTouchPoints` dan true en cualquier portátil con
++    // pantalla táctil, que entonces perdía el apuntado con ratón y se comía el
++    // mando en pantalla. Lo que interesa es si el puntero *principal* es basto.
++    const coarse = window.matchMedia('(pointer: coarse)');
++    setIsMobile(coarse.matches);
++
++    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
++    coarse.addEventListener('change', onChange);
++    return () => coarse.removeEventListener('change', onChange);
+   }, []);
+ 
+   useEffect(() => {
+@@ -88,9 +123,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
+   useEffect(() => {
+       if (selectedPerkId) {
+           applyPerk(entities.current.player, selectedPerkId);
+-          entities.current.hud.hp = entities.current.player.hp;
+-          
+-          // Force reset inputs
++          // El HUD se refresca solo: el bucle llama a syncHud cada frame, y sigue
++          // corriendo mientras se elige perk.
++
++          // Anti-tecla-pegada: el menú se ha comido los keyup, así que se
++          // fuerzan todas las entradas a soltado. Hay que volver a pulsar.
+           inputs.current.left = false;
+           inputs.current.right = false;
+           inputs.current.aimUp = false;
+@@ -101,14 +138,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
+           inputs.current.shootPressed = false;
+           inputs.current.dashPressed = false;
+ 
+-          const handleKeyUpGlobal = () => {
+-             // Re-evaluate keys being held down currently to avoid stuck movement
+-             // Note: In a real browser environment, we can't query current key state directly without events,
+-             // so forcing false is the safest anti-stick measure. 
+-             // The player will just need to press the key again.
+-          };
+-          handleKeyUpGlobal();
+-
+           onPerkApplied();
+       }
+   }, [selectedPerkId]);
+@@ -148,15 +177,35 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
+     let animationFrameId: number;
+     let lastTime = performance.now();
+ 
++    // Saldo de tiempo real pendiente de simular. La simulación avanza en pasos
++    // de FIXED_STEP, así que las magnitudes por paso (velocidad, gravedad,
++    // cadencia) y las por segundo (dash, escudo, oleadas) mantienen su relación
++    // a cualquier frecuencia de refresco. Antes, a 144 Hz el jugador se movía y
++    // disparaba 2,4 veces más rápido mientras los jefes atacaban al mismo ritmo.
++    let accumulator = 0;
++
+     // Última instantánea publicada a React, para no re-renderizar sin cambios.
+-    let published = entities.current.hud;
++    // Es una copia: guardar la referencia a `world.hud` hacía que la comparación
++    // fuese del objeto contra sí mismo y el HUD no se refrescaba nunca.
++    let published = snapshotHud(entities.current);
+ 
+     const loop = (time: number) => {
+-      const dt = Math.min((time - lastTime) / 1000, 0.1);
++      const elapsed = (time - lastTime) / 1000;
+       lastTime = time;
+ 
+       if (gameState === GameState.PLAYING) {
+-          update(dt);
++          // planSteps limita cuánto tiempo real entra en un frame, así que un
++          // parón no se recupera de golpe: el juego no se acelera a tirones.
++          const plan = planSteps(accumulator, elapsed);
++          accumulator = plan.carry;
++
++          for (let i = 0; i < plan.steps; i++) {
++              update(FIXED_STEP);
++
++              // Un suceso congela el juego (elegir perk, victoria): no seguir
++              // simulando pasos que la UI aún no ha visto.
++              if (entities.current.events.length > 0) break;
++          }
+       }
+ 
+       draw(ctx);
+@@ -170,8 +219,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
+       }
+       world.events.length = 0;
+ 
++      syncHud(world);
+       if (hudChanged(world.hud, published)) {
+-          published = { ...world.hud };
++          published = snapshotHud(world);
+           setHud(published);
+       }
+ 
+@@ -188,22 +238,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
+   const resetGame = () => {
+     entities.current = createWorld(runConfig);
+     const s = entities.current;
+-    
+-    hiddenBossState.current = {
+-        levelStartTime: Date.now(),
+-        levelKillCount: 0,
+-        bossSpawnTime: 0,
+-        triggered: false,
+-        lastPlayerX: 0,
+-        idleTimer: 0
+-    };
+ 
+     inputs.current = {
+         left: false, right: false, aimUp: false, down: false, shoot: false, dash: false,
+-        jumpPressed: false, shootPressed: false, dashPressed: false, mouseX: 0, mouseY: 0
++        jumpPressed: false, shootPressed: false, dashPressed: false,
++        mouseX: 0, mouseY: 0, mouseSeen: false
+     };
+ 
+-    setHud({ ...s.hud });
++    setHud(snapshotHud(s));
+   };
+ 
+   const performLevelReset = () => {
+@@ -215,46 +257,52 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
+       }
+ 
+       s.levelTransitioning = false; s.level.stage++; s.level.bossSpawned = false;
++      s.level.bossDefeated = false; s.stageClearTimer = 0;
+       s.level.distanceTraveled = 0; s.level.levelWidth += 2000;
+-      s.player.x = 100; s.player.y = 200; 
++      s.player.x = 100; s.player.y = 200;
+       // Small heal on level up
+-      s.player.hp = Math.min(s.player.hp + 20, s.player.maxHp);
+-      s.hud.hp = s.player.hp;
+-      
++      s.player.hp = Math.min(s.player.hp + LEVEL_UP_HEAL, s.player.maxHp);
++
+       s.enemies = []; s.projectiles = []; s.powerups = [];
+       s.platforms = generateLevel(s.level.levelWidth);
+-      s.camera.x = 0; s.hud.stage = s.level.stage; s.hud.bossHp = 0;
+-      s.player.invincibleTimer = 3.0;
+-
+-      // Reset Hidden Boss Trackers for new level
+-      hiddenBossState.current = {
+-        levelStartTime: Date.now(),
+-        levelKillCount: 0,
+-        bossSpawnTime: 0,
+-        triggered: false,
+-        lastPlayerX: s.player.x,
+-        idleTimer: 0
+-    };
++      s.camera.x = 0; s.hud.bossHp = 0;
++      s.player.invincibleTimer = RESPAWN_INVULNERABILITY;
++
++      // Los relojes del jefe oculto se cuentan por nivel.
++      s.triggers = createTriggerState(s.player.x);
+   };
+ 
+   const handleGameOver = async () => {
+     audioManager.current.playGameOver();
+-    setGameState(GameState.GAME_OVER);
+     const player = entities.current.player;
++
++    // La puntuación se publica ya, con un texto de espera. Antes se cambiaba de
++    // pantalla al instante pero la puntuación y el diagnóstico solo llegaban al
++    // resolverse la llamada a Gemini, así que hasta entonces se veía la
++    // puntuación de la partida anterior (o 0 en la primera).
++    onGameOver(player.score, TEXT[lang].gameover.analyzing);
++
+     const msg = await generateGameOverMessage(player.score, "Tooth Decay", lang);
+     onGameOver(player.score, msg);
+   };
+ 
+   const triggerPerkSelection = () => {
+-      entities.current.events.push({ type: 'perk-offer', perks: getRandomPerks(3, lang) });
++      // Se pasa el jugador para no ofrecer mejoras que no harían nada.
++      entities.current.events.push({ type: 'perk-offer', perks: getRandomPerks(3, lang, entities.current.player) });
+   };
+ 
+   // --- Input Handling ---
+   useEffect(() => {
+     const handleKeyDown = (e: KeyboardEvent) => {
+       audioManager.current.init();
++      // Escape solo alterna entre jugando y pausa. Antes cualquier estado que
++      // no fuera PLAYING pasaba a PLAYING, así que pulsarlo en el menú
++      // arrancaba la partida sin pasar por START: sin incrementar `sessionId`,
++      // `resetGame` no corría y se jugaba con la configuración con la que se
++      // montó el componente, ignorando clase, dificultad y armamento elegidos.
+       if (e.code === 'Escape') {
+-          setGameState(gameState === GameState.PLAYING ? GameState.PAUSED : GameState.PLAYING);
++          if (gameState === GameState.PLAYING) setGameState(GameState.PAUSED);
++          else if (gameState === GameState.PAUSED) setGameState(GameState.PLAYING);
+           return;
+       }
+       if (gameState !== GameState.PLAYING) return;
+@@ -312,6 +360,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
+             const scaleY = CANVAS_HEIGHT / rect.height;
+             inputs.current.mouseX = (e.clientX - rect.left) * scaleX;
+             inputs.current.mouseY = (e.clientY - rect.top) * scaleY;
++            inputs.current.mouseSeen = true;
+         }
+     };
+ 
+@@ -355,34 +404,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
+     const p = s.player;
+     const config = getDifficulty(difficulty);
+ 
+-    // --- Hidden Boss Checks ---
+-    if (!hiddenBossState.current.triggered && !s.levelTransitioning) {
+-        const timeSinceStart = Date.now() - hiddenBossState.current.levelStartTime;
+-        const minutesElapsed = timeSinceStart / 60000;
+-        
+-        // 1. Sloth: No significant movement for 2 mins
+-        if (Math.abs(p.x - hiddenBossState.current.lastPlayerX) < 50) {
+-            hiddenBossState.current.idleTimer += dt;
+-        } else {
+-            hiddenBossState.current.idleTimer = 0;
+-            hiddenBossState.current.lastPlayerX = p.x;
+-        }
+-        if (hiddenBossState.current.idleTimer > 120) { // 2 minutes
+-             spawnHiddenBoss(s, audioManager.current, lang);
+-             hiddenBossState.current.triggered = true;
+-        }
+-
+-        // 2. Stagnant: 3 mins elapsed + low distance
+-        if (minutesElapsed > 3 && p.x < 1500 && !s.level.bossSpawned) {
+-             spawnHiddenBoss(s, audioManager.current, lang);
+-             hiddenBossState.current.triggered = true;
+-        }
+-
+-        // 3. Wrath: >30 kills in < 2 mins
+-        if (minutesElapsed < 2 && hiddenBossState.current.levelKillCount > 30) {
+-             spawnHiddenBoss(s, audioManager.current, lang);
+-             hiddenBossState.current.triggered = true;
+-        }
++    // --- Jefe oculto ---
++    // Los relojes se llevan en el mundo y se cuentan con dt, no con Date.now():
++    // pausar o cambiar de pestaña ya no acerca la invocación.
++    if (advanceTriggers(s.triggers, dt, p.x, {
++        bossSpawned: s.level.bossSpawned,
++        transitioning: s.levelTransitioning,
++    })) {
++        spawnHiddenBoss(s, audioManager.current, lang);
++        s.triggers.fired = true;
+     }
+ 
+     if (p.shieldRegenTimer > 0) p.shieldRegenTimer -= dt;
+@@ -390,18 +420,25 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
+         p.shield = Math.min(p.maxShield, p.shield + (SHIELD_REGEN_RATE * dt));
+     }
+ 
+-    if (p.score >= p.runStats.nextScoreMilestone) {
+-        p.runStats.nextScoreMilestone += (SCORE_MILESTONE_INCREMENT * config.milestoneMult);
++    if (claimScoreMilestone(p.runStats, p.score, config.milestoneMult)) {
+         triggerPerkSelection();
+-        return; 
++        return;
+     }
+-    if (p.runStats.killCount >= p.runStats.nextKillMilestone) {
+-        p.runStats.currentKillStep += 10;
+-        p.runStats.nextKillMilestone += (p.runStats.currentKillStep * config.milestoneMult);
++    if (claimKillMilestone(p.runStats, config.milestoneMult)) {
+         triggerPerkSelection();
+         return;
+     }
+ 
++    // Cuenta atrás para cerrar las mandíbulas tras limpiar el stage. Vive en el
++    // mundo, así que reiniciar la partida la cancela sola.
++    if (s.stageClearTimer > 0) {
++        s.stageClearTimer -= dt;
++        if (s.stageClearTimer <= 0) {
++            s.stageClearTimer = 0;
++            if (s.transition.phase === 'none') s.transition.phase = 'closing';
++        }
++    }
++
+     if (s.transition.phase === 'closing') {
+         if (s.transition.progress === 0) audioManager.current.playChew();
+         s.transition.progress += dt * 0.8;
+@@ -484,14 +521,33 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
+         if (p.x > s.level.levelWidth - p.w) p.x = s.level.levelWidth - p.w;
+     }
+     
++    // Caerse por un hueco: reposiciona en suelo firme y cobra el golpe. Antes
++    // solo ponía hp a 0, lo que con una vida extra dejaba al jugador cayendo
++    // para siempre: ni muerte, ni reaparición, ni game over.
+     if (p.y > CANVAS_HEIGHT + 100) {
+-        p.hp = 0; 
++        const survived = fallIntoPit(p, s.platforms);
++        // Golpe seco, no el sonido de game over: caerse casi nunca es mortal.
++        audioManager.current.playBossAttack('slam');
++        s.shake = 12;
++        spawnParticle(p.x + p.w / 2, p.y + p.h, '#f472b6', 12);
++        if (survived && s.level.bossSpawned) {
++            // La arena del jefe tiene sus propios límites: que reaparezca dentro.
++            const arenaLeft = s.level.levelWidth - 800;
++            if (p.x < arenaLeft) p.x = arenaLeft;
++        }
+     }
+ 
+-    if (inputs.current.shootPressed && p.frameTimer <= 0) {
++    // Disparo mantenido: la cadencia la manda el arma (`getFireCooldown`), no la
++    // velocidad a la que se pueda pulsar la tecla. Antes solo el láser y el
++    // cepillo disparaban seguido —y no paraban nunca, porque `shootPressed` no
++    // se limpiaba al soltar—, mientras el resto exigía una pulsación por bala.
++    const wantsToShoot = inputs.current.shoot || inputs.current.shootPressed;
++
++    if (wantsToShoot && p.frameTimer <= 0) {
+         let dx: number, dy: number;
+ 
+-        if (inputMethod === 'mouse' && !isMobile) {
++        // Hasta que el ratón se mueva no hay a dónde apuntar: se dispara al frente.
++        if (inputMethod === 'mouse' && !isMobile && inputs.current.mouseSeen) {
+             const mWX = inputs.current.mouseX + s.camera.x; 
+             const mWY = inputs.current.mouseY + s.camera.y;
+             const pCX = p.x + p.w/2; 
+@@ -517,19 +573,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
+         if (Math.abs(dx) > 0.5) sX = p.x + p.w/2 + (Math.sign(dx) * 20);
+ 
+         audioManager.current.playWeaponSound(p.weapon);
+-        const dmgMult = p.stats.damageMultiplier;
++        // El multiplicador de daño lo aplica spawnProjectile al crear cada
++        // proyectil. No se toca el array después de disparar.
+         spawnProjectile(s.projectiles, sX, sY, dx, dy, 'player', p.weapon, p);
+-        
+-        const lastProj = s.projectiles[s.projectiles.length-1];
+-        if (lastProj && lastProj.owner === 'player') {
+-             for(let i=s.projectiles.length-1; i>=0; i--) {
+-                 if(s.projectiles[i].lifeTime > 0.1) s.projectiles[i].damage *= dmgMult; 
+-                 else break;
+-             }
+-        }
+-        
++
+         p.frameTimer = getFireCooldown(p.weapon, p.weaponLevel);
+-        if (p.weapon !== 'laser' && p.weapon !== 'toothbrush') inputs.current.shootPressed = false; 
++        inputs.current.shootPressed = false;
+     }
+     if (p.frameTimer > 0) p.frameTimer--;
+     if (p.invincibleTimer > 0) p.invincibleTimer -= dt;
+@@ -547,16 +596,18 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
+         s.shake *= 0.9; if (s.shake < 0.5) s.shake = 0;
+     } else s.camera.y = 0;
+ 
+-    if (!s.level.bossSpawned && !s.levelTransitioning && p.x > s.level.levelWidth - 600) {
++    // El jefe del stage aparece una sola vez: `bossDefeated` impide que se
++    // vuelva a generar si el jugador sigue en la arena tras matarlo.
++    if (!s.level.bossSpawned && !s.level.bossDefeated && !s.levelTransitioning && p.x > s.level.levelWidth - 600) {
+         s.level.bossSpawned = true;
+-        hiddenBossState.current.bossSpawnTime = Date.now();
++        s.triggers.bossSpawnTime = s.triggers.levelTime;
+         spawnBoss(s, audioManager.current, lang);
+     }
+     if (s.level.bossSpawned && !s.levelTransitioning) {
+         if (!s.enemies.some(e => e.subType === 'boss')) s.level.bossSpawned = false;
+     }
+     s.waveTimer += dt;
+-    if (!s.level.bossSpawned && !s.levelTransitioning && s.waveTimer > Math.max(0.5, 2.0 - (p.score / 10000) - (s.level.stage * 0.1))) {
++    if (!s.level.bossSpawned && !s.levelTransitioning && s.waveTimer > waveInterval(p.score, s.level.stage)) {
+         spawnEnemy(s.level, s.camera.x, s.enemies);
+         s.waveTimer = 0;
+     }
+@@ -579,7 +630,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
+             }
+         }
+         proj.lifeTime -= dt;
+-        if (proj.projectileType === 'wave') proj.y += Math.sin(Date.now() / 50) * 5;
++        // Ondulación de las ondas. Se calcula con la vida del propio proyectil y
++        // no con el reloj del sistema: es simulación, y así dos partidas iguales
++        // se comportan igual (misma frecuencia que antes, 20 rad/s).
++        if (proj.projectileType === 'wave') proj.y += Math.sin(proj.lifeTime * 20) * 5;
+     });
+     s.projectiles = s.projectiles.filter(p => p.lifeTime > 0);
+ 
+@@ -624,50 +678,52 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
+         if (proj.owner === 'player') {
+             s.enemies.forEach(enemy => {
+                 if (enemy.bossVariant === 'phantom' && enemy.bossState === 5) return;
+-                const piercingTypes = ['laser', 'floss', 'sword', 'wave'];
+-                if (piercingTypes.includes(proj.projectileType) && proj.hitIds.includes(enemy.id)) return;
++                const pierces = PIERCING_TYPES.has(proj.projectileType);
++                if (pierces && proj.hitIds.includes(enemy.id)) return;
+ 
+                 if (checkRectCollide(proj, enemy)) {
+                     enemy.hp -= proj.damage;
+-                    if (piercingTypes.includes(proj.projectileType)) proj.hitIds.push(enemy.id);
++                    if (pierces) proj.hitIds.push(enemy.id);
+                     else proj.lifeTime = 0;
+                     spawnParticle(proj.x, proj.y, '#fff', 3);
+                     if (enemy.hp <= 0 && !enemy.dead) {
+                         enemy.dead = true;
+-                        p.score += (enemy.subType === 'boss' ? 5000 : 100); 
+-                        
+-                        hiddenBossState.current.levelKillCount++;
++                        const isHiddenBoss = enemy.bossVariant === HIDDEN_BOSS.variant;
++                        p.score += (enemy.subType === 'boss' ? SCORE_PER_BOSS : SCORE_PER_KILL);
++
++                        s.triggers.kills++;
+                         p.runStats.killCount++;
+-                        
+-                        s.hud.score = p.score; s.shake = 5;
+-                        
+-                        // Force drop if hidden boss
+-                        const isHiddenBoss = enemy.bossVariant === 'wisdom_warden';
++                        s.shake = 5;
++
++                        // El jefe oculto siempre suelta objeto.
+                         const dropRate = isHiddenBoss ? 1.0 : config.dropRate;
+-                        
++
+                         const limitType = loadout === 'all' ? undefined : loadout;
+-                        spawnPowerUp(entities.current.powerups, enemy.x, enemy.y, dropRate, limitType);
+-                        
++                        spawnPowerUp(s.powerups, enemy.x, enemy.y, dropRate, limitType);
++
+                         for(let i=0; i<8; i++) spawnParticle(enemy.x+enemy.w/2, enemy.y+enemy.h/2, enemy.color, 10);
+-                        
+-                        if (enemy.subType === 'boss' && !s.levelTransitioning) {
+-                            if (!isHiddenBoss && !hiddenBossState.current.triggered) {
+-                                // 4. Speedrun Check: < 60s
+-                                const timeToKill = Date.now() - hiddenBossState.current.bossSpawnTime;
+-                                if (timeToKill < 60000) {
+-                                     spawnHiddenBoss(s, audioManager.current, lang);
+-                                     hiddenBossState.current.triggered = true;
+-                                     return; // Don't transition yet
+-                                }
+-                            }
+ 
+-                            triggerPerkSelection();
+-                            s.levelTransitioning = true;
+-                            setTimeout(() => { 
+-                                if (entities.current.transition.phase === 'none') {
+-                                    entities.current.transition.phase = 'closing'; 
++                        if (enemy.subType === 'boss') {
++                            // Que la barra desaparezca con él: se quedaba pegada
++                            // al 1% hasta el cambio de stage.
++                            s.hud.bossHp = 0;
++
++                            if (isHiddenBoss) {
++                                // Premia con una mejora, pero no limpia el stage:
++                                // puede aparecer a 300 px del inicio del nivel, y
++                                // avanzar de stage con él se saltaba el nivel
++                                // entero y a su jefe.
++                                triggerPerkSelection();
++                            } else {
++                                s.level.bossDefeated = true;
++
++                                // Matarlo muy rápido invoca al guardián. El cierre
++                                // del stage espera a que no quede ningún jefe vivo.
++                                if (!s.triggers.fired && isBossSpeedkill(s.triggers)) {
++                                    spawnHiddenBoss(s, audioManager.current, lang);
++                                    s.triggers.fired = true;
+                                 }
+-                            }, 3000); 
++                            }
+                         }
+                     }
+                 }
+@@ -675,16 +731,41 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
+         }
+     });
+     s.enemies = s.enemies.filter(e => !e.dead);
++    // Los que quedan muy atrás dejan de existir: si no, el array crece durante
++    // toda la partida y encarece este mismo bucle.
++    s.enemies = cullEnemies(s.enemies, s.camera.x);
++
++    // Stage limpio: el jefe ha caído y no queda ningún jefe vivo (el oculto puede
++    // haber aparecido al matarlo rápido). La cuenta atrás vive en el mundo.
++    if (s.level.bossDefeated && !s.levelTransitioning && !s.enemies.some(e => e.subType === 'boss')) {
++        triggerPerkSelection();
++        s.levelTransitioning = true;
++        s.stageClearTimer = STAGE_CLEAR_DELAY;
++    }
+ 
+-    let playerHit = false; let hitDamage = 20;
+-    s.enemies.forEach(enemy => { if (checkRectCollide(p, enemy)) playerHit = true; });
++    let playerHit = false;
++    let hitDamage = 0;
++    // Desde dónde llega el golpe, para empujar al jugador en sentido contrario.
++    let hitFromX = p.x + p.w / 2;
++
++    s.enemies.forEach(enemy => {
++        if (checkRectCollide(p, enemy)) {
++            const dmg = contactDamageFor(enemy);
++            if (dmg >= hitDamage) { hitDamage = dmg; hitFromX = enemy.x + enemy.w / 2; }
++            playerHit = true;
++        }
++    });
+     s.projectiles.forEach(proj => {
+         if (proj.owner === 'enemy' && checkRectCollide(p, proj)) {
+             if (proj.projectileType === 'sludge') p.slowTimer = 0.5;
+-            else { playerHit = true; hitDamage = proj.damage; proj.lifeTime = 0; }
++            else {
++                playerHit = true;
++                if (proj.damage >= hitDamage) { hitDamage = proj.damage; hitFromX = proj.x + proj.w / 2; }
++                proj.lifeTime = 0;
++            }
+         }
+     });
+-    
++
+     if (playerHit && p.invincibleTimer <= 0) {
+         hitDamage = hitDamage * p.stats.damageTakenMultiplier;
+         hitDamage = Math.max(1, hitDamage * (1 - p.stats.damageReduction));
+@@ -704,22 +785,24 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
+         if (p.hp <= 0 && p.lives > 0) {
+              p.lives--;
+              p.hp = p.maxHp;
+-             p.invincibleTimer = 3.0; 
++             p.invincibleTimer = RESPAWN_INVULNERABILITY;
+              spawnParticle(p.x, p.y, '#ffd700', 30);
+              s.shake = 20;
+              audioManager.current.playPowerUp();
+         } else {
+-             p.invincibleTimer = 2.0; 
+-             p.vy = -6; p.vx = -5 * p.facing; 
++             p.invincibleTimer = HIT_INVULNERABILITY;
++             // Empuje en sentido contrario a de dónde viene el golpe. Antes usaba
++             // `p.facing`, así que un golpe por la espalda te empujaba hacia él.
++             const away = (p.x + p.w / 2) < hitFromX ? -1 : 1;
++             p.vy = KNOCKBACK_Y;
++             p.vx = KNOCKBACK_X * away;
+              s.shake = 10;
+         }
+-
+-        s.hud.hp = p.hp; 
+     }
+ 
+     s.powerups.forEach(pu => {
+         if (checkRectCollide(p, pu)) {
+-            if (pu.subType === 'health') { p.hp = Math.min(p.hp + 30, p.maxHp); s.hud.hp = p.hp; }
++            if (pu.subType === 'health') { p.hp = Math.min(p.hp + HEALTH_PICKUP, p.maxHp); }
+             else {
+                 const newWeapon = pu.subType as WeaponType;
+                 if (!p.weaponLevels) p.weaponLevels = { normal: 1, spread: 1, laser: 1, mouthwash: 1, floss: 1, toothbrush: 1 };
+@@ -727,10 +810,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
+                     if (p.weaponLevels[newWeapon] < MAX_LEVEL) {
+                         p.weaponLevels[newWeapon]++;
+                         p.weaponLevel = p.weaponLevels[newWeapon];
+-                        spawnParticle(p.x, p.y, '#fbbf24', 10); 
+-                        p.score += 500; s.hud.score = p.score;
++                        spawnParticle(p.x, p.y, '#fbbf24', 10);
++                        p.score += SCORE_WEAPON_LEVEL_UP;
+                     } else {
+-                        p.score += 1000; s.hud.score = p.score;
++                        p.score += SCORE_WEAPON_MAXED;
+                     }
+                 } else {
+                     p.weapon = newWeapon;
+@@ -740,7 +823,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
+             pu.dead = true;
+         }
+     });
+-    s.powerups = s.powerups.filter(pu => !pu.dead);
++    s.powerups = cullPowerUps(s.powerups.filter(pu => !pu.dead), s.camera.x, ENEMY_CULL_MARGIN);
+ 
+     s.particles.forEach(part => { part.x += part.vx; part.y += part.vy; part.lifeTime -= dt; part.alpha = part.lifeTime; });
+     s.particles = s.particles.filter(p => p.lifeTime > 0);
+@@ -749,7 +832,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
+   const draw = (ctx: CanvasRenderingContext2D) => {
+     const s = entities.current;
+     renderScene(ctx, s, {
+-        usingMouse: inputMethod === 'mouse' && !isMobile,
++        usingMouse: inputMethod === 'mouse' && !isMobile && inputs.current.mouseSeen,
+         aimUp: inputs.current.aimUp,
+         mouseX: inputs.current.mouseX,
+         mouseY: inputs.current.mouseY,
+@@ -790,14 +873,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
+         className="block w-full h-full object-contain pointer-events-none"
+         style={{ imageRendering: 'pixelated' }}
+       />
+-      <GameHUD 
+-        player={entities.current.player} 
+-        score={hud.score} 
+-        stage={hud.stage} 
+-        hp={hud.hp} 
+-        bossHp={hud.bossHp} 
+-        bossMaxHp={hud.bossMaxHp}
+-        bossName={hud.bossName}
++      {/* El HUD solo lee la instantánea publicada: nada de `entities.current`
++          durante el render, que además era lo que hacía que el escudo, las vidas
++          o el arma se quedasen desactualizados. */}
++      <GameHUD
++        hud={hud}
+         isMobile={isMobile}
+         handleTouch={handleTouch}
+         lang={lang}
+diff --git a/src/components/GameHUD.tsx b/src/components/GameHUD.tsx
+index 170f828d2d909ae6a0938127b7abe644b420ffea..0df2800f52e1a7bec1b5d78dd045212629da4816 100644
+--- a/src/components/GameHUD.tsx
++++ b/src/components/GameHUD.tsx
+@@ -17,17 +17,18 @@ import {
+   TrendingUp,
+   Timer,
+ } from 'lucide-react';
+-import { Player, Language } from '../types';
++import { Language } from '../types';
+ import { TEXT } from '../i18n';
++import type { HudSnapshot } from '../game/world';
+ 
++/**
++ * El HUD se dibuja **solo** con la instantánea que publica el bucle. Antes
++ * recibía además el `Player` mutable y leía de él escudo, vidas, arma y
++ * multiplicadores; como React solo re-renderiza cuando cambia la instantánea,
++ * esos valores se quedaban congelados hasta que cambiaba otra cosa.
++ */
+ interface GameHUDProps {
+-  player: Player;
+-  score: number;
+-  stage: number;
+-  hp: number;
+-  bossHp: number;
+-  bossMaxHp: number;
+-  bossName: string;
++  hud: HudSnapshot;
+   isMobile: boolean;
+   handleTouch: (
+     action: string,
+@@ -36,23 +37,13 @@ interface GameHUDProps {
+   lang: Language;
+ }
+ 
+-export const GameHUD: React.FC<GameHUDProps> = ({
+-  player,
+-  score,
+-  stage,
+-  hp,
+-  bossHp,
+-  bossMaxHp,
+-  bossName,
+-  isMobile,
+-  handleTouch,
+-  lang,
+-}) => {
++export const GameHUD: React.FC<GameHUDProps> = ({ hud, isMobile, handleTouch, lang }) => {
+   const t = TEXT[lang].hud;
++  const { score, stage, hp, bossHp, bossMaxHp, bossName } = hud;
+ 
+   // Calculate stats for display
+-  const cdr = Math.round((1 - player.stats.dashCooldownMultiplier) * 100); // Cooldown Reduction %
+-  const def = Math.round(player.stats.damageReduction * 100); // Defense %
++  const cdr = Math.round((1 - hud.dashCooldownMultiplier) * 100); // Cooldown Reduction %
++  const def = Math.round(hud.damageReduction * 100); // Defense %
+ 
+   return (
+     <>
+@@ -64,12 +55,12 @@ export const GameHUD: React.FC<GameHUDProps> = ({
+           <div className="flex items-center gap-2 pr-2 h-full min-w-[130px] md:min-w-[180px]">
+             <div className="relative shrink-0">
+               <Heart className="text-red-600 w-5 h-5 md:w-6 md:h-6 fill-red-600 animate-pulse drop-shadow-md" />
+-              {player.shield > 0 && (
++              {hud.shield > 0 && (
+                 <Shield className="absolute -top-1 -right-1 w-3 h-3 text-cyan-400 fill-cyan-400/50 animate-bounce" />
+               )}
+-              {player.lives > 0 && (
++              {hud.lives > 0 && (
+                 <span className="pixel-inset absolute -bottom-2 -right-1 bg-yellow-400 text-black text-[9px] px-1 border-yellow-600">
+-                  x{player.lives}
++                  x{hud.lives}
+                 </span>
+               )}
+             </div>
+@@ -80,13 +71,13 @@ export const GameHUD: React.FC<GameHUDProps> = ({
+                 {/* Red HP */}
+                 <div
+                   className="h-full bg-red-600"
+-                  style={{ width: `${(hp / player.maxHp) * 100}%` }}
++                  style={{ width: `${(hp / hud.maxHp) * 100}%` }}
+                 />
+                 {/* Cyan Shield Overlay */}
+-                {player.maxShield > 0 && (
++                {hud.maxShield > 0 && (
+                   <div
+                     className="absolute top-0 left-0 h-full bg-cyan-400 border-r-2 border-white"
+-                    style={{ width: `${Math.min(100, (player.shield / player.maxShield) * 100)}%` }}
++                    style={{ width: `${Math.min(100, (hud.shield / hud.maxShield) * 100)}%` }}
+                   />
+                 )}
+                 {/* Scanline Effect */}
+@@ -95,10 +86,10 @@ export const GameHUD: React.FC<GameHUDProps> = ({
+               {/* Text Values (HP/Shield) */}
+               <div className="flex justify-between text-[8px] leading-none font-mono opacity-80">
+                 <span className="text-red-300">
+-                  {Math.ceil(hp)}/{Math.ceil(player.maxHp)}
++                  {Math.ceil(hp)}/{Math.ceil(hud.maxHp)}
+                 </span>
+-                {player.maxShield > 0 && (
+-                  <span className="text-cyan-300">SHIELD {Math.ceil(player.shield)}</span>
++                {hud.maxShield > 0 && (
++                  <span className="text-cyan-300">SHIELD {Math.ceil(hud.shield)}</span>
+                 )}
+               </div>
+             </div>
+@@ -120,11 +111,11 @@ export const GameHUD: React.FC<GameHUDProps> = ({
+             <div className="hidden lg:flex items-center gap-2 text-[9px] text-slate-400 font-mono">
+               <StatPill
+                 icon={<Sword className="w-3 h-3 text-red-400" />}
+-                val={`${t.stat_dmg} x${player.stats.damageMultiplier.toFixed(2)}`}
++                val={`${t.stat_dmg} x${hud.damageMultiplier.toFixed(2)}`}
+               />
+               <StatPill
+                 icon={<TrendingUp className="w-3 h-3 text-green-400" />}
+-                val={`${t.stat_spd} x${player.stats.speedMultiplier.toFixed(2)}`}
++                val={`${t.stat_spd} x${hud.speedMultiplier.toFixed(2)}`}
+               />
+               {def > 0 && (
+                 <StatPill
+@@ -138,28 +129,28 @@ export const GameHUD: React.FC<GameHUDProps> = ({
+                   val={`CD -${cdr}%`}
+                 />
+               )}
+-              {player.maxShield > 0 && (
++              {hud.maxShield > 0 && (
+                 <StatPill
+                   icon={<Activity className="w-3 h-3 text-cyan-400" />}
+-                  val={`SHLD ${player.maxShield}`}
++                  val={`SHLD ${hud.maxShield}`}
+                 />
+               )}
+-              {player.stats.maxDashes > 1 && (
++              {hud.maxDashes > 1 && (
+                 <StatPill
+                   icon={<Wind className="w-3 h-3 text-white" />}
+-                  val={`${t.stat_dash} ${player.stats.maxDashes}`}
++                  val={`${t.stat_dash} ${hud.maxDashes}`}
+                 />
+               )}
+-              {player.lives > 0 && (
++              {hud.lives > 0 && (
+                 <StatPill
+                   icon={<Heart className="w-3 h-3 text-yellow-500" />}
+-                  val={`LIVES ${player.lives}`}
++                  val={`LIVES ${hud.lives}`}
+                 />
+               )}
+-              {player.maxHp > 130 && (
++              {hud.maxHp > 130 && (
+                 <StatPill
+                   icon={<Heart className="w-3 h-3 text-pink-400" />}
+-                  val={`MAX HP ${Math.ceil(player.maxHp)}`}
++                  val={`MAX HP ${Math.ceil(hud.maxHp)}`}
+                 />
+               )}
+             </div>
+@@ -178,20 +169,20 @@ export const GameHUD: React.FC<GameHUDProps> = ({
+           <div className="flex items-center gap-2 pl-2 border-l border-slate-700 h-full min-w-[90px] justify-end">
+             <div className="flex flex-col items-end">
+               <span className="text-[8px] md:text-[9px] text-slate-400 uppercase leading-none mb-1 max-w-[80px] truncate text-right font-bold">
+-                {TEXT[lang].weapons[player.weapon].name}
++                {TEXT[lang].weapons[hud.weapon].name}
+               </span>
+               <div className="pixel-inset flex items-center gap-1 bg-slate-800 px-1.5 py-0.5 border-slate-600">
+                 <span className="text-[9px] text-slate-400 font-bold">{t.lvl}</span>
+-                <span className="text-xs font-bold text-yellow-400">{player.weaponLevel}</span>
++                <span className="text-xs font-bold text-yellow-400">{hud.weaponLevel}</span>
+               </div>
+             </div>
+             <div className="text-cyan-400">
+-              {player.weapon === 'normal' && <Rocket className="w-5 h-5 md:w-6 md:h-6" />}
+-              {player.weapon === 'spread' && <Crosshair className="w-5 h-5 md:w-6 md:h-6" />}
+-              {player.weapon === 'laser' && <Zap className="w-5 h-5 md:w-6 md:h-6" />}
+-              {player.weapon === 'mouthwash' && <Waves className="w-5 h-5 md:w-6 md:h-6" />}
+-              {player.weapon === 'floss' && <Wind className="w-5 h-5 md:w-6 md:h-6" />}
+-              {player.weapon === 'toothbrush' && <Sword className="w-5 h-5 md:w-6 md:h-6" />}
++              {hud.weapon === 'normal' && <Rocket className="w-5 h-5 md:w-6 md:h-6" />}
++              {hud.weapon === 'spread' && <Crosshair className="w-5 h-5 md:w-6 md:h-6" />}
++              {hud.weapon === 'laser' && <Zap className="w-5 h-5 md:w-6 md:h-6" />}
++              {hud.weapon === 'mouthwash' && <Waves className="w-5 h-5 md:w-6 md:h-6" />}
++              {hud.weapon === 'floss' && <Wind className="w-5 h-5 md:w-6 md:h-6" />}
++              {hud.weapon === 'toothbrush' && <Sword className="w-5 h-5 md:w-6 md:h-6" />}
+             </div>
+           </div>
+         </div>
+@@ -200,11 +191,11 @@ export const GameHUD: React.FC<GameHUDProps> = ({
+         <div className="lg:hidden w-full bg-black border-b-2 border-slate-700 flex justify-center items-center gap-3 py-0.5 px-2 overflow-x-auto h-6 no-scrollbar">
+           <StatTiny
+             icon={<Sword className="w-2.5 h-2.5 text-red-400" />}
+-            text={`x${player.stats.damageMultiplier.toFixed(2)}`}
++            text={`x${hud.damageMultiplier.toFixed(2)}`}
+           />
+           <StatTiny
+             icon={<TrendingUp className="w-2.5 h-2.5 text-green-400" />}
+-            text={`x${player.stats.speedMultiplier.toFixed(2)}`}
++            text={`x${hud.speedMultiplier.toFixed(2)}`}
+           />
+           {def > 0 && (
+             <StatTiny icon={<Shield className="w-2.5 h-2.5 text-blue-400" />} text={`+${def}%`} />
+@@ -215,34 +206,34 @@ export const GameHUD: React.FC<GameHUDProps> = ({
+               text={`CD -${cdr}%`}
+             />
+           )}
+-          {player.maxShield > 0 && (
++          {hud.maxShield > 0 && (
+             <StatTiny
+               icon={<Activity className="w-2.5 h-2.5 text-cyan-400" />}
+-              text={`MAX ${player.maxShield}`}
++              text={`MAX ${hud.maxShield}`}
+             />
+           )}
+-          {player.stats.maxDashes > 1 && (
++          {hud.maxDashes > 1 && (
+             <StatTiny
+               icon={<Wind className="w-2.5 h-2.5 text-white" />}
+-              text={`DASH x${player.stats.maxDashes}`}
++              text={`DASH x${hud.maxDashes}`}
+             />
+           )}
+-          {player.lives > 0 && (
++          {hud.lives > 0 && (
+             <StatTiny
+               icon={<Heart className="w-2.5 h-2.5 text-yellow-500" />}
+-              text={`LIVES ${player.lives}`}
++              text={`LIVES ${hud.lives}`}
+             />
+           )}
+-          {player.maxHp > 130 && (
++          {hud.maxHp > 130 && (
+             <StatTiny
+               icon={<Heart className="w-2.5 h-2.5 text-pink-400" />}
+-              text={`HP ${Math.ceil(player.maxHp)}`}
++              text={`HP ${Math.ceil(hud.maxHp)}`}
+             />
+           )}
+         </div>
+ 
+         {/* Status Effects (Right Side, Below HUD) */}
+-        {player.slowTimer > 0 && (
++        {hud.slowed && (
+           <div className="pixel-inset pixel-blink absolute right-2 top-20 text-pink-400 text-[9px] flex items-center gap-1 bg-black px-2 py-1 border-pink-700">
+             <Snail className="w-3 h-3" /> {t.slow}
+           </div>
+diff --git a/src/components/views/MainMenu.tsx b/src/components/views/MainMenu.tsx
+index 542d202e1de1ec3f9044842452d8be1e8e1f30b9..e42abc3a08bf63e9b8d36944e9d3764d870002bb 100644
+--- a/src/components/views/MainMenu.tsx
++++ b/src/components/views/MainMenu.tsx
+@@ -25,6 +25,7 @@ import {
+ } from 'lucide-react';
+ import { Credits } from './Credits';
+ import { TEXT } from '../../i18n';
++import { characterSummary } from '../../game/data/characters';
+ import { PixelPanel, PixelButton, PixelLabel, PixelKey } from '../ui/Pixel';
+ import { useFitScale } from '../useFitScale';
+ 
+@@ -129,11 +130,13 @@ export const MainMenu: React.FC<MainMenuProps> = ({
+     { id: 'legend', label: t.diff_legend, active: 'bg-purple-600 border-purple-300 text-white' },
+   ];
+ 
+-  const characters: Array<{ id: CharacterType; label: string }> = [
+-    { id: 'molar', label: c.molar },
+-    { id: 'incisor', label: c.incisor },
+-    { id: 'canine', label: c.canine },
+-    { id: 'premolar', label: c.premolar },
++  // El resumen sale de `data/characters.ts`, así que la ficha de cada clase no
++  // puede desviarse de lo que hace de verdad al empezar la partida.
++  const characters: Array<{ id: CharacterType; label: string; summary: string }> = [
++    { id: 'molar', label: c.molar, summary: characterSummary('molar') },
++    { id: 'incisor', label: c.incisor, summary: characterSummary('incisor') },
++    { id: 'canine', label: c.canine, summary: characterSummary('canine') },
++    { id: 'premolar', label: c.premolar, summary: characterSummary('premolar') },
+   ];
+ 
+   return (
+@@ -204,9 +207,16 @@ export const MainMenu: React.FC<MainMenuProps> = ({
+                     onClick={() => setCharacter(option.id)}
+                     activeClass="bg-pink-600 border-pink-300 text-white"
+                     marker
+-                    className="px-2 py-2 text-left"
++                    className="flex flex-col items-start gap-1 px-2 py-2 text-left"
+                   >
+-                    {option.label}
++                    <span>{option.label}</span>
++                    <span
++                      className={`font-mono text-[7px] leading-none ${
++                        character === option.id ? 'text-pink-100' : 'text-slate-500'
++                      }`}
++                    >
++                      {option.summary}
++                    </span>
+                   </PixelButton>
+                 ))}
+               </div>
+diff --git a/src/game/data/balance.test.ts b/src/game/data/balance.test.ts
+index f49e01642f3a97ab2df0f031e81d805cf1a64f8e..2fe7f710fc4236cb63bb3c6d03b8cf1c53eac464 100644
+--- a/src/game/data/balance.test.ts
++++ b/src/game/data/balance.test.ts
+@@ -6,9 +6,14 @@ import {
+   pickEnemySpawn,
+   enemyHpForStage,
+   ENEMY_SPAWN_TABLE,
++  STAGE_BOSSES,
++  waveInterval,
++  WAVE_INTERVAL,
++  HIDDEN_BOSS_TRIGGERS,
+ } from './enemies';
+ import { getWeaponStats, getFireCooldown, MAX_LEVEL } from './weapons';
+-import type { Difficulty, WeaponType } from '../../types';
++import { CHARACTER_PROFILES, getCharacter, characterSummary } from './characters';
++import type { CharacterType, Difficulty, WeaponType } from '../../types';
+ 
+ /**
+  * Estos tests fijan el balance actual del juego. NO son tests de implementación:
+@@ -104,6 +109,83 @@ describe('tabla de enemigos', () => {
+       expect(enemyHpForStage(e, 1)).toBeGreaterThan(0);
+     }
+   });
++
++  it('todos declaran daño por contacto, y en un rango razonable', () => {
++    for (const e of ENEMY_SPAWN_TABLE) {
++      expect(e.contactDamage, e.subType).toBeGreaterThan(0);
++      expect(e.contactDamage, e.subType).toBeLessThanOrEqual(30);
++    }
++    for (const b of [...STAGE_BOSSES, HIDDEN_BOSS]) {
++      expect(b.contactDamage, b.variant).toBeGreaterThan(0);
++      expect(b.contactDamage, b.variant).toBeLessThanOrEqual(35);
++    }
++  });
++
++  it('los más duros pegan más al tocarte que los básicos', () => {
++    const damage = (subType: string) =>
++      ENEMY_SPAWN_TABLE.find((e) => e.subType === subType)!.contactDamage;
++    expect(damage('plaque_monster')).toBeGreaterThan(damage('bacteria'));
++    expect(damage('gingivitis_grunt')).toBeGreaterThan(damage('sugar_rusher'));
++  });
++});
++
++describe('ritmo de oleadas', () => {
++  it('se acelera con la puntuación y con el stage', () => {
++    expect(waveInterval(0, 1)).toBeGreaterThan(waveInterval(20000, 1));
++    expect(waveInterval(0, 1)).toBeGreaterThan(waveInterval(0, 5));
++  });
++
++  it('nunca baja del suelo, por muy alta que sea la puntuación', () => {
++    expect(waveInterval(0, 1)).toBeCloseTo(WAVE_INTERVAL.base - WAVE_INTERVAL.perStage);
++    expect(waveInterval(1_000_000, 99)).toBe(WAVE_INTERVAL.min);
++    expect(waveInterval(1_000_000, 99)).toBeGreaterThan(0);
++  });
++});
++
++describe('disparadores del jefe oculto', () => {
++  it('los umbrales están en segundos y son positivos', () => {
++    for (const [key, value] of Object.entries(HIDDEN_BOSS_TRIGGERS)) {
++      expect(value, key).toBeGreaterThan(0);
++    }
++  });
++
++  it('la matanza rápida se mide en una ventana menor que el estancamiento', () => {
++    expect(HIDDEN_BOSS_TRIGGERS.rushSeconds).toBeLessThan(HIDDEN_BOSS_TRIGGERS.stagnantSeconds);
++  });
++});
++
++describe('clases de diente', () => {
++  const CLASSES = Object.keys(CHARACTER_PROFILES) as CharacterType[];
++
++  it('las cuatro clases existen y ninguna es idéntica a otra', () => {
++    expect(CLASSES).toHaveLength(4);
++    const perfiles = CLASSES.map((c) => JSON.stringify(CHARACTER_PROFILES[c]));
++    expect(new Set(perfiles).size).toBe(4);
++  });
++
++  it('los multiplicadores se mantienen en un rango sano', () => {
++    for (const c of CLASSES) {
++      const p = CHARACTER_PROFILES[c];
++      expect(p.hpMult, c).toBeGreaterThanOrEqual(0.8);
++      expect(p.hpMult, c).toBeLessThanOrEqual(1.3);
++      expect(p.speedMult, c).toBeGreaterThanOrEqual(0.85);
++      expect(p.speedMult, c).toBeLessThanOrEqual(1.2);
++      expect(p.damageMult, c).toBeGreaterThanOrEqual(0.85);
++      expect(p.damageMult, c).toBeLessThanOrEqual(1.2);
++      expect(p.damageReduction, c).toBeLessThanOrEqual(0.15);
++      expect(p.startingShield, c).toBeLessThanOrEqual(25);
++    }
++  });
++
++  it('cada clase tiene algo que la distingue, y el menú lo puede mostrar', () => {
++    for (const c of CLASSES) {
++      expect(characterSummary(c), c).not.toBe('');
++    }
++  });
++
++  it('una clase inventada cae al molar', () => {
++    expect(getCharacter('incisivo_de_sable' as CharacterType)).toBe(CHARACTER_PROFILES.molar);
++  });
+ });
+ 
+ describe('armas', () => {
+diff --git a/src/game/data/characters.ts b/src/game/data/characters.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..ed8bcf2383b013210b4fde4641b8166431f5fca8
+--- /dev/null
++++ b/src/game/data/characters.ts
+@@ -0,0 +1,88 @@
++import type { CharacterType } from '../../types';
++
++/**
++ * Perfil de cada clase de diente.
++ *
++ * El menú siempre ofreció cuatro clases con nombre propio (THE GRINDER, THE
++ * CUTTER…), pero `createPlayer` solo guardaba el valor para elegir el sprite:
++ * las cuatro jugaban idénticas. Estos multiplicadores son lo que faltaba, y se
++ * combinan con los de dificultad de `data/difficulty.ts`.
++ *
++ * Están pensados como intercambios, no como niveles de poder: cada clase gana
++ * algo y paga por ello. Se ven en el HUD, que ya muestra DMG, SPD, DEF y el
++ * escudo máximo.
++ */
++export interface CharacterProfile {
++  /** Multiplicador de la vida máxima inicial. */
++  hpMult: number;
++  /** Multiplicador de la velocidad de movimiento. */
++  speedMult: number;
++  /** Multiplicador del daño hecho. */
++  damageMult: number;
++  /** Multiplicador del enfriamiento del dash (menor = más dashes). */
++  dashCooldownMult: number;
++  /** Reducción plana del daño recibido (0-1). */
++  damageReduction: number;
++  /** Escudo máximo con el que empieza, antes de cualquier perk. */
++  startingShield: number;
++}
++
++export const CHARACTER_PROFILES: Record<CharacterType, CharacterProfile> = {
++  /** El de la casa: aguanta y golpea igual, pero se mueve algo pesado. */
++  molar: {
++    hpMult: 1.15,
++    speedMult: 0.92,
++    damageMult: 1.0,
++    dashCooldownMult: 1.0,
++    damageReduction: 0.05,
++    startingShield: 0,
++  },
++  /** Corta más que nadie y se rompe antes. */
++  incisor: {
++    hpMult: 0.85,
++    speedMult: 1.0,
++    damageMult: 1.15,
++    dashCooldownMult: 1.0,
++    damageReduction: 0,
++    startingShield: 0,
++  },
++  /** Vive del dash y de llegar antes. */
++  canine: {
++    hpMult: 0.9,
++    speedMult: 1.12,
++    damageMult: 1.0,
++    dashCooldownMult: 0.8,
++    damageReduction: 0,
++    startingShield: 0,
++  },
++  /** Empieza con barrera de pasta dental, que además regenera. */
++  premolar: {
++    hpMult: 1.0,
++    speedMult: 1.0,
++    damageMult: 1.0,
++    dashCooldownMult: 1.0,
++    damageReduction: 0,
++    startingShield: 20,
++  },
++};
++
++/** Tolera un valor inesperado cayendo al molar, igual que hace `getDifficulty`. */
++export const getCharacter = (character: CharacterType): CharacterProfile =>
++  CHARACTER_PROFILES[character] ?? CHARACTER_PROFILES.molar;
++
++/**
++ * Resumen legible del perfil, en las mismas unidades que el HUD. Lo usa el menú
++ * para que la clase elegida diga qué hace sin necesidad de textos traducidos
++ * nuevos.
++ */
++export const characterSummary = (character: CharacterType): string => {
++  const p = getCharacter(character);
++  const parts: string[] = [];
++  if (p.hpMult !== 1) parts.push(`HP x${p.hpMult.toFixed(2)}`);
++  if (p.damageMult !== 1) parts.push(`DMG x${p.damageMult.toFixed(2)}`);
++  if (p.speedMult !== 1) parts.push(`SPD x${p.speedMult.toFixed(2)}`);
++  if (p.dashCooldownMult !== 1) parts.push(`CD -${Math.round((1 - p.dashCooldownMult) * 100)}%`);
++  if (p.damageReduction > 0) parts.push(`DEF +${Math.round(p.damageReduction * 100)}%`);
++  if (p.startingShield > 0) parts.push(`SHLD ${p.startingShield}`);
++  return parts.join(' · ');
++};
+diff --git a/src/game/data/enemies.ts b/src/game/data/enemies.ts
+index c379247e053fa18d471713299f9becaee858292e..cbf099af922b722bc5c3807ec3a2ac510c88a84d 100644
+--- a/src/game/data/enemies.ts
++++ b/src/game/data/enemies.ts
+@@ -11,6 +11,12 @@ export interface EnemySpawnEntry {
+   /** Vida base y cuánto sube por cada stage. */
+   baseHp: number;
+   hpPerStage: number;
++  /**
++   * Daño por contacto. Antes era un literal 20 igual para todos dentro del
++   * bucle; ahora cada enemigo pega según lo que es. Los proyectiles llevan su
++   * daño aparte, en `data/weapons.ts` y en la IA de los jefes.
++   */
++  contactDamage: number;
+ }
+ 
+ /**
+@@ -27,6 +33,7 @@ export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
+     color: COLORS.enemyPlaque,
+     baseHp: 80,
+     hpPerStage: 10,
++    contactDamage: 25,
+   },
+   {
+     threshold: 0.9,
+@@ -36,6 +43,7 @@ export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
+     color: COLORS.enemyGrunt,
+     baseHp: 60,
+     hpPerStage: 5,
++    contactDamage: 24,
+   },
+   {
+     threshold: 0.8,
+@@ -45,6 +53,7 @@ export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
+     color: COLORS.enemyTurret,
+     baseHp: 50,
+     hpPerStage: 0,
++    contactDamage: 18,
+   },
+   {
+     threshold: 0.7,
+@@ -54,6 +63,7 @@ export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
+     color: COLORS.enemyAcidSpitter,
+     baseHp: 40,
+     hpPerStage: 0,
++    contactDamage: 18,
+   },
+   {
+     threshold: 0.6,
+@@ -63,6 +73,7 @@ export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
+     color: COLORS.enemyCandy,
+     baseHp: 30,
+     hpPerStage: 0,
++    contactDamage: 16,
+   },
+   {
+     threshold: 0.5,
+@@ -72,6 +83,7 @@ export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
+     color: COLORS.enemySugarFiend,
+     baseHp: 25,
+     hpPerStage: 0,
++    contactDamage: 16,
+   },
+   {
+     threshold: 0.4,
+@@ -81,6 +93,7 @@ export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
+     color: COLORS.enemyRusher,
+     baseHp: 20,
+     hpPerStage: 0,
++    contactDamage: 14,
+   },
+   {
+     threshold: 0,
+@@ -90,9 +103,25 @@ export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
+     color: COLORS.enemyBacteria,
+     baseHp: 20,
+     hpPerStage: 4,
++    contactDamage: 12,
+   },
+ ];
+ 
++/** Daño por contacto usado cuando un enemigo no está en la tabla. */
++export const DEFAULT_CONTACT_DAMAGE = 20;
++
++/**
++ * Daño por contacto por tipo de enemigo, para consultarlo desde el bucle sin
++ * volver a buscar la entrada de la tabla. Los jefes lo llevan en `STAGE_BOSSES`.
++ */
++export const contactDamageFor = (enemy: Enemy): number => {
++  if (enemy.subType === 'boss') {
++    return findBoss(enemy.bossVariant)?.contactDamage ?? DEFAULT_CONTACT_DAMAGE;
++  }
++  const entry = ENEMY_SPAWN_TABLE.find((e) => e.subType === enemy.subType);
++  return entry?.contactDamage ?? DEFAULT_CONTACT_DAMAGE;
++};
++
+ export const pickEnemySpawn = (roll: number): EnemySpawnEntry =>
+   ENEMY_SPAWN_TABLE.find((entry) => roll > entry.threshold) ??
+   ENEMY_SPAWN_TABLE[ENEMY_SPAWN_TABLE.length - 1];
+@@ -108,15 +137,17 @@ export interface BossEntry {
+   w: number;
+   h: number;
+   color: string;
++  /** Daño por embestida/contacto, aparte del de sus proyectiles. */
++  contactDamage: number;
+ }
+ 
+ /** Jefe por stage. Cualquier stage por encima del último usa el final (`deity`). */
+ export const STAGE_BOSSES: readonly BossEntry[] = [
+-  { variant: 'king', nameKey: 'king', maxHp: 1500, w: 120, h: 160, color: '#3f3f46' },
+-  { variant: 'phantom', nameKey: 'phantom', maxHp: 2200, w: 100, h: 100, color: '#22d3ee' },
+-  { variant: 'tank', nameKey: 'tank', maxHp: 3500, w: 160, h: 140, color: '#57534e' },
+-  { variant: 'general', nameKey: 'general', maxHp: 3000, w: 100, h: 180, color: '#dc2626' },
+-  { variant: 'deity', nameKey: 'deity', maxHp: 6000, w: 140, h: 140, color: '#0f172a' },
++  { variant: 'king', nameKey: 'king', maxHp: 1500, w: 120, h: 160, color: '#3f3f46', contactDamage: 25 },
++  { variant: 'phantom', nameKey: 'phantom', maxHp: 2200, w: 100, h: 100, color: '#22d3ee', contactDamage: 24 },
++  { variant: 'tank', nameKey: 'tank', maxHp: 3500, w: 160, h: 140, color: '#57534e', contactDamage: 28 },
++  { variant: 'general', nameKey: 'general', maxHp: 3000, w: 100, h: 180, color: '#dc2626', contactDamage: 24 },
++  { variant: 'deity', nameKey: 'deity', maxHp: 6000, w: 140, h: 140, color: '#0f172a', contactDamage: 30 },
+ ];
+ 
+ export const HIDDEN_BOSS: BossEntry = {
+@@ -126,7 +157,59 @@ export const HIDDEN_BOSS: BossEntry = {
+   w: 120,
+   h: 140,
+   color: COLORS.enemyWarden,
++  contactDamage: 28,
+ };
+ 
+ export const getStageBoss = (stage: number): BossEntry =>
+   STAGE_BOSSES[stage - 1] ?? STAGE_BOSSES[STAGE_BOSSES.length - 1];
++
++/** Busca un jefe por su variante, incluido el oculto. */
++export const findBoss = (variant: Enemy['bossVariant']): BossEntry | undefined =>
++  variant === HIDDEN_BOSS.variant
++    ? HIDDEN_BOSS
++    : STAGE_BOSSES.find((boss) => boss.variant === variant);
++
++/**
++ * Umbrales de comportamiento que invocan al jefe oculto. Todos se miden con
++ * tiempo de simulación acumulado, nunca con `Date.now()`: pausar la partida o
++ * cambiar de pestaña no debe acercar la invocación.
++ */
++export const HIDDEN_BOSS_TRIGGERS = {
++  /** Segundos sin avanzar `idleDistance` píxeles. */
++  idleSeconds: 120,
++  idleDistance: 50,
++  /** Segundos de nivel sin pasar de `stagnantX`. */
++  stagnantSeconds: 180,
++  stagnantX: 1500,
++  /** Más de `rushKills` bajas en menos de `rushSeconds`. */
++  rushSeconds: 120,
++  rushKills: 30,
++  /** Matar al jefe del stage en menos de esto. */
++  bossSpeedkillSeconds: 60,
++  /** A qué distancia del jugador aparece. */
++  spawnOffsetX: 300,
++} as const;
++
++/**
++ * Segundos entre oleadas. Baja con la puntuación y con el stage, con un suelo
++ * para que no se vuelva ingobernable. Era una expresión suelta en el bucle.
++ */
++export const WAVE_INTERVAL = {
++  base: 2.0,
++  min: 0.5,
++  perScore: 1 / 10000,
++  perStage: 0.1,
++} as const;
++
++export const waveInterval = (score: number, stage: number): number =>
++  Math.max(
++    WAVE_INTERVAL.min,
++    WAVE_INTERVAL.base - score * WAVE_INTERVAL.perScore - stage * WAVE_INTERVAL.perStage
++  );
++
++/**
++ * Margen por detrás de la cámara a partir del cual un enemigo se descarta. Sin
++ * esto el array crecía durante toda la partida con enemigos que ya no se ven ni
++ * se mueven, pero que seguían comprobándose contra cada proyectil.
++ */
++export const ENEMY_CULL_MARGIN = 600;
+diff --git a/src/game/data/physics.ts b/src/game/data/physics.ts
+index 24f237059dbe3732777f8c0195067f4399ef749c..ce831aa9db24b1bda309c01fc810375da28ff11e 100644
+--- a/src/game/data/physics.ts
++++ b/src/game/data/physics.ts
+@@ -1,13 +1,32 @@
+ /**
+  * Constantes de simulación y de progresión.
+  *
+- * Ojo con las unidades: velocidades y gravedad se integran **por frame**, no
+- * por segundo (`p.x += p.vx`, `p.vy += GRAVITY`), mientras que los tiempos de
+- * dash, escudo y cooldowns van en segundos escalados por `dt`. Esa mezcla es
+- * la que hace que el juego corra más rápido a más Hz; se resuelve al pasar a
+- * Phaser, con paso fijo. Hasta entonces, respeta la convención de cada valor.
++ * Ojo con las unidades: velocidades y gravedad se integran **por paso de
++ * simulación** (`p.x += p.vx`, `p.vy += GRAVITY`), mientras que dash, escudo y
++ * cooldowns van en segundos escalados por `dt`. Las dos convenciones conviven
++ * sin deformarse porque el bucle consume el tiempo real en pasos de tamaño
++ * fijo (`FIXED_STEP`): un paso de simulación siempre representa lo mismo, sean
++ * 60 o 144 los Hz del monitor.
+  */
+ 
++/**
++ * Duración de un paso de simulación, en segundos. El bucle acumula el tiempo
++ * real transcurrido y lo gasta en pasos de este tamaño, así que `update` recibe
++ * siempre el mismo `dt`.
++ */
++export const FIXED_STEP = 1 / 60;
++
++/**
++ * Máximo de pasos de simulación por frame, que es también el límite de cuánto
++ * tiempo real puede entrar en un frame (`MAX_FRAME_TIME` en `game/loop.ts`).
++ *
++ * Con 2, un frame que llegue tarde recupera como mucho 33 ms y el resto del
++ * retraso se descarta: el juego puede ir más lento si la máquina no da, pero
++ * nunca da un salto hacia delante. Subirlo devuelve los tirones de aceleración
++ * tras cada parón del navegador.
++ */
++export const MAX_STEPS_PER_FRAME = 2;
++
+ /** Resolución lógica del canvas. Todo el mundo del juego usa estas unidades. */
+ export const CANVAS_WIDTH = 800;
+ export const CANVAS_HEIGHT = 450;
+@@ -38,3 +57,37 @@ export const KILL_MILESTONE_INCREMENT_START = 10;
+ // Escudo de pasta dental (segundos / puntos por segundo)
+ export const SHIELD_REGEN_DELAY = 5.0;
+ export const SHIELD_REGEN_RATE = 10;
++
++// Empuje al recibir un golpe (por paso de simulación, como el resto de velocidades)
++export const KNOCKBACK_X = 5;
++export const KNOCKBACK_Y = -6;
++
++// Invencibilidad (segundos)
++/** Tras recibir un golpe normal. */
++export const HIT_INVULNERABILITY = 2.0;
++/** Tras gastar una vida o reaparecer de una caída. */
++export const RESPAWN_INVULNERABILITY = 3.0;
++
++// Caída al vacío
++/**
++ * Daño por caerse del escenario. La caída no mata directamente: reposiciona al
++ * jugador en suelo firme y le cobra esto, así que solo es letal si ya venía
++ * tocado. Ignora el escudo y la reducción de daño a propósito — es un castigo
++ * por el error, no un ataque.
++ */
++export const PIT_FALL_DAMAGE = 25;
++
++// Fin de nivel
++/** Segundos entre la muerte del jefe y el cierre de mandíbulas. */
++export const STAGE_CLEAR_DELAY = 3.0;
++/** Curación al entrar en el stage siguiente. */
++export const LEVEL_UP_HEAL = 20;
++/** Curación del botiquín que sueltan los enemigos. */
++export const HEALTH_PICKUP = 30;
++
++// Puntuación
++export const SCORE_PER_KILL = 100;
++export const SCORE_PER_BOSS = 5000;
++/** Recoger un arma ya conocida sube su nivel; al máximo, solo da puntos. */
++export const SCORE_WEAPON_LEVEL_UP = 500;
++export const SCORE_WEAPON_MAXED = 1000;
+diff --git a/src/game/enemies.test.ts b/src/game/enemies.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..623d3a0a5f1a09594c89339cdfdbbd17279c8d35
+--- /dev/null
++++ b/src/game/enemies.test.ts
+@@ -0,0 +1,89 @@
++import { describe, it, expect } from 'vitest';
++import { cullEnemies } from './enemies';
++import { ENEMY_CULL_MARGIN, contactDamageFor } from './data/enemies';
++import { CANVAS_WIDTH } from './data/physics';
++import type { Enemy } from '../types';
++
++const enemy = (x: number, overrides: Partial<Enemy> = {}): Enemy => ({
++  id: Math.random().toString(),
++  x,
++  y: 100,
++  w: 32,
++  h: 32,
++  vx: 0,
++  vy: 0,
++  hp: 20,
++  maxHp: 20,
++  type: 'enemy',
++  subType: 'bacteria',
++  color: '#0f0',
++  facing: -1,
++  isGrounded: false,
++  aiTimer: 0,
++  attackTimer: 0,
++  frameTimer: 0,
++  state: 0,
++  bossState: 0,
++  ...overrides,
++});
++
++describe('cullEnemies', () => {
++  it('descarta a los que quedaron muy por detrás de la cámara', () => {
++    const cameraX = 5000;
++    const enemies = [
++      enemy(cameraX - ENEMY_CULL_MARGIN - 100), // fuera
++      enemy(cameraX - 100), // dentro
++      enemy(cameraX + CANVAS_WIDTH), // por delante
++    ];
++
++    const quedan = cullEnemies(enemies, cameraX);
++    expect(quedan).toHaveLength(2);
++    expect(quedan.every((e) => e.x + e.w > cameraX - ENEMY_CULL_MARGIN)).toBe(true);
++  });
++
++  it('nunca descarta a un jefe, esté donde esté', () => {
++    const cameraX = 8000;
++    const enemies = [
++      enemy(0, { subType: 'boss', bossVariant: 'king' }),
++      enemy(0, { subType: 'boss', bossVariant: 'wisdom_warden' }),
++      enemy(0),
++    ];
++
++    const quedan = cullEnemies(enemies, cameraX);
++    expect(quedan).toHaveLength(2);
++    expect(quedan.every((e) => e.subType === 'boss')).toBe(true);
++  });
++
++  it('al principio del nivel no descarta a nadie', () => {
++    const enemies = [enemy(0), enemy(100), enemy(800)];
++    expect(cullEnemies(enemies, 0)).toHaveLength(3);
++  });
++
++  it('mantiene el orden y no muta el array original', () => {
++    const enemies = [enemy(1000), enemy(2000), enemy(3000)];
++    const copia = [...enemies];
++    const quedan = cullEnemies(enemies, 0);
++    expect(enemies).toEqual(copia);
++    expect(quedan.map((e) => e.x)).toEqual([1000, 2000, 3000]);
++  });
++});
++
++describe('contactDamageFor', () => {
++  it('cada tipo de enemigo pega lo suyo, no un 20 para todos', () => {
++    const bacteria = contactDamageFor(enemy(0, { subType: 'bacteria' }));
++    const placa = contactDamageFor(enemy(0, { subType: 'plaque_monster' }));
++    expect(bacteria).toBeGreaterThan(0);
++    expect(placa).toBeGreaterThan(bacteria);
++  });
++
++  it('los jefes usan el valor de su ficha', () => {
++    const rey = contactDamageFor(enemy(0, { subType: 'boss', bossVariant: 'king' }));
++    const deidad = contactDamageFor(enemy(0, { subType: 'boss', bossVariant: 'deity' }));
++    expect(deidad).toBeGreaterThan(rey);
++  });
++
++  it('un jefe sin variante conocida no devuelve NaN', () => {
++    const dmg = contactDamageFor(enemy(0, { subType: 'boss', bossVariant: undefined }));
++    expect(dmg).toBeGreaterThan(0);
++  });
++});
+diff --git a/src/game/enemies.ts b/src/game/enemies.ts
+index c1a79b5594f9e6cf757e5f8580e2cacf59262846..df85eb328e24ddd86b820465df0f86e14fefa2c9 100644
+--- a/src/game/enemies.ts
++++ b/src/game/enemies.ts
+@@ -5,7 +5,14 @@ import { COLORS } from './data/palette';
+ import { AudioManager } from './audio';
+ import { spawnProjectile } from './weapons';
+ import { TEXT } from '../i18n';
+-import { getStageBoss, HIDDEN_BOSS, pickEnemySpawn, enemyHpForStage } from './data/enemies';
++import {
++    getStageBoss,
++    HIDDEN_BOSS,
++    HIDDEN_BOSS_TRIGGERS,
++    pickEnemySpawn,
++    enemyHpForStage,
++    ENEMY_CULL_MARGIN,
++} from './data/enemies';
+ import type { World } from './world';
+ 
+ export const spawnHiddenBoss = (world: World, audio: AudioManager, lang: Language) => {
+@@ -17,7 +24,7 @@ export const spawnHiddenBoss = (world: World, audio: AudioManager, lang: Languag
+ 
+     world.enemies.push({
+         id: 'hidden_boss',
+-        x: world.player.x + 300,
++        x: world.player.x + HIDDEN_BOSS_TRIGGERS.spawnOffsetX,
+         y: CANVAS_HEIGHT - 250,
+         w: boss.w, h: boss.h, vx: 0, vy: 0, hp: boss.maxHp, maxHp: boss.maxHp,
+         type: 'enemy', subType: 'boss', bossVariant: boss.variant, phase: 1,
+@@ -59,6 +66,18 @@ export const spawnEnemy = (level: LevelState, cameraX: number, enemies: Enemy[])
+ };
+ 
+ 
++/**
++ * Descarta los enemigos que han quedado muy por detrás de la cámara.
++ *
++ * Sin esto solo se eliminaban al morir: los que se quedaban atrás congelaban su
++ * IA (`updateEnemyAI` no se llama a más de una pantalla de distancia) pero
++ * seguían en el array, dibujándose y comprobándose contra cada proyectil, así
++ * que el coste del bucle crecía durante toda la partida. Los jefes nunca se
++ * descartan.
++ */
++export const cullEnemies = (enemies: Enemy[], cameraX: number): Enemy[] =>
++    enemies.filter(e => e.subType === 'boss' || e.x + e.w > cameraX - ENEMY_CULL_MARGIN);
++
+ export const updateEnemyAI = (enemy: Enemy, p: Player, s: World, audio: AudioManager) => {
+      switch(enemy.subType) {
+         case 'bacteria': enemy.vx = enemy.x > p.x ? -3 : 3; if(enemy.isGrounded && Math.random()<0.01) enemy.vy = -8; enemy.vy += GRAVITY; break;
+@@ -79,8 +98,10 @@ export const updateEnemyAI = (enemy: Enemy, p: Player, s: World, audio: AudioMan
+         case 'gingivitis_grunt': enemy.vy += GRAVITY; 
+             if(enemy.bossState === 1) { enemy.vx = enemy.facing * 12; if(enemy.aiTimer > 1) { enemy.bossState=0; enemy.aiTimer=0; } }
+             else { enemy.vx = enemy.x > p.x ? -2 : 2; enemy.facing = enemy.vx > 0 ? 1 : -1; if(Math.abs((p.y+p.h)-(enemy.y+enemy.h))<30 && Math.abs(p.x-enemy.x)<300 && enemy.aiTimer>2) { enemy.bossState=1; enemy.aiTimer=0; } } break;
+-        case 'boss': 
+-             s.hud.bossHp = enemy.hp;
++        case 'boss':
++             // Entero y sin negativos: el daño con multiplicadores es fraccionario
++             // y el golpe mortal llegaba a pintar un porcentaje negativo.
++             s.hud.bossHp = Math.max(0, Math.ceil(enemy.hp));
+              if (enemy.bossVariant === 'deity' && enemy.hp < enemy.maxHp/2 && enemy.phase===1) { enemy.phase=2; enemy.color='#7f1d1d'; s.shake=30; }
+              
+              if(enemy.bossVariant==='wisdom_warden') {
+diff --git a/src/game/level.test.ts b/src/game/level.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..dac138d4a6a93b409ae9ab5a19337fb127c8cefb
+--- /dev/null
++++ b/src/game/level.test.ts
+@@ -0,0 +1,83 @@
++import { describe, it, expect } from 'vitest';
++import { generateLevel, findRespawn } from './level';
++import { CANVAS_HEIGHT } from './data/physics';
++import type { Platform } from '../types';
++
++const ground = (x: number, w: number): Platform => ({
++  x,
++  y: CANVAS_HEIGHT - 60,
++  w,
++  h: 60,
++  type: 'platform',
++  isGround: true,
++});
++
++const floating = (x: number): Platform => ({
++  x,
++  y: 200,
++  w: 100,
++  h: 20,
++  type: 'platform',
++  isGround: false,
++});
++
++describe('generateLevel', () => {
++  it('siempre garantiza la zona de inicio y la arena del jefe', () => {
++    for (const width of [8000, 10000, 16000]) {
++      const platforms = generateLevel(width);
++      expect(platforms.some((p) => p.x === 0 && p.isGround)).toBe(true);
++      expect(platforms.some((p) => p.x === width - 800 && p.isGround)).toBe(true);
++    }
++  });
++
++  it('no genera plataformas de tamaño inválido', () => {
++    for (const p of generateLevel(8000)) {
++      expect(p.w).toBeGreaterThan(0);
++      expect(p.h).toBeGreaterThan(0);
++    }
++  });
++});
++
++describe('findRespawn', () => {
++  const platforms = [ground(0, 800), ground(900, 500), floating(300)];
++
++  it('si hay suelo debajo, deja la x y sube al borde', () => {
++    const spot = findRespawn(platforms, 400, 32);
++    expect(spot.x).toBe(400);
++    expect(spot.y).toBe(CANVAS_HEIGHT - 60 - 32);
++  });
++
++  it('sobre un hueco, retrocede al suelo anterior', () => {
++    const spot = findRespawn(platforms, 850, 32);
++    expect(spot.x).toBe(400); // centro del suelo que acaba en 800
++    expect(spot.y).toBe(CANVAS_HEIGHT - 60 - 32);
++  });
++
++  it('nunca devuelve una plataforma flotante', () => {
++    const spot = findRespawn(platforms, 350, 32);
++    expect(spot.y).toBe(CANVAS_HEIGHT - 60 - 32);
++  });
++
++  it('antes del primer suelo, usa la zona de inicio', () => {
++    const spot = findRespawn([ground(500, 300)], 100, 32);
++    expect(spot.x).toBe(650);
++  });
++
++  it('sin suelos no explota', () => {
++    const spot = findRespawn([floating(0)], 100, 32);
++    expect(Number.isFinite(spot.x)).toBe(true);
++    expect(Number.isFinite(spot.y)).toBe(true);
++  });
++
++  it('sobre un nivel real siempre cae en suelo, en cualquier x', () => {
++    const nivel = generateLevel(8000);
++    const suelos = nivel.filter((p) => p.isGround);
++
++    for (let x = 0; x <= 8000; x += 137) {
++      const spot = findRespawn(nivel, x, 32);
++      const sobreSuelo = suelos.some((p) => spot.x >= p.x && spot.x <= p.x + p.w);
++      expect(sobreSuelo, `x=${x}`).toBe(true);
++      expect(spot.y).toBeLessThan(CANVAS_HEIGHT);
++    }
++  });
++});
+diff --git a/src/game/level.ts b/src/game/level.ts
+index e084ebf02d31f2169ba193f85a0a8b0f1a122fa9..6147d63ecd0c4188903223aa2f212b631a958520 100644
+--- a/src/game/level.ts
++++ b/src/game/level.ts
+@@ -1,6 +1,6 @@
+ 
+ import { Platform } from '../types';
+-import { CANVAS_HEIGHT } from './data/physics';
++import { CANVAS_HEIGHT, PLAYER_SIZE } from './data/physics';
+ 
+ export const generateLevel = (width: number): Platform[] => {
+     const platforms: Platform[] = [];
+@@ -30,6 +30,34 @@ export const generateLevel = (width: number): Platform[] => {
+     
+     // Boss Arena floor
+     platforms.push({ x: width - 800, y: CANVAS_HEIGHT - 60, w: 800, h: 60, type: 'platform', isGround: true });
+-    
++
+     return platforms;
+ };
++
++/**
++ * Dónde devolver a alguien que se ha caído por un hueco.
++ *
++ * Busca el suelo que cubra esa x; si la x está justo sobre el hueco, coge el
++ * suelo anterior más cercano, y como último recurso la zona de inicio. Nunca
++ * devuelve una posición en el aire ni fuera del nivel, que es lo que hacía
++ * falta para que la caída pueda reponerse en vez de dejar la partida colgada.
++ */
++export const findRespawn = (
++    platforms: Platform[],
++    x: number,
++    height: number = PLAYER_SIZE
++): { x: number; y: number } => {
++    const grounds = platforms.filter(p => p.isGround);
++    if (grounds.length === 0) return { x: 100, y: CANVAS_HEIGHT - 60 - height };
++
++    const over = grounds.find(p => x >= p.x && x <= p.x + p.w);
++    if (over) return { x, y: over.y - height };
++
++    // Sin suelo debajo: el hueco. Retrocede al suelo anterior más cercano.
++    const before = grounds
++        .filter(p => p.x + p.w <= x)
++        .sort((a, b) => b.x + b.w - (a.x + a.w))[0];
++    const target = before ?? grounds[0];
++
++    return { x: target.x + target.w / 2, y: target.y - height };
++};
+diff --git a/src/game/loop.test.ts b/src/game/loop.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..6354ca50dc89ad26159748ef4301dfbd5df7c316
+--- /dev/null
++++ b/src/game/loop.test.ts
+@@ -0,0 +1,84 @@
++import { describe, it, expect } from 'vitest';
++import { planSteps, MAX_FRAME_TIME } from './loop';
++import { FIXED_STEP, MAX_STEPS_PER_FRAME } from './data/physics';
++
++/** Simula una tanda de frames con los tiempos dados y suma los pasos ejecutados. */
++const run = (frameTimes: number[]) => {
++  let accumulator = 0;
++  const perFrame: number[] = [];
++
++  for (const elapsed of frameTimes) {
++    const plan = planSteps(accumulator, elapsed);
++    accumulator = plan.carry;
++    perFrame.push(plan.steps);
++  }
++
++  return { perFrame, total: perFrame.reduce((a, b) => a + b, 0) };
++};
++
++describe('planSteps — ritmo de simulación', () => {
++  it('a 60 Hz da exactamente un paso por frame', () => {
++    const { perFrame } = run(Array(60).fill(1 / 60));
++    expect(new Set(perFrame)).toEqual(new Set([1]));
++  });
++
++  it('a 144 Hz alterna 0 y 1 paso, y en un segundo simula ~60', () => {
++    const { perFrame, total } = run(Array(144).fill(1 / 144));
++    expect(new Set(perFrame.slice(2))).toEqual(new Set([0, 1]));
++    expect(total).toBeGreaterThanOrEqual(59);
++    expect(total).toBeLessThanOrEqual(60);
++  });
++
++  it('a 30 Hz da dos pasos por frame: el juego va a su velocidad, no a la mitad', () => {
++    const { perFrame, total } = run(Array(30).fill(1 / 30));
++    expect(new Set(perFrame)).toEqual(new Set([2]));
++    expect(total).toBe(60);
++  });
++
++  it('nunca ejecuta más de MAX_STEPS_PER_FRAME en un frame', () => {
++    for (const elapsed of [0.05, 0.1, 0.5, 2, 60]) {
++      expect(planSteps(0, elapsed).steps, `${elapsed}s`).toBeLessThanOrEqual(MAX_STEPS_PER_FRAME);
++    }
++  });
++
++  it('un parón largo se descarta en vez de recuperarse a tirones', () => {
++    // Esto es lo que se sentía como "a veces todo va muy rápido": tras un frame
++    // tardío, el bucle recuperaba el retraso simulando varios pasos de golpe.
++    const { perFrame } = run([1 / 60, 5, 1 / 60, 1 / 60, 1 / 60]);
++    expect(perFrame[1]).toBeLessThanOrEqual(MAX_STEPS_PER_FRAME);
++    // Y el frame siguiente vuelve al ritmo normal: no queda deuda acumulada.
++    expect(perFrame[2]).toBeLessThanOrEqual(1);
++    expect(perFrame[3]).toBeLessThanOrEqual(1);
++  });
++
++  it('tras un parón no se acumula deuda que acelere los frames siguientes', () => {
++    const conParon = run([...Array(10).fill(1 / 60), 3, ...Array(30).fill(1 / 60)]);
++    const sinParon = run(Array(41).fill(1 / 60));
++    // Como mucho los pasos del propio frame tardío, nunca 3 segundos de juego.
++    expect(conParon.total - sinParon.total).toBeLessThanOrEqual(MAX_STEPS_PER_FRAME);
++  });
++
++  it('el tiempo que entra en un frame está acotado', () => {
++    expect(MAX_FRAME_TIME).toBeCloseTo(FIXED_STEP * MAX_STEPS_PER_FRAME);
++    expect(planSteps(0, 10).carry).toBeLessThan(FIXED_STEP);
++  });
++
++  it('un elapsed negativo o cero no rompe ni resta saldo', () => {
++    expect(planSteps(0, 0)).toEqual({ steps: 0, carry: 0 });
++    expect(planSteps(0, -1)).toEqual({ steps: 0, carry: 0 });
++
++    const conSaldo = planSteps(0.01, -5);
++    expect(conSaldo.steps).toBe(0);
++    expect(conSaldo.carry).toBeCloseTo(0.01);
++  });
++
++  it('el saldo pendiente nunca llega a un paso completo', () => {
++    let accumulator = 0;
++    for (let i = 0; i < 500; i++) {
++      const plan = planSteps(accumulator, 1 / 90);
++      accumulator = plan.carry;
++      expect(accumulator).toBeGreaterThanOrEqual(0);
++      expect(accumulator).toBeLessThan(FIXED_STEP);
++    }
++  });
++});
+diff --git a/src/game/loop.ts b/src/game/loop.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..45bbcc349887a336a3cde8699da92644a8e48d44
+--- /dev/null
++++ b/src/game/loop.ts
+@@ -0,0 +1,40 @@
++import { FIXED_STEP, MAX_STEPS_PER_FRAME } from './data/physics';
++
++/**
++ * Cuánta simulación toca en este frame.
++ *
++ * El bucle acumula el tiempo real transcurrido y lo gasta en pasos de
++ * `FIXED_STEP`. La parte delicada es qué hacer cuando un frame llega tarde —un
++ * parón del navegador, una recolección de basura, volver a la pestaña—: si se
++ * intenta recuperar todo el retraso de golpe, el juego da un salto hacia
++ * delante y se siente acelerado durante un instante.
++ *
++ * Aquí se decide lo contrario: **se tira el retraso**. El tiempo que entra en un
++ * frame está limitado a `MAX_STEPS_PER_FRAME` pasos, así que el juego nunca corre
++ * más rápido de lo normal; si la máquina no da, va más lento, que es un fallo
++ * mucho más honesto que ir a tirones.
++ */
++export interface StepPlan {
++  /** Pasos de simulación a ejecutar en este frame. */
++  steps: number;
++  /** Saldo que queda pendiente para el frame siguiente. */
++  carry: number;
++}
++
++/** Tiempo real máximo que se consume en un solo frame, en segundos. */
++export const MAX_FRAME_TIME = FIXED_STEP * MAX_STEPS_PER_FRAME;
++
++export const planSteps = (accumulator: number, elapsed: number): StepPlan => {
++  // Un `elapsed` negativo (relojes que se ajustan) no debe restar saldo.
++  const usable = Math.min(Math.max(elapsed, 0), MAX_FRAME_TIME);
++  const budget = Math.max(accumulator, 0) + usable;
++
++  const wanted = Math.floor(budget / FIXED_STEP);
++  const steps = Math.min(wanted, MAX_STEPS_PER_FRAME);
++
++  // Si se ha recortado, el resto se descarta en vez de arrastrarse al frame
++  // siguiente, que es lo que provocaría el salto.
++  const carry = steps === wanted ? budget - steps * FIXED_STEP : 0;
++
++  return { steps, carry };
++};
+diff --git a/src/game/perks.test.ts b/src/game/perks.test.ts
+index e0b93a0304185323d919c13efd1492d04fa42179..9f017f0d806122659d1d0d7e22097633646c3741 100644
+--- a/src/game/perks.test.ts
++++ b/src/game/perks.test.ts
+@@ -90,6 +90,51 @@ describe('getRandomPerks', () => {
+   });
+ });
+ 
++describe('getRandomPerks — no ofrece mejoras inútiles', () => {
++  /** Todos los ids que pueden salir para este jugador. */
++  const idsOfrecidos = (player: Player): Set<string> => {
++    const ids = new Set<string>();
++    for (let i = 0; i < 500; i++) {
++      for (const perk of getRandomPerks(3, 'es', player)) ids.add(perk.id);
++    }
++    return ids;
++  };
++
++  it('con la vida y el escudo llenos no ofrece la cura total', () => {
++    const p = makePlayer({ hp: 100, maxHp: 100, shield: 25, maxShield: 25 });
++    expect(idsOfrecidos(p).has('extra_filling')).toBe(false);
++  });
++
++  it('si falta vida, la cura total vuelve a la baraja', () => {
++    const p = makePlayer({ hp: 40, maxHp: 100 });
++    expect(idsOfrecidos(p).has('extra_filling')).toBe(true);
++  });
++
++  it('si falta escudo aunque la vida esté llena, también', () => {
++    const p = makePlayer({ hp: 100, maxHp: 100, shield: 5, maxShield: 25 });
++    expect(idsOfrecidos(p).has('extra_filling')).toBe(true);
++  });
++
++  it('con la reducción de daño al tope no ofrece más esmalte', () => {
++    const p = makePlayer();
++    p.stats.damageReduction = 0.6;
++    expect(idsOfrecidos(p).has('thick_enamel')).toBe(false);
++  });
++
++  it('sin jugador se comporta como antes y ofrece todo', () => {
++    const ids = new Set<string>();
++    for (let i = 0; i < 500; i++) for (const perk of getRandomPerks(3, 'es')) ids.add(perk.id);
++    expect(ids.has('extra_filling')).toBe(true);
++    expect(ids.has('thick_enamel')).toBe(true);
++  });
++
++  it('sigue devolviendo la cantidad pedida aunque se filtren mejoras', () => {
++    const p = makePlayer({ hp: 100, maxHp: 100, shield: 25, maxShield: 25 });
++    p.stats.damageReduction = 0.6;
++    expect(getRandomPerks(3, 'en', p)).toHaveLength(3);
++  });
++});
++
+ describe('applyPerk', () => {
+   it('enamel_shield añade escudo y lo deja lleno', () => {
+     const p = makePlayer();
+diff --git a/src/game/perks.ts b/src/game/perks.ts
+index 749fd6396a3f1026f5c813d721f879e167b4c379..0aa1a4eefec235384e6fed83f7c941208ad2a8e2 100644
+--- a/src/game/perks.ts
++++ b/src/game/perks.ts
+@@ -16,11 +16,32 @@ const PERK_DEFINITIONS: Omit<Perk, 'name' | 'description'>[] = [
+     { id: 'extra_life', icon: 'heart', rarity: 'legendary', color: '#fcd34d', weight: 5 }
+ ];
+ 
+-export const getRandomPerks = (count: number = 3, lang: Language): Perk[] => {
++/**
++ * ¿Este perk haría algo si lo eligiera este jugador ahora mismo?
++ *
++ * Dos de los diez perks son de efecto inmediato en una mano de mejoras
++ * permanentes, así que ofrecerlos cuando no hacen nada es regalar una carta
++ * muerta: curarse del todo con la vida llena, o sumar reducción de daño con el
++ * tope ya alcanzado.
++ */
++const isUseful = (perkId: string, player: Player): boolean => {
++    switch (perkId) {
++        case 'extra_filling':
++            return player.hp < player.maxHp || player.shield < player.maxShield;
++        case 'thick_enamel':
++            return player.stats.damageReduction < 0.6;
++        default:
++            return true;
++    }
++};
++
++export const getRandomPerks = (count: number = 3, lang: Language, player?: Player): Perk[] => {
+     // Weighted Random Selection
+     const selected: Perk[] = [];
+-    const pool = [...PERK_DEFINITIONS];
+-    
++    const pool = player
++        ? PERK_DEFINITIONS.filter(def => isUseful(def.id, player))
++        : [...PERK_DEFINITIONS];
++
+     for(let i=0; i<count; i++) {
+         if (pool.length === 0) break;
+         
+diff --git a/src/game/player.test.ts b/src/game/player.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..d72508aee1f6ed4b0eb5db14864d1e4afcd60e62
+--- /dev/null
++++ b/src/game/player.test.ts
+@@ -0,0 +1,133 @@
++import { describe, it, expect } from 'vitest';
++import { createPlayer, fallIntoPit } from './player';
++import { generateLevel } from './level';
++import { CHARACTER_PROFILES } from './data/characters';
++import { PIT_FALL_DAMAGE, CANVAS_HEIGHT, PLAYER_SIZE } from './data/physics';
++import type { CharacterType, Platform } from '../types';
++
++const ground = (x: number, w: number): Platform => ({
++  x,
++  y: CANVAS_HEIGHT - 60,
++  w,
++  h: 60,
++  type: 'platform',
++  isGround: true,
++});
++
++describe('createPlayer — clase y dificultad', () => {
++  const CLASSES = Object.keys(CHARACTER_PROFILES) as CharacterType[];
++
++  it('las cuatro clases dejan de ser idénticas', () => {
++    // Antes `character` solo elegía el sprite: mismas estadísticas para todas.
++    const perfiles = CLASSES.map((character) => {
++      const p = createPlayer({ loadout: 'all', difficulty: 'normal', character });
++      return JSON.stringify([p.maxHp, p.stats, p.maxShield]);
++    });
++    expect(new Set(perfiles).size).toBe(CLASSES.length);
++  });
++
++  it('ninguna clase sale con valores absurdos', () => {
++    for (const character of CLASSES) {
++      const p = createPlayer({ loadout: 'all', difficulty: 'normal', character });
++      expect(p.maxHp, character).toBeGreaterThan(50);
++      expect(p.hp, character).toBe(p.maxHp);
++      expect(p.stats.damageMultiplier, character).toBeGreaterThan(0.5);
++      expect(p.stats.speedMultiplier, character).toBeGreaterThan(0.5);
++      expect(p.stats.damageReduction, character).toBeLessThan(0.6);
++      expect(p.shield, character).toBe(p.maxShield);
++    }
++  });
++
++  it('el molar aguanta más que el incisivo, y el incisivo pega más', () => {
++    const molar = createPlayer({ loadout: 'all', difficulty: 'normal', character: 'molar' });
++    const incisor = createPlayer({ loadout: 'all', difficulty: 'normal', character: 'incisor' });
++    expect(molar.maxHp).toBeGreaterThan(incisor.maxHp);
++    expect(incisor.stats.damageMultiplier).toBeGreaterThan(molar.stats.damageMultiplier);
++  });
++
++  it('la clase se combina con la dificultad, no la sustituye', () => {
++    const facil = createPlayer({ loadout: 'all', difficulty: 'easy', character: 'molar' });
++    const normal = createPlayer({ loadout: 'all', difficulty: 'normal', character: 'molar' });
++    expect(facil.maxHp).toBeGreaterThan(normal.maxHp);
++    expect(facil.stats.damageMultiplier).toBeGreaterThan(normal.stats.damageMultiplier);
++  });
++
++  it('una clase inventada cae al molar sin romperse', () => {
++    const p = createPlayer({
++      loadout: 'all',
++      difficulty: 'normal',
++      character: 'colmillo_de_sable' as CharacterType,
++    });
++    const molar = createPlayer({ loadout: 'all', difficulty: 'normal', character: 'molar' });
++    expect(p.maxHp).toBe(molar.maxHp);
++  });
++});
++
++describe('fallIntoPit — caerse del escenario', () => {
++  const platforms = [ground(0, 800), ground(900, 800)];
++
++  it('devuelve al jugador a suelo firme, no al vacío', () => {
++    const p = createPlayer({ loadout: 'all', difficulty: 'normal', character: 'molar' });
++    p.x = 850; // justo sobre el hueco
++    p.y = CANVAS_HEIGHT + 200;
++    p.vy = 30;
++
++    expect(fallIntoPit(p, platforms)).toBe(true);
++    expect(p.y).toBe(CANVAS_HEIGHT - 60 - p.h);
++    expect(p.vy).toBe(0);
++    expect(p.isGrounded).toBe(true);
++
++    const sobreSuelo = platforms.some((pl) => p.x >= pl.x && p.x <= pl.x + pl.w);
++    expect(sobreSuelo).toBe(true);
++  });
++
++  it('cobra el golpe de la caída', () => {
++    const p = createPlayer({ loadout: 'all', difficulty: 'normal', character: 'molar' });
++    const antes = p.hp;
++    fallIntoPit(p, platforms);
++    expect(p.hp).toBe(antes - PIT_FALL_DAMAGE);
++    expect(p.invincibleTimer).toBeGreaterThan(0);
++  });
++
++  it('con una vida extra, gasta la vida y sigue jugable', () => {
++    // Este es el fallo 03: antes ponía hp a 0 sin gastar vida, y como el game
++    // over exige lives <= 0 el jugador se quedaba cayendo para siempre.
++    const p = createPlayer({ loadout: 'all', difficulty: 'normal', character: 'molar' });
++    p.hp = 10;
++    p.lives = 1;
++
++    expect(fallIntoPit(p, platforms)).toBe(true);
++    expect(p.lives).toBe(0);
++    expect(p.hp).toBe(p.maxHp);
++    expect(p.y).toBeLessThan(CANVAS_HEIGHT);
++  });
++
++  it('sin vidas y con poca salud, se muere de verdad', () => {
++    const p = createPlayer({ loadout: 'all', difficulty: 'normal', character: 'molar' });
++    p.hp = 10;
++    p.lives = 0;
++
++    expect(fallIntoPit(p, platforms)).toBe(false);
++    expect(p.hp).toBe(0);
++  });
++
++  it('caerse con salud de sobra no mata', () => {
++    const p = createPlayer({ loadout: 'all', difficulty: 'normal', character: 'molar' });
++    for (let i = 0; i < 3; i++) {
++      expect(fallIntoPit(p, platforms), `caída ${i + 1}`).toBe(true);
++    }
++    expect(p.hp).toBeGreaterThan(0);
++  });
++
++  it('funciona sobre un nivel generado de verdad', () => {
++    const p = createPlayer({ loadout: 'all', difficulty: 'normal', character: 'molar' });
++    const nivel = generateLevel(8000);
++    p.x = 4321;
++    p.y = CANVAS_HEIGHT + 300;
++
++    expect(fallIntoPit(p, nivel)).toBe(true);
++    expect(p.y).toBeLessThanOrEqual(CANVAS_HEIGHT - PLAYER_SIZE);
++    expect(p.x).toBeGreaterThanOrEqual(0);
++    expect(p.x).toBeLessThanOrEqual(8000);
++  });
++});
+diff --git a/src/game/player.ts b/src/game/player.ts
+index 25e2b6cad02636ab6bd6731c196dd793144b3596..b76593450144b72f74a2a60db9e1048f2312855f 100644
+--- a/src/game/player.ts
++++ b/src/game/player.ts
+@@ -1,13 +1,17 @@
+-import type { Player, WeaponType, LoadoutType, Difficulty, CharacterType } from '../types';
++import type { Player, WeaponType, LoadoutType, Difficulty, CharacterType, Platform } from '../types';
+ import {
+   PLAYER_SIZE,
+   PLAYER_MAX_JUMPS,
+   SCORE_MILESTONE_START,
+   KILL_MILESTONE_START,
+   KILL_MILESTONE_INCREMENT_START,
++  PIT_FALL_DAMAGE,
++  RESPAWN_INVULNERABILITY,
+ } from './data/physics';
+ import { COLORS } from './data/palette';
+ import { getDifficulty } from './data/difficulty';
++import { getCharacter } from './data/characters';
++import { findRespawn } from './level';
+ 
+ /** Lo que el jugador elige en el menú antes de empezar una partida. */
+ export interface RunConfig {
+@@ -19,7 +23,8 @@ export interface RunConfig {
+ export const createPlayer = ({ loadout, difficulty, character }: RunConfig): Player => {
+   const startingWeapon: WeaponType = loadout === 'all' ? 'normal' : loadout;
+   const config = getDifficulty(difficulty);
+-  const initialMaxHp = 100 * config.hpMult;
++  const profile = getCharacter(character);
++  const initialMaxHp = Math.round(100 * config.hpMult * profile.hpMult);
+ 
+   return {
+     id: 'player',
+@@ -38,8 +43,8 @@ export const createPlayer = ({ loadout, difficulty, character }: RunConfig): Pla
+     character,
+     invincibleTimer: 0,
+     slowTimer: 0,
+-    shield: 0,
+-    maxShield: 0,
++    shield: profile.startingShield,
++    maxShield: profile.startingShield,
+     shieldRegenTimer: 0,
+     lives: 0,
+     weapon: startingWeapon,
+@@ -55,11 +60,11 @@ export const createPlayer = ({ loadout, difficulty, character }: RunConfig): Pla
+     dashCooldown: 0,
+     consecutiveDashes: 1,
+     stats: {
+-      speedMultiplier: 1,
+-      damageMultiplier: config.dmgDealt,
+-      dashCooldownMultiplier: 1,
++      speedMultiplier: profile.speedMult,
++      damageMultiplier: config.dmgDealt * profile.damageMult,
++      dashCooldownMultiplier: profile.dashCooldownMult,
+       maxDashes: 1,
+-      damageReduction: 0,
++      damageReduction: profile.damageReduction,
+       damageTakenMultiplier: config.dmgTaken,
+     },
+     runStats: {
+@@ -70,3 +75,43 @@ export const createPlayer = ({ loadout, difficulty, character }: RunConfig): Pla
+     },
+   };
+ };
++
++/**
++ * Caerse del escenario.
++ *
++ * Antes esto era `p.hp = 0` y nada más, lo que dejaba la partida colgada si el
++ * jugador tenía una vida extra: con vidas > 0 el bucle no da game over, y el
++ * único sitio que gastaba una vida estaba dentro de la rama de "me han dado".
++ * El jugador caía indefinidamente con 0 de vida.
++ *
++ * Ahora la caída reposiciona en suelo firme y cobra `PIT_FALL_DAMAGE`. Solo
++ * mata si ese daño lo mata, y en ese caso gasta una vida si queda alguna.
++ *
++ * Muta el jugador. Devuelve `true` si sigue en pie.
++ */
++export const fallIntoPit = (player: Player, platforms: Platform[]): boolean => {
++  const spot = findRespawn(platforms, player.x, player.h);
++
++  player.x = spot.x;
++  player.y = spot.y;
++  player.vx = 0;
++  player.vy = 0;
++  player.isGrounded = true;
++  player.jumpCount = 0;
++  player.dashTimer = 0;
++  player.slowTimer = 0;
++
++  player.hp -= PIT_FALL_DAMAGE;
++
++  if (player.hp <= 0) {
++    if (player.lives <= 0) {
++      player.hp = 0;
++      return false;
++    }
++    player.lives--;
++    player.hp = player.maxHp;
++  }
++
++  player.invincibleTimer = RESPAWN_INVULNERABILITY;
++  return true;
++};
+diff --git a/src/game/progression.test.ts b/src/game/progression.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..7bf1244e2f704da3be48431b8c8cf6ed18b578da
+--- /dev/null
++++ b/src/game/progression.test.ts
+@@ -0,0 +1,83 @@
++import { describe, it, expect } from 'vitest';
++import { claimScoreMilestone, claimKillMilestone } from './progression';
++import type { Player } from '../types';
++
++type RunStats = Player['runStats'];
++
++const freshStats = (): RunStats => ({
++  killCount: 0,
++  nextScoreMilestone: 6200,
++  nextKillMilestone: 20,
++  currentKillStep: 10,
++});
++
++/** Umbrales de bajas que se van alcanzando, en orden. */
++const killSequence = (count: number, milestoneMult = 1): number[] => {
++  const stats = freshStats();
++  const thresholds: number[] = [];
++
++  for (let kills = 1; thresholds.length < count && kills < 5000; kills++) {
++    stats.killCount = kills;
++    if (claimKillMilestone(stats, milestoneMult)) thresholds.push(kills);
++  }
++
++  return thresholds;
++};
++
++describe('hitos por bajas', () => {
++  it('sigue la secuencia anunciada en la Base de Datos: 20, 30, 50, 80, 120', () => {
++    // Regresión del fallo 12: el paso se incrementaba antes de sumarse, así que
++    // la progresión real era 20, 40, 70, 110 mientras el menú prometía otra.
++    expect(killSequence(5)).toEqual([20, 30, 50, 80, 120]);
++  });
++
++  it('no vuelve a dispararse con las mismas bajas', () => {
++    const stats = freshStats();
++    stats.killCount = 20;
++    expect(claimKillMilestone(stats, 1)).toBe(true);
++    expect(claimKillMilestone(stats, 1)).toBe(false);
++    expect(claimKillMilestone(stats, 1)).toBe(false);
++  });
++
++  it('la dificultad escala los umbrales', () => {
++    const facil = killSequence(3, 0.75);
++    const leyenda = killSequence(3, 1.3);
++
++    expect(facil[1]).toBeLessThan(30);
++    expect(leyenda[1]).toBeGreaterThan(30);
++    // El primero es el mismo: lo fija createPlayer, no el incremento.
++    expect(facil[0]).toBe(20);
++    expect(leyenda[0]).toBe(20);
++  });
++
++  it('aguanta un salto grande de bajas sin perder el hito', () => {
++    const stats = freshStats();
++    stats.killCount = 100;
++    expect(claimKillMilestone(stats, 1)).toBe(true);
++    // El siguiente umbral queda por delante, no por detrás.
++    expect(stats.nextKillMilestone).toBeGreaterThan(stats.killCount - 100);
++  });
++});
++
++describe('hitos por puntuación', () => {
++  it('el primero a 6.200 y luego cada 8.000', () => {
++    const stats = freshStats();
++    expect(claimScoreMilestone(stats, 6199, 1)).toBe(false);
++    expect(claimScoreMilestone(stats, 6200, 1)).toBe(true);
++    expect(stats.nextScoreMilestone).toBe(14200);
++
++    expect(claimScoreMilestone(stats, 14199, 1)).toBe(false);
++    expect(claimScoreMilestone(stats, 14200, 1)).toBe(true);
++    expect(stats.nextScoreMilestone).toBe(22200);
++  });
++
++  it('la dificultad escala el incremento', () => {
++    const facil = freshStats();
++    claimScoreMilestone(facil, 6200, 0.75);
++
++    const leyenda = freshStats();
++    claimScoreMilestone(leyenda, 6200, 1.3);
++
++    expect(facil.nextScoreMilestone).toBeLessThan(leyenda.nextScoreMilestone);
++  });
++});
+diff --git a/src/game/progression.ts b/src/game/progression.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..98009afe615f5327a265335615b49937a395a5a3
+--- /dev/null
++++ b/src/game/progression.ts
+@@ -0,0 +1,38 @@
++import type { Player } from '../types';
++import { SCORE_MILESTONE_INCREMENT, KILL_MILESTONE_INCREMENT_START } from './data/physics';
++
++type RunStats = Player['runStats'];
++
++/**
++ * Hitos que otorgan un perk.
++ *
++ * Vivían dentro de `update()` como dos bloques de aritmética suelta. Aquí son
++ * dos funciones que se pueden comprobar, que es como se ha visto que la
++ * progresión de bajas no coincidía con la anunciada en la Base de Datos del
++ * menú: el paso se incrementaba **antes** de sumarse, así que la secuencia real
++ * era 20, 40, 70, 110 en vez de 20, 30, 50, 80.
++ */
++
++/**
++ * ¿Toca perk por puntuación? Si sí, avanza el umbral.
++ *
++ * Umbrales: 6.200 y luego cada 8.000, escalados por la dificultad.
++ */
++export const claimScoreMilestone = (runStats: RunStats, score: number, milestoneMult: number): boolean => {
++  if (score < runStats.nextScoreMilestone) return false;
++  runStats.nextScoreMilestone += SCORE_MILESTONE_INCREMENT * milestoneMult;
++  return true;
++};
++
++/**
++ * ¿Toca perk por bajas? Si sí, avanza el umbral.
++ *
++ * Umbrales: 20, 30, 50, 80, 120… El paso empieza en 10 y sube 10 cada vez,
++ * **después** de sumarlo al umbral.
++ */
++export const claimKillMilestone = (runStats: RunStats, milestoneMult: number): boolean => {
++  if (runStats.killCount < runStats.nextKillMilestone) return false;
++  runStats.nextKillMilestone += runStats.currentKillStep * milestoneMult;
++  runStats.currentKillStep += KILL_MILESTONE_INCREMENT_START;
++  return true;
++};
+diff --git a/src/game/triggers.test.ts b/src/game/triggers.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..22b955c00ba6bb004c9942c494414239dc708ae5
+--- /dev/null
++++ b/src/game/triggers.test.ts
+@@ -0,0 +1,120 @@
++import { describe, it, expect } from 'vitest';
++import { createTriggerState, advanceTriggers, isBossSpeedkill, type TriggerState } from './triggers';
++import { HIDDEN_BOSS_TRIGGERS as T } from './data/enemies';
++
++const STEP = 1 / 60;
++const FREE = { bossSpawned: false, transitioning: false };
++
++/**
++ * Avanza `seconds` de simulación en pasos fijos. `playerX` puede ser una función
++ * del tiempo para simular a alguien que se mueve. Devuelve en qué segundo se
++ * invocó al jefe oculto, o null si no se invocó.
++ */
++const simulate = (
++  state: TriggerState,
++  seconds: number,
++  playerX: number | ((t: number) => number) = 0,
++  ctx = FREE
++): number | null => {
++  const at = typeof playerX === 'function' ? playerX : () => playerX;
++
++  for (let t = 0; t < seconds; t += STEP) {
++    if (advanceTriggers(state, STEP, at(t), ctx)) return state.levelTime;
++  }
++  return null;
++};
++
++describe('relojes del jefe oculto', () => {
++  it('no usa el reloj del sistema: sin pasos de simulación no pasa el tiempo', () => {
++    // Esto es el fallo 09. Antes se comparaba Date.now(), así que pausar tres
++    // minutos (o dejar la pestaña de fondo, donde el navegador ni ejecuta el
++    // requestAnimationFrame) invocaba al jefe al volver.
++    const state = createTriggerState(0);
++    expect(state.levelTime).toBe(0);
++    expect(advanceTriggers(state, 0, 0, FREE)).toBe(false);
++    expect(state.levelTime).toBe(0);
++    expect(state.idleTime).toBe(0);
++  });
++
++  it('invoca por pereza tras dos minutos sin moverse del sitio', () => {
++    const state = createTriggerState(0);
++    const firedAt = simulate(state, T.idleSeconds + 5, 10);
++    expect(firedAt).not.toBeNull();
++    expect(firedAt!).toBeGreaterThan(T.idleSeconds);
++    expect(firedAt!).toBeLessThan(T.idleSeconds + 2);
++  });
++
++  it('moverse reinicia el reloj de pereza', () => {
++    const state = createTriggerState(0);
++    // Avanza 100 px cada 10 segundos: nunca se queda quieto lo suficiente.
++    const firedAt = simulate(state, T.idleSeconds + 30, (t) => Math.floor(t / 10) * 100);
++    expect(firedAt).toBeNull();
++    expect(state.idleTime).toBeLessThan(T.idleSeconds);
++  });
++
++  it('invoca por estancamiento a los tres minutos sin avanzar en el nivel', () => {
++    const state = createTriggerState(0);
++    // Se mueve lo justo para no contar como quieto, pero sin salir del principio.
++    const firedAt = simulate(state, T.stagnantSeconds + 5, (t) => (Math.floor(t) % 2) * 200);
++    expect(firedAt).not.toBeNull();
++    expect(firedAt!).toBeGreaterThanOrEqual(T.stagnantSeconds);
++  });
++
++  it('no invoca por estancamiento si el jefe del stage ya está en pantalla', () => {
++    const state = createTriggerState(0);
++    const firedAt = simulate(state, T.stagnantSeconds + 5, (t) => (Math.floor(t) % 2) * 200, {
++      bossSpawned: true,
++      transitioning: false,
++    });
++    expect(firedAt).toBeNull();
++  });
++
++  it('invoca por matanza rápida al principio del nivel', () => {
++    const state = createTriggerState(0);
++    state.kills = T.rushKills + 1;
++    // Se mueve para que no salte antes el reloj de pereza.
++    const firedAt = simulate(state, 5, (t) => t * 100);
++    expect(firedAt).not.toBeNull();
++    expect(firedAt!).toBeLessThan(T.rushSeconds);
++  });
++
++  it('la misma matanza ya no cuenta pasado el margen de tiempo', () => {
++    const state = createTriggerState(0);
++    simulate(state, T.rushSeconds + 1, (t) => t * 100);
++    state.kills = T.rushKills + 1;
++    expect(advanceTriggers(state, STEP, 99999, FREE)).toBe(false);
++  });
++
++  it('durante el cierre del nivel no invoca nada', () => {
++    const state = createTriggerState(0);
++    const firedAt = simulate(state, T.idleSeconds + 10, 0, { bossSpawned: false, transitioning: true });
++    expect(firedAt).toBeNull();
++  });
++
++  it('solo invoca una vez por nivel', () => {
++    const state = createTriggerState(0);
++    expect(simulate(state, T.idleSeconds + 5, 0)).not.toBeNull();
++    state.fired = true;
++    expect(simulate(state, T.idleSeconds + 5, 0)).toBeNull();
++  });
++});
++
++describe('speedkill del jefe del stage', () => {
++  it('cuenta desde que apareció el jefe, en tiempo de simulación', () => {
++    const state = createTriggerState(0);
++    simulate(state, 30, (t) => t * 100);
++    state.bossSpawnTime = state.levelTime;
++
++    simulate(state, T.bossSpeedkillSeconds - 10, (t) => 3000 + t * 100);
++    expect(isBossSpeedkill(state)).toBe(true);
++
++    simulate(state, 20, (t) => 9000 + t * 100);
++    expect(isBossSpeedkill(state)).toBe(false);
++  });
++
++  it('sin jefe aparecido no hay speedkill', () => {
++    const state = createTriggerState(0);
++    expect(state.bossSpawnTime).toBe(-1);
++    expect(isBossSpeedkill(state)).toBe(false);
++  });
++});
+diff --git a/src/game/triggers.ts b/src/game/triggers.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..50b9972c93b803552a1802c511ac4abc87668535
+--- /dev/null
++++ b/src/game/triggers.ts
+@@ -0,0 +1,86 @@
++import { HIDDEN_BOSS_TRIGGERS as T } from './data/enemies';
++
++/**
++ * Relojes de comportamiento que invocan al jefe oculto.
++ *
++ * Antes esto era un `useRef` en `GameCanvas` que comparaba `Date.now()`. Ese
++ * reloj no se detiene al pausar ni cuando el navegador congela la pestaña —y la
++ * congela del todo: con la pestaña oculta Chrome no ejecuta ni un
++ * `requestAnimationFrame`—, así que pausar tres minutos invocaba al jefe al
++ * volver. Aquí todo se mide con `dt` acumulado: si la simulación no corre, los
++ * relojes no corren.
++ *
++ * Es estado de la partida, así que vive en el `World` y se reinicia por nivel.
++ */
++export interface TriggerState {
++  /** Segundos de simulación transcurridos en este nivel. */
++  levelTime: number;
++  /** Segundos seguidos sin avanzar de forma significativa. */
++  idleTime: number;
++  /** Última x desde la que se mide la inactividad. */
++  lastX: number;
++  /** Bajas conseguidas en este nivel. */
++  kills: number;
++  /** `levelTime` en que apareció el jefe del stage; -1 si aún no ha aparecido. */
++  bossSpawnTime: number;
++  /** El jefe oculto ya ha sido invocado en este nivel. */
++  fired: boolean;
++}
++
++export const createTriggerState = (playerX = 0): TriggerState => ({
++  levelTime: 0,
++  idleTime: 0,
++  lastX: playerX,
++  kills: 0,
++  bossSpawnTime: -1,
++  fired: false,
++});
++
++export interface TriggerContext {
++  /** El jefe del stage ya está en el escenario. */
++  bossSpawned: boolean;
++  /** El nivel está en su secuencia de cierre. */
++  transitioning: boolean;
++}
++
++/**
++ * Avanza los relojes un paso de simulación y responde si toca invocar al jefe
++ * oculto. Muta `state`.
++ *
++ * Los tres motivos son los de siempre: quedarse quieto, no avanzar en el nivel,
++ * y matar en cadena. El cuarto —matar al jefe del stage muy rápido— se comprueba
++ * aparte, con `isBossSpeedkill`, porque depende de un suceso y no del reloj.
++ */
++export const advanceTriggers = (
++  state: TriggerState,
++  dt: number,
++  playerX: number,
++  ctx: TriggerContext
++): boolean => {
++  state.levelTime += dt;
++
++  if (Math.abs(playerX - state.lastX) < T.idleDistance) {
++    state.idleTime += dt;
++  } else {
++    state.idleTime = 0;
++    state.lastX = playerX;
++  }
++
++  if (state.fired || ctx.transitioning) return false;
++
++  // 1. Pereza: mucho tiempo sin moverse del sitio.
++  if (state.idleTime > T.idleSeconds) return true;
++
++  // 2. Estancamiento: mucho tiempo de nivel sin avanzar, y sin jefe delante.
++  if (state.levelTime > T.stagnantSeconds && playerX < T.stagnantX && !ctx.bossSpawned) return true;
++
++  // 3. Ira: matanza rápida al principio del nivel.
++  if (state.levelTime < T.rushSeconds && state.kills > T.rushKills) return true;
++
++  return false;
++};
++
++/** ¿Ha caído el jefe del stage demasiado rápido? */
++export const isBossSpeedkill = (state: TriggerState): boolean =>
++  state.bossSpawnTime >= 0 &&
++  state.levelTime - state.bossSpawnTime < T.bossSpeedkillSeconds;
+diff --git a/src/game/weapons.test.ts b/src/game/weapons.test.ts
+index 6e66a5172821916257cc0a7deec61daed74b5342..e336cbef8ddec7d2a07f03eecc16dea4e8d9ba39 100644
+--- a/src/game/weapons.test.ts
++++ b/src/game/weapons.test.ts
+@@ -1,6 +1,6 @@
+ import { describe, it, expect } from 'vitest';
+ import { spawnProjectile } from './weapons';
+-import { getWeaponStats } from './data/weapons';
++import { getWeaponStats, ENEMY_BULLET } from './data/weapons';
+ import type { Projectile, Player, WeaponType } from '../types';
+ 
+ const makePlayer = (weapon: WeaponType, weaponLevel: number): Player =>
+@@ -145,6 +145,60 @@ describe('spawnProjectile — geometría por arma', () => {
+   });
+ });
+ 
++describe('spawnProjectile — multiplicador de daño', () => {
++  const shootWithMult = (weapon: WeaponType, level: number, mult: number): Projectile[] => {
++    const out: Projectile[] = [];
++    const player = makePlayer(weapon, level);
++    player.stats.damageMultiplier = mult;
++    spawnProjectile(out, 0, 0, 1, 0, 'player', weapon, player);
++    return out;
++  };
++
++  it('se aplica al crear el proyectil, una sola vez', () => {
++    for (const weapon of WEAPONS) {
++      const base = getWeaponStats(weapon, 3).damage;
++      for (const proj of shootWithMult(weapon, 3, 1.15)) {
++        expect(proj.damage, `${weapon} L3`).toBeCloseTo(base * 1.15);
++      }
++    }
++  });
++
++  it('disparar en ráfaga no acumula el multiplicador sobre los proyectiles ya vivos', () => {
++    // Regresión del fallo 01: el bucle parcheaba el daño recorriendo el array
++    // después de disparar, así que cada disparo volvía a multiplicar a los
++    // anteriores y un +15% acababa siendo un x3,5.
++    const out: Projectile[] = [];
++    const player = makePlayer('normal', 1);
++    player.stats.damageMultiplier = 1.15;
++    const expected = getWeaponStats('normal', 1).damage * 1.15;
++
++    for (let i = 0; i < 20; i++) spawnProjectile(out, 0, 0, 1, 0, 'player', 'normal', player);
++
++    expect(out).toHaveLength(20);
++    for (const proj of out) expect(proj.damage).toBeCloseTo(expected);
++  });
++
++  it('no toca el daño de las balas enemigas en vuelo', () => {
++    const out: Projectile[] = [];
++    spawnProjectile(out, 0, 0, -1, 0, 'enemy', 'normal');
++
++    const player = makePlayer('normal', 1);
++    player.stats.damageMultiplier = 2;
++    for (let i = 0; i < 10; i++) spawnProjectile(out, 0, 0, 1, 0, 'player', 'normal', player);
++
++    expect(out[0].owner).toBe('enemy');
++    expect(out[0].damage).toBe(ENEMY_BULLET.damage);
++  });
++
++  it('un multiplicador de 1 deja el daño de tabla', () => {
++    for (const weapon of WEAPONS) {
++      for (const proj of shootWithMult(weapon, 5, 1)) {
++        expect(proj.damage, weapon).toBe(getWeaponStats(weapon, 5).damage);
++      }
++    }
++  });
++});
++
+ describe('spawnProjectile — proyectil enemigo', () => {
+   it('ignora el arma y el jugador, y usa siempre la bala enemiga', () => {
+     const out: Projectile[] = [];
+diff --git a/src/game/weapons.ts b/src/game/weapons.ts
+index 65a86bfbac6c5090944c6c9f4391dcaaffcd59ae..7a0013b7dbc3a9070f51d654d90d01a02f1ae19a 100644
+--- a/src/game/weapons.ts
++++ b/src/game/weapons.ts
+@@ -18,11 +18,21 @@ export const spawnProjectile = (projectiles: Projectile[], x: number, y: number,
+     const level = player.weaponLevel;
+     const vx = dx; const vy = dy;
+ 
++    /**
++     * Daño final de un proyectil del jugador.
++     *
++     * El multiplicador se aplica **aquí**, una sola vez por proyectil. Antes lo
++     * parcheaba el bucle recorriendo el array después de disparar, lo que
++     * reaplicaba el multiplicador a los proyectiles que aún estaban en el aire
++     * —incluidos los del enemigo— y convertía un +15% en un x3,5 acumulado.
++     */
++    const scaled = (base: number) => base * player.stats.damageMultiplier;
++
+     if (type === 'spread') {
+         // Nivel 1: 3 balas ... nivel 5: 11.
+         const bulletCount = SPREAD.count(level);
+         const spreadFactor = SPREAD.spreadFactor(level);
+-        const dmg = SPREAD.damage(level);
++        const dmg = scaled(SPREAD.damage(level));
+         const start = -Math.floor(bulletCount/2); const end = Math.floor(bulletCount/2);
+         const perpX = -dy; const perpY = dx;
+ 
+@@ -33,11 +43,11 @@ export const spawnProjectile = (projectiles: Projectile[], x: number, y: number,
+         }
+     } else if (type === 'laser') {
+           const width = LASER.width(level);
+-          const dmg = LASER.damage(level);
++          const dmg = scaled(LASER.damage(level));
+           projectiles.push({ ...base, x, y, w: width, h: width, vx: vx * LASER.speed, vy: vy * LASER.speed, hp: 1, maxHp: 1, damage: dmg, lifeTime: LASER.lifeTime, projectileType: 'laser', color: COLORS.projectileLaser } as Projectile);
+     } else if (type === 'mouthwash') {
+           const speed = MOUTHWASH.speed(level);
+-          const dmg = MOUTHWASH.damage(level);
++          const dmg = scaled(MOUTHWASH.damage(level));
+           const off = MOUTHWASH.sideOffset;
+           // side === 0 es la onda central (tamaño propio); ±1 son las laterales.
+           MOUTHWASH.offsets(level).forEach(side => {
+@@ -45,16 +55,16 @@ export const spawnProjectile = (projectiles: Projectile[], x: number, y: number,
+               projectiles.push({ ...base, x: x + (side * dy * off), y: y - (side * dx * off), w: size, h: size, vx: vx * speed, vy: vy * speed, hp: 1, maxHp: 1, damage: dmg, lifeTime: MOUTHWASH.lifeTime, projectileType: 'wave', color: COLORS.projectileWave } as Projectile);
+           });
+     } else if (type === 'floss') {
+-          const range = FLOSS.range(level); const dmg = FLOSS.damage(level); const thickness = FLOSS.thickness(level);
++          const range = FLOSS.range(level); const dmg = scaled(FLOSS.damage(level)); const thickness = FLOSS.thickness(level);
+           const isVertical = Math.abs(dy) > Math.abs(dx);
+           const w = isVertical ? thickness : range; const h = isVertical ? range : thickness;
+           projectiles.push({ ...base, x, y, w, h, vx: dx, vy: dy, hp: 1, maxHp: 1, damage: dmg, lifeTime: FLOSS.lifeTime, projectileType: 'floss', color: '#fff' } as Projectile);
+     } else if (type === 'toothbrush') {
+-          const size = TOOTHBRUSH.size(level); const dmg = TOOTHBRUSH.damage(level);
++          const size = TOOTHBRUSH.size(level); const dmg = scaled(TOOTHBRUSH.damage(level));
+           projectiles.push({ ...base, x, y, w: size, h: size, vx: dx, vy: dy, hp: 1, maxHp: 1, damage: dmg, lifeTime: TOOTHBRUSH.lifeTime, projectileType: 'sword', color: COLORS.projectileMelee } as Projectile);
+     } else {
+         const speed = NORMAL.speed;
+-        const bullet = { w: NORMAL.w, h: NORMAL.h, hp: 1, maxHp: 1, damage: NORMAL.damage(level), lifeTime: NORMAL.lifeTime, projectileType: 'bullet' as const, color: COLORS.projectilePlayer, vx: vx * speed, vy: vy * speed };
++        const bullet = { w: NORMAL.w, h: NORMAL.h, hp: 1, maxHp: 1, damage: scaled(NORMAL.damage(level)), lifeTime: NORMAL.lifeTime, projectileType: 'bullet' as const, color: COLORS.projectilePlayer, vx: vx * speed, vy: vy * speed };
+         // Abanico: una bala por cada desplazamiento perpendicular de la tabla.
+         const perpX = -dy; const perpY = dx;
+         NORMAL.offsets(level).forEach(offset => {
+@@ -63,6 +73,17 @@ export const spawnProjectile = (projectiles: Projectile[], x: number, y: number,
+     }
+ };
+ 
++/**
++ * Descarta los objetos que han quedado muy por detrás de la cámara.
++ *
++ * Como los enemigos: no se recogían ni se borraban nunca, así que el array
++ * crecía durante toda la partida. El margen es generoso —casi una pantalla y
++ * media por detrás del jugador— para no quitar de las manos un botiquín al que
++ * se podía volver.
++ */
++export const cullPowerUps = (powerups: PowerUp[], cameraX: number, margin: number): PowerUp[] =>
++    powerups.filter(pu => pu.x + pu.w > cameraX - margin);
++
+ export const spawnPowerUp = (powerups: PowerUp[], x: number, y: number, dropRate: number, limitToType?: WeaponType) => {
+     // Dynamic drop rate based on difficulty
+     if (Math.random() > dropRate) return;
+diff --git a/src/game/world.test.ts b/src/game/world.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..0e2722d4cb74f110c425ca421837429d301f6fbc
+--- /dev/null
++++ b/src/game/world.test.ts
+@@ -0,0 +1,168 @@
++import { describe, it, expect } from 'vitest';
++import { createWorld, syncHud, snapshotHud, hudChanged, type World } from './world';
++import { applyPerk } from './perks';
++import type { RunConfig } from './player';
++
++const CONFIG: RunConfig = { loadout: 'all', difficulty: 'normal', character: 'molar' };
++const nuevo = () => createWorld(CONFIG);
++
++/**
++ * Reproduce el puente motor -> UI tal y como lo hace el bucle: se guarda una
++ * instantánea, y en cada frame se sincroniza y se compara para decidir si hay que
++ * avisar a React.
++ */
++const publisher = (world: World) => {
++  let published = snapshotHud(world);
++  let publicaciones = 0;
++
++  return {
++    frame() {
++      syncHud(world);
++      if (hudChanged(world.hud, published)) {
++        published = snapshotHud(world);
++        publicaciones++;
++      }
++      return published;
++    },
++    get publicaciones() {
++      return publicaciones;
++    },
++  };
++};
++
++describe('snapshotHud', () => {
++  it('devuelve una copia, no el mismo objeto', () => {
++    const world = nuevo();
++    const snap = snapshotHud(world);
++    expect(snap).not.toBe(world.hud);
++    expect(snap).toEqual(world.hud);
++  });
++
++  it('la copia no se mueve cuando el mundo sigue cambiando', () => {
++    const world = nuevo();
++    const snap = snapshotHud(world);
++    world.player.hp -= 40;
++    syncHud(world);
++    expect(snap.hp).toBe(world.player.maxHp);
++    expect(world.hud.hp).toBe(world.player.maxHp - 40);
++  });
++
++  it('guardar la referencia en vez de la copia no detecta nada — el fallo original', () => {
++    // Documenta por qué esto tiene que ser una copia: el bucle guardaba
++    // `world.hud` tal cual, así que hudChanged comparaba el objeto consigo mismo,
++    // siempre daba falso y el HUD se quedaba congelado toda la partida.
++    const world = nuevo();
++    const alias = world.hud;
++
++    world.player.hp -= 40;
++    syncHud(world);
++
++    expect(hudChanged(world.hud, alias)).toBe(false);
++    expect(hudChanged(world.hud, snapshotHud(nuevo()))).toBe(true);
++  });
++});
++
++describe('publicación del HUD frame a frame', () => {
++  it('recibir daño se publica', () => {
++    const world = nuevo();
++    const pub = publisher(world);
++
++    expect(pub.frame().hp).toBe(world.player.maxHp);
++
++    world.player.hp -= 25;
++    const tras = pub.frame();
++
++    expect(tras.hp).toBe(world.player.maxHp - 25);
++    expect(pub.publicaciones).toBe(1);
++  });
++
++  it('un frame sin cambios no publica', () => {
++    const world = nuevo();
++    const pub = publisher(world);
++    for (let i = 0; i < 60; i++) pub.frame();
++    expect(pub.publicaciones).toBe(0);
++  });
++
++  it('publica cada cambio de vida, uno por uno', () => {
++    const world = nuevo();
++    const pub = publisher(world);
++
++    for (let i = 0; i < 4; i++) {
++      world.player.hp -= 10;
++      pub.frame();
++      pub.frame(); // el segundo frame no debe volver a publicar
++    }
++
++    expect(pub.publicaciones).toBe(4);
++    expect(world.hud.hp).toBe(world.player.maxHp - 40);
++  });
++
++  it('todo lo que el HUD dibuja llega a la instantánea', () => {
++    const world = nuevo();
++    const pub = publisher(world);
++    const p = world.player;
++
++    p.score += 500;
++    p.weapon = 'laser';
++    p.weaponLevel = 3;
++    p.lives = 2;
++    p.slowTimer = 0.5;
++    applyPerk(p, 'enamel_shield');
++    applyPerk(p, 'bristle_rage');
++    applyPerk(p, 'thick_enamel');
++    applyPerk(p, 'extra_dash');
++    applyPerk(p, 'fluoride_rush');
++    applyPerk(p, 'aerodynamic_floss');
++
++    const snap = pub.frame();
++
++    expect(snap).toMatchObject({
++      score: 500,
++      weapon: 'laser',
++      weaponLevel: 3,
++      lives: 2,
++      slowed: true,
++      maxShield: 25,
++      shield: 25,
++      maxDashes: 2,
++    });
++    // Los perks se acumulan sobre el perfil de la clase: el molar parte de
++    // SPD x0,92 y DEF +5%, así que estos valores son clase × perk.
++    expect(snap.damageMultiplier).toBeCloseTo(1.0 * 1.15);
++    expect(snap.speedMultiplier).toBeCloseTo(0.92 * 1.1);
++    expect(snap.damageReduction).toBeCloseTo(0.05 + 0.15);
++    expect(snap.dashCooldownMultiplier).toBeCloseTo(1.0 * 0.85);
++  });
++
++  it('el escudo se publica redondeado, para no re-renderizar en cada gota', () => {
++    const world = nuevo();
++    applyPerk(world.player, 'enamel_shield');
++    world.player.shield = 10.4;
++    syncHud(world);
++    expect(world.hud.shield).toBe(11);
++  });
++
++  it('cambiar de arma se publica aunque no cambie nada más', () => {
++    // Recoger un arma distinta no da puntos: antes el HUD seguía mostrando la
++    // anterior hasta la siguiente baja.
++    const world = nuevo();
++    const pub = publisher(world);
++    pub.frame();
++
++    world.player.weapon = 'toothbrush';
++    expect(pub.frame().weapon).toBe('toothbrush');
++    expect(pub.publicaciones).toBe(1);
++  });
++
++  it('la vida del jefe la escribe la IA y sobrevive al sincronizado', () => {
++    const world = nuevo();
++    const pub = publisher(world);
++
++    world.hud.bossName = 'Tartar Tank';
++    world.hud.bossMaxHp = 3500;
++    world.hud.bossHp = 3500;
++    const snap = pub.frame();
++
++    expect(snap).toMatchObject({ bossName: 'Tartar Tank', bossHp: 3500, bossMaxHp: 3500 });
++  });
++});
+diff --git a/src/game/world.ts b/src/game/world.ts
+index 00cbe973a91ba602eac955bb4703b5761cd9e48a..cf3a142358122ef3b3bd89ae3ff463e0f5c17d71 100644
+--- a/src/game/world.ts
++++ b/src/game/world.ts
+@@ -8,14 +8,21 @@ import type {
+   Camera,
+   LevelState,
+   Perk,
++  WeaponType,
+ } from '../types';
+ import { createPlayer, type RunConfig } from './player';
+ import { generateLevel } from './level';
++import { createTriggerState, type TriggerState } from './triggers';
+ 
+ /**
+- * Valores continuos que pinta el HUD. El motor los escribe aquí en vez de
+- * llamar a setters de React: la simulación no debe conocer la capa de UI.
+- * El componente publica esta instantánea una vez por frame.
++ * Valores que pinta el HUD. El motor los escribe aquí en vez de llamar a
++ * setters de React: la simulación no debe conocer la capa de UI. El componente
++ * publica esta instantánea una vez por frame.
++ *
++ * Todo lo que el HUD muestre tiene que estar **aquí**. El HUD leía antes la
++ * mitad de sus datos del `Player` mutable directamente, así que solo se
++ * refrescaban cuando cambiaba otra cosa de esta instantánea: cambiar de arma no
++ * da puntos, luego el HUD seguía mostrando la anterior hasta la siguiente baja.
+  */
+ export interface HudSnapshot {
+   score: number;
+@@ -25,6 +32,23 @@ export interface HudSnapshot {
+   bossName: string;
+   bossHp: number;
+   bossMaxHp: number;
++
++  // Estado del jugador
++  /** Redondeado hacia arriba: la regeneración es continua y no interesa
++   *  re-renderizar React en cada frame por una décima de escudo. */
++  shield: number;
++  maxShield: number;
++  lives: number;
++  weapon: WeaponType;
++  weaponLevel: number;
++  slowed: boolean;
++
++  // Multiplicadores acumulados por perks, clase y dificultad
++  damageMultiplier: number;
++  speedMultiplier: number;
++  damageReduction: number;
++  dashCooldownMultiplier: number;
++  maxDashes: number;
+ }
+ 
+ /**
+@@ -38,7 +62,7 @@ export type GameEvent =
+   | { type: 'game-over'; score: number }
+   | { type: 'victory' };
+ 
+-/** Estado mutable de la simulación. Se muta in situ, frame a frame. */
++/** Estado mutable de la simulación. Se muta in situ, paso a paso. */
+ export interface World {
+   player: Player;
+   enemies: Enemy[];
+@@ -53,7 +77,16 @@ export interface World {
+   /** Intensidad restante del temblor de cámara. */
+   shake: number;
+   levelTransitioning: boolean;
++  /**
++   * Segundos que faltan para que se cierren las mandíbulas tras limpiar el
++   * stage. Antes era un `setTimeout` que nadie cancelaba: si reiniciabas dentro
++   * de esos 3 segundos, saltaba sobre la partida nueva y la hacía subir de
++   * stage. Como temporizador del mundo, se reinicia con el mundo.
++   */
++  stageClearTimer: number;
+   transition: { phase: 'none' | 'closing' | 'opening'; progress: number };
++  /** Relojes de comportamiento que invocan al jefe oculto. */
++  triggers: TriggerState;
+   hud: HudSnapshot;
+   events: GameEvent[];
+ }
+@@ -66,10 +99,11 @@ export const createWorld = (config: RunConfig): World => {
+     stage: 1,
+     distanceTraveled: 0,
+     bossSpawned: false,
++    bossDefeated: false,
+     levelWidth: INITIAL_LEVEL_WIDTH,
+   };
+ 
+-  return {
++  const world: World = {
+     player,
+     enemies: [],
+     projectiles: [],
+@@ -81,7 +115,9 @@ export const createWorld = (config: RunConfig): World => {
+     waveTimer: 0,
+     shake: 0,
+     levelTransitioning: false,
++    stageClearTimer: 0,
+     transition: { phase: 'none', progress: 0 },
++    triggers: createTriggerState(player.x),
+     hud: {
+       score: 0,
+       hp: player.hp,
+@@ -90,11 +126,71 @@ export const createWorld = (config: RunConfig): World => {
+       bossName: 'Boss',
+       bossHp: 0,
+       bossMaxHp: 0,
++      shield: Math.ceil(player.shield),
++      maxShield: player.maxShield,
++      lives: player.lives,
++      weapon: player.weapon,
++      weaponLevel: player.weaponLevel,
++      slowed: false,
++      damageMultiplier: player.stats.damageMultiplier,
++      speedMultiplier: player.stats.speedMultiplier,
++      damageReduction: player.stats.damageReduction,
++      dashCooldownMultiplier: player.stats.dashCooldownMultiplier,
++      maxDashes: player.stats.maxDashes,
+     },
+     events: [],
+   };
++
++  return world;
+ };
+ 
++/**
++ * Copia al HUD todo lo que se deriva del jugador.
++ *
++ * Se llama una vez por frame desde el bucle, no desde la simulación, así que
++ * también corre mientras el juego está congelado eligiendo perk. Esto sustituye
++ * a los `s.hud.hp = p.hp` repartidos por `update()`, que había que recordar
++ * poner en cada sitio que tocara una estadística.
++ *
++ * `bossName`, `bossHp` y `bossMaxHp` no se tocan aquí: los escribe la IA del
++ * jefe, que es quien sabe cuál está activo.
++ */
++export const syncHud = (world: World) => {
++  const p = world.player;
++  const hud = world.hud;
++
++  hud.score = p.score;
++  // Sin bajar de 0: el golpe mortal deja la vida en negativo y el HUD pintaba
++  // "-12/115" y una barra de anchura negativa durante el último frame.
++  hud.hp = Math.max(0, p.hp);
++  hud.maxHp = p.maxHp;
++  hud.stage = world.level.stage;
++  hud.shield = Math.ceil(p.shield);
++  hud.maxShield = p.maxShield;
++  hud.lives = p.lives;
++  hud.weapon = p.weapon;
++  hud.weaponLevel = p.weaponLevel;
++  hud.slowed = p.slowTimer > 0;
++  hud.damageMultiplier = p.stats.damageMultiplier;
++  hud.speedMultiplier = p.stats.speedMultiplier;
++  hud.damageReduction = p.stats.damageReduction;
++  hud.dashCooldownMultiplier = p.stats.dashCooldownMultiplier;
++  hud.maxDashes = p.stats.maxDashes;
++};
++
++/**
++ * Copia de la instantánea, para poder comparar el mundo contra lo último que vio
++ * la UI.
++ *
++ * Tiene que ser una **copia**. El bucle guardaba la referencia
++ * (`published = world.hud`), así que `hudChanged` comparaba el objeto consigo
++ * mismo: siempre daba falso y `setHud` no volvía a llamarse nunca. El HUD se
++ * quedaba congelado en los valores del arranque —la barra de vida no bajaba al
++ * recibir daño y la puntuación no subía— aunque el motor estuviera escribiendo
++ * los valores correctos.
++ */
++export const snapshotHud = (world: World): HudSnapshot => ({ ...world.hud });
++
+ /** true si algún valor de la instantánea cambió respecto a la anterior. */
+ export const hudChanged = (a: HudSnapshot, b: HudSnapshot): boolean =>
+   a.score !== b.score ||
+@@ -103,4 +199,15 @@ export const hudChanged = (a: HudSnapshot, b: HudSnapshot): boolean =>
+   a.stage !== b.stage ||
+   a.bossName !== b.bossName ||
+   a.bossHp !== b.bossHp ||
+-  a.bossMaxHp !== b.bossMaxHp;
++  a.bossMaxHp !== b.bossMaxHp ||
++  a.shield !== b.shield ||
++  a.maxShield !== b.maxShield ||
++  a.lives !== b.lives ||
++  a.weapon !== b.weapon ||
++  a.weaponLevel !== b.weaponLevel ||
++  a.slowed !== b.slowed ||
++  a.damageMultiplier !== b.damageMultiplier ||
++  a.speedMultiplier !== b.speedMultiplier ||
++  a.damageReduction !== b.damageReduction ||
++  a.dashCooldownMultiplier !== b.dashCooldownMultiplier ||
++  a.maxDashes !== b.maxDashes;
+diff --git a/src/i18n/en.ts b/src/i18n/en.ts
+index 692da91f1cd451e0fa52134dbfe56e7e956338e1..143e71c9c4a2b016b5cf22d49f35ea637c1bae5d 100644
+--- a/src/i18n/en.ts
++++ b/src/i18n/en.ts
+@@ -44,7 +44,7 @@ export const en = {
+     ach_boss_title: 'Giant Slayer',
+     ach_boss_desc: 'Defeat any Stage Boss.',
+     rewards_title: 'AVAILABLE UPGRADES (PERKS)',
+-    arsenal_title: 'ARSENAL (Level Up Max 3)',
++    arsenal_title: 'ARSENAL (Level Up Max 5)',
+     bosses_title: 'MOST WANTED (Bosses)',
+     enemies_title: 'COMMON THREATS',
+     close: 'CLOSE',
+@@ -72,6 +72,8 @@ export const en = {
+     subtitle: 'The Cavities Won...',
+     try_again: 'TRY AGAIN',
+     menu: 'MAIN MENU',
++    /** Mientras se espera el diagnóstico de Gemini. */
++    analyzing: 'Analyzing the damage...',
+   },
+   perks: {
+     title: 'LEVEL UP!',
+diff --git a/src/i18n/es.ts b/src/i18n/es.ts
+index 06fec78c8d2731c4ab23c2556a1d4b109f4f761f..84c7ec9e5d169d689d188a49493542ac2e372f9d 100644
+--- a/src/i18n/es.ts
++++ b/src/i18n/es.ts
+@@ -44,7 +44,7 @@ export const es: Dictionary = {
+     ach_boss_title: 'Matagigantes',
+     ach_boss_desc: 'Derrota a cualquier Jefe de Fase.',
+     rewards_title: 'MEJORAS DISPONIBLES (PERKS)',
+-    arsenal_title: 'ARSENAL (Nivel Max 3)',
++    arsenal_title: 'ARSENAL (Nivel Max 5)',
+     bosses_title: 'LOS MÁS BUSCADOS (Jefes)',
+     enemies_title: 'AMENAZAS COMUNES',
+     close: 'CERRAR',
+@@ -72,6 +72,7 @@ export const es: Dictionary = {
+     subtitle: 'Las Caries ganaron...',
+     try_again: 'REINTENTAR',
+     menu: 'MENÚ PRINCIPAL',
++    analyzing: 'Analizando los daños...',
+   },
+   perks: {
+     title: '¡SUBIDA DE NIVEL!',
+diff --git a/src/types.ts b/src/types.ts
+index 19cc3f8640f57e64d6368253c63ac490b446784b..c8159d650f25f5bedcab1d3b679c3de96d5e347d 100644
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -128,6 +128,14 @@ export interface LevelState {
+   stage: number;
+   distanceTraveled: number;
+   bossSpawned: boolean;
++  /**
++   * El jefe del stage ya ha caído. Separado de `bossSpawned` porque el jefe
++   * oculto también es `subType: 'boss'`: sin esta distinción, matarlo contaba
++   * como limpiar el stage (y podía aparecer a media pantalla del inicio),
++   * mientras que matar al jefe del stage con el oculto todavía vivo podía
++   * volver a generar al jefe del stage.
++   */
++  bossDefeated: boolean;
+   levelWidth: number;
+ }
+ 

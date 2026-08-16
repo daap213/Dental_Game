@@ -44,7 +44,7 @@ export const es: Dictionary = {
     ach_boss_title: 'Matagigantes',
     ach_boss_desc: 'Derrota a cualquier Jefe de Fase.',
     rewards_title: 'MEJORAS DISPONIBLES (PERKS)',
-    arsenal_title: 'ARSENAL (Nivel Max 3)',
+    arsenal_title: 'ARSENAL (Nivel Max 5)',
     bosses_title: 'LOS MÁS BUSCADOS (Jefes)',
     enemies_title: 'AMENAZAS COMUNES',
     close: 'CERRAR',
@@ -72,6 +72,7 @@ export const es: Dictionary = {
     subtitle: 'Las Caries ganaron...',
     try_again: 'REINTENTAR',
     menu: 'MENÚ PRINCIPAL',
+    analyzing: 'Analizando los daños...',
   },
   perks: {
     title: '¡SUBIDA DE NIVEL!',

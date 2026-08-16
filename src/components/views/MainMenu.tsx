@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { Credits } from './Credits';
 import { TEXT } from '../../i18n';
+import { characterSummary } from '../../game/data/characters';
 import { PixelPanel, PixelButton, PixelLabel, PixelKey } from '../ui/Pixel';
 import { useFitScale } from '../useFitScale';
 
@@ -129,11 +130,13 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     { id: 'legend', label: t.diff_legend, active: 'bg-purple-600 border-purple-300 text-white' },
   ];
 
-  const characters: Array<{ id: CharacterType; label: string }> = [
-    { id: 'molar', label: c.molar },
-    { id: 'incisor', label: c.incisor },
-    { id: 'canine', label: c.canine },
-    { id: 'premolar', label: c.premolar },
+  // El resumen sale de `data/characters.ts`, así que la ficha de cada clase no
+  // puede desviarse de lo que hace de verdad al empezar la partida.
+  const characters: Array<{ id: CharacterType; label: string; summary: string }> = [
+    { id: 'molar', label: c.molar, summary: characterSummary('molar') },
+    { id: 'incisor', label: c.incisor, summary: characterSummary('incisor') },
+    { id: 'canine', label: c.canine, summary: characterSummary('canine') },
+    { id: 'premolar', label: c.premolar, summary: characterSummary('premolar') },
   ];
 
   return (
@@ -204,9 +207,16 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                     onClick={() => setCharacter(option.id)}
                     activeClass="bg-pink-600 border-pink-300 text-white"
                     marker
-                    className="px-2 py-2 text-left"
+                    className="flex flex-col items-start gap-1 px-2 py-2 text-left"
                   >
-                    {option.label}
+                    <span>{option.label}</span>
+                    <span
+                      className={`font-mono text-[7px] leading-none ${
+                        character === option.id ? 'text-pink-100' : 'text-slate-500'
+                      }`}
+                    >
+                      {option.summary}
+                    </span>
                   </PixelButton>
                 ))}
               </div>

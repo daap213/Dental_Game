@@ -44,7 +44,7 @@ export const en = {
     ach_boss_title: 'Giant Slayer',
     ach_boss_desc: 'Defeat any Stage Boss.',
     rewards_title: 'AVAILABLE UPGRADES (PERKS)',
-    arsenal_title: 'ARSENAL (Level Up Max 3)',
+    arsenal_title: 'ARSENAL (Level Up Max 5)',
     bosses_title: 'MOST WANTED (Bosses)',
     enemies_title: 'COMMON THREATS',
     close: 'CLOSE',
@@ -72,6 +72,8 @@ export const en = {
     subtitle: 'The Cavities Won...',
     try_again: 'TRY AGAIN',
     menu: 'MAIN MENU',
+    /** Mientras se espera el diagnóstico de Gemini. */
+    analyzing: 'Analyzing the damage...',
   },
   perks: {
     title: 'LEVEL UP!',
