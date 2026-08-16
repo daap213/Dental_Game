@@ -7,7 +7,7 @@ import {
     SHIELD_REGEN_DELAY, SHIELD_REGEN_RATE,
     KNOCKBACK_X, KNOCKBACK_Y,
     FIXED_STEP,
-    HIT_INVULNERABILITY, RESPAWN_INVULNERABILITY,
+    HIT_INVULNERABILITY, RESPAWN_INVULNERABILITY, HIT_FLASH,
     STAGE_CLEAR_DELAY, LEVEL_UP_HEAL, HEALTH_PICKUP,
     SCORE_PER_KILL, SCORE_PER_BOSS, SCORE_WEAPON_LEVEL_UP, SCORE_WEAPON_MAXED,
 } from '../game/data/physics';
@@ -22,6 +22,7 @@ import { createWorld, hudChanged, syncHud, snapshotHud, type World, type HudSnap
 import { planSteps } from '../game/loop';
 import { fallIntoPit, type RunConfig } from '../game/player';
 import { renderScene } from '../game/render/scene';
+import { setupPixelContext } from '../game/render/pixel';
 import { spawnBoss, spawnEnemy, updateEnemyAI, spawnHiddenBoss, cullEnemies } from '../game/enemies';
 import { spawnProjectile, spawnPowerUp, cullPowerUps } from '../game/weapons';
 import { getRandomPerks, applyPerk } from '../game/perks';
@@ -173,6 +174,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    // Sin interpolación al estampar sprites horneados: el CSS `image-rendering`
+    // solo afecta al escalado final del elemento, no a `drawImage`.
+    setupPixelContext(ctx);
 
     let animationFrameId: number;
     let lastTime = performance.now();
@@ -583,6 +587,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     if (p.frameTimer > 0) p.frameTimer--;
     if (p.invincibleTimer > 0) p.invincibleTimer -= dt;
 
+    // Relojes de presentación: de aquí salen la pose y el destello de impacto.
+    p.animTimer += dt;
+    if (p.hitTimer > 0) p.hitTimer -= dt;
+
     if (!s.level.bossSpawned) {
         let targetX = p.x - CANVAS_WIDTH * 0.3;
         targetX = Math.max(0, Math.min(targetX, s.level.levelWidth - CANVAS_WIDTH));
@@ -639,6 +647,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
     s.enemies.forEach(enemy => {
         enemy.aiTimer += dt; enemy.attackTimer += dt; enemy.frameTimer += dt;
+        enemy.animTimer += dt;
+        if (enemy.hitTimer > 0) enemy.hitTimer -= dt;
+        if (enemy.actionTimer > 0) enemy.actionTimer -= dt;
         const dist = Math.abs(p.x - enemy.x);
         if (dist < CANVAS_WIDTH + 100 || enemy.subType === 'boss') {
             updateEnemyAI(enemy, p, s, audioManager.current);
@@ -683,6 +694,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
                 if (checkRectCollide(proj, enemy)) {
                     enemy.hp -= proj.damage;
+                    enemy.hitTimer = HIT_FLASH;
                     if (pierces) proj.hitIds.push(enemy.id);
                     else proj.lifeTime = 0;
                     spawnParticle(proj.x, proj.y, '#fff', 3);
@@ -767,6 +779,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     });
 
     if (playerHit && p.invincibleTimer <= 0) {
+        p.hitTimer = HIT_FLASH;
         hitDamage = hitDamage * p.stats.damageTakenMultiplier;
         hitDamage = Math.max(1, hitDamage * (1 - p.stats.damageReduction));
 
@@ -866,11 +879,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
   return (
     <>
-      <canvas 
-        ref={canvasRef} 
-        width={CANVAS_WIDTH} 
-        height={CANVAS_HEIGHT} 
-        className="block w-full h-full object-contain pointer-events-none"
+      {/* El lienzo llena su contenedor, que `App` ya dimensiona en un múltiplo
+          exacto de 800×450: así cada píxel lógico ocupa un número entero de
+          píxeles de pantalla, que es la condición para que el pixel art se vea
+          nítido y no hormiguee al desplazarse. */}
+      <canvas
+        ref={canvasRef}
+        width={CANVAS_WIDTH}
+        height={CANVAS_HEIGHT}
+        className="pointer-events-none block h-full w-full"
         style={{ imageRendering: 'pixelated' }}
       />
       {/* El HUD solo lee la instantánea publicada: nada de `entities.current`

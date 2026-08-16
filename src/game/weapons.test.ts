@@ -18,6 +18,8 @@ const makePlayer = (weapon: WeaponType, weaponLevel: number): Player =>
     color: '#fff',
     facing: 1,
     isGrounded: false,
+    animTimer: 0,
+    hitTimer: 0,
     frameTimer: 0,
     state: 0,
     character: 'molar',

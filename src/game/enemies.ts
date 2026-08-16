@@ -1,6 +1,6 @@
 
 import { Enemy, LevelState, Language, Player } from '../types';
-import { CANVAS_WIDTH, CANVAS_HEIGHT, GRAVITY } from './data/physics';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, GRAVITY, ATTACK_POSE } from './data/physics';
 import { COLORS } from './data/palette';
 import { AudioManager } from './audio';
 import { spawnProjectile } from './weapons';
@@ -28,7 +28,7 @@ export const spawnHiddenBoss = (world: World, audio: AudioManager, lang: Languag
         y: CANVAS_HEIGHT - 250,
         w: boss.w, h: boss.h, vx: 0, vy: 0, hp: boss.maxHp, maxHp: boss.maxHp,
         type: 'enemy', subType: 'boss', bossVariant: boss.variant, phase: 1,
-        color: boss.color, facing: -1, isGrounded: false, aiTimer: 0, attackTimer: 0, frameTimer: 0, state: 0, bossState: 0
+        color: boss.color, facing: -1, isGrounded: false, aiTimer: 0, attackTimer: 0, frameTimer: 0, state: 0, bossState: 0, animTimer: 0, hitTimer: 0, actionTimer: 0
     });
 };
 
@@ -44,7 +44,7 @@ export const spawnBoss = (world: World, audio: AudioManager, lang: Language) => 
         y: CANVAS_HEIGHT - 250,
         w: boss.w, h: boss.h, vx: 0, vy: 0, hp: boss.maxHp, maxHp: boss.maxHp,
         type: 'enemy', subType: 'boss', bossVariant: boss.variant, phase: 1,
-        color: boss.color, facing: -1, isGrounded: true, aiTimer: 0, attackTimer: 0, frameTimer: 0, state: 0, bossState: 0
+        color: boss.color, facing: -1, isGrounded: true, aiTimer: 0, attackTimer: 0, frameTimer: 0, state: 0, bossState: 0, animTimer: 0, hitTimer: 0, actionTimer: 0
     });
     world.hud.bossMaxHp = boss.maxHp;
     world.hud.bossHp = boss.maxHp;
@@ -61,7 +61,7 @@ export const spawnEnemy = (level: LevelState, cameraX: number, enemies: Enemy[])
     enemies.push({
       id: Math.random().toString(),
       x, y, w: entry.w, h: entry.h, vx: 0, vy: 0, hp, maxHp: hp, type: 'enemy', subType: entry.subType,
-      color: entry.color, facing: -1, isGrounded: false, aiTimer: 0, attackTimer: 0, frameTimer: 0, state: 0, bossState: 0
+      color: entry.color, facing: -1, isGrounded: false, aiTimer: 0, attackTimer: 0, frameTimer: 0, state: 0, bossState: 0, animTimer: 0, hitTimer: 0, actionTimer: 0
     });
 };
 
@@ -83,21 +83,21 @@ export const updateEnemyAI = (enemy: Enemy, p: Player, s: World, audio: AudioMan
         case 'bacteria': enemy.vx = enemy.x > p.x ? -3 : 3; if(enemy.isGrounded && Math.random()<0.01) enemy.vy = -8; enemy.vy += GRAVITY; break;
         case 'plaque_monster': enemy.vx = enemy.x > p.x ? -2 : 2; enemy.vy += GRAVITY; break;
         case 'candy_bomber': enemy.vy = Math.sin(Date.now()/200); enemy.vx = -4; 
-            if(enemy.attackTimer > 2 && Math.abs(enemy.x-p.x)<50) { spawnProjectile(s.projectiles, enemy.x, enemy.y+20, 0, 1, 'enemy', 'normal'); enemy.attackTimer=0; } break;
+            if(enemy.attackTimer > 2 && Math.abs(enemy.x-p.x)<50) { spawnProjectile(s.projectiles, enemy.x, enemy.y+20, 0, 1, 'enemy', 'normal'); enemy.attackTimer=0; enemy.actionTimer=ATTACK_POSE; } break;
         case 'tartar_turret': enemy.vx = 0; enemy.vy += GRAVITY;
             if(enemy.attackTimer > 3 && Math.abs(p.x-enemy.x)<400) { 
                 const angle = Math.atan2(p.y-enemy.y, p.x-enemy.x);
                 s.projectiles.push({id:Math.random().toString(),x:enemy.x+enemy.w/2,y:enemy.y+enemy.h/2,w:8,h:8,vx:Math.cos(angle)*5,vy:Math.sin(angle)*5,hp:1,maxHp:1,type:'projectile',projectileType:'bullet',damage:10,owner:'enemy',lifeTime:3,hitIds:[],color:COLORS.projectileEnemy,facing:1,isGrounded:false,frameTimer:0,state:0});
-                enemy.attackTimer=0; 
+                enemy.attackTimer=0; enemy.actionTimer=ATTACK_POSE; 
             } break;
         case 'sugar_rusher': enemy.vx = enemy.x > p.x ? -8 : 8; if(enemy.isGrounded && Math.random()<0.05) enemy.vy = -12; enemy.vy += GRAVITY; break;
         case 'sugar_fiend': enemy.vx = Math.abs(p.x-enemy.x)<150 ? (enemy.x>p.x?5:-5) : (enemy.x>p.x?-4:4); enemy.vy += GRAVITY;
-            if(enemy.attackTimer>1) { s.projectiles.push({id:Math.random().toString(),x:enemy.x,y:enemy.y+enemy.h-5,w:24,h:10,vx:0,vy:0,hp:1,maxHp:1,type:'projectile',projectileType:'sludge',damage:0,owner:'enemy',lifeTime:4,hitIds:[],color:COLORS.projectileSludge,facing:1,isGrounded:false,frameTimer:0,state:0}); enemy.attackTimer=0; } break;
+            if(enemy.attackTimer>1) { s.projectiles.push({id:Math.random().toString(),x:enemy.x,y:enemy.y+enemy.h-5,w:24,h:10,vx:0,vy:0,hp:1,maxHp:1,type:'projectile',projectileType:'sludge',damage:0,owner:'enemy',lifeTime:4,hitIds:[],color:COLORS.projectileSludge,facing:1,isGrounded:false,frameTimer:0,state:0}); enemy.attackTimer=0; enemy.actionTimer=ATTACK_POSE; } break;
         case 'acid_spitter': enemy.vx = 0; enemy.vy += GRAVITY;
-            if(enemy.attackTimer>2.5 && Math.abs(p.x-enemy.x)<500) { const dx=p.x-enemy.x; const dy=p.y-enemy.y-100; s.projectiles.push({id:Math.random().toString(),x:enemy.x+enemy.w/2,y:enemy.y,w:12,h:12,vx:dx*0.02,vy:dy*0.02-5,hp:1,maxHp:1,type:'projectile',projectileType:'acid',damage:15,owner:'enemy',lifeTime:3,hitIds:[],color:COLORS.projectileAcid,facing:1,isGrounded:false,frameTimer:0,state:0}); enemy.attackTimer=0; } break;
+            if(enemy.attackTimer>2.5 && Math.abs(p.x-enemy.x)<500) { const dx=p.x-enemy.x; const dy=p.y-enemy.y-100; s.projectiles.push({id:Math.random().toString(),x:enemy.x+enemy.w/2,y:enemy.y,w:12,h:12,vx:dx*0.02,vy:dy*0.02-5,hp:1,maxHp:1,type:'projectile',projectileType:'acid',damage:15,owner:'enemy',lifeTime:3,hitIds:[],color:COLORS.projectileAcid,facing:1,isGrounded:false,frameTimer:0,state:0}); enemy.attackTimer=0; enemy.actionTimer=ATTACK_POSE; } break;
         case 'gingivitis_grunt': enemy.vy += GRAVITY; 
             if(enemy.bossState === 1) { enemy.vx = enemy.facing * 12; if(enemy.aiTimer > 1) { enemy.bossState=0; enemy.aiTimer=0; } }
-            else { enemy.vx = enemy.x > p.x ? -2 : 2; enemy.facing = enemy.vx > 0 ? 1 : -1; if(Math.abs((p.y+p.h)-(enemy.y+enemy.h))<30 && Math.abs(p.x-enemy.x)<300 && enemy.aiTimer>2) { enemy.bossState=1; enemy.aiTimer=0; } } break;
+            else { enemy.vx = enemy.x > p.x ? -2 : 2; enemy.facing = enemy.vx > 0 ? 1 : -1; if(Math.abs((p.y+p.h)-(enemy.y+enemy.h))<30 && Math.abs(p.x-enemy.x)<300 && enemy.aiTimer>2) { enemy.bossState=1; enemy.aiTimer=0; enemy.actionTimer=ATTACK_POSE; } } break;
         case 'boss':
              // Entero y sin negativos: el daño con multiplicadores es fraccionario
              // y el golpe mortal llegaba a pintar un porcentaje negativo.
@@ -152,7 +152,7 @@ export const updateEnemyAI = (enemy: Enemy, p: Player, s: World, audio: AudioMan
                              owner: 'enemy', lifeTime: 4, hitIds: [], 
                              color: '#facc15', facing: 1, isGrounded: false, frameTimer: 0, state: 0
                          });
-                         enemy.attackTimer = 0;
+                         enemy.attackTimer = 0; enemy.actionTimer = ATTACK_POSE;
                      }
                      if (enemy.aiTimer > 2) {
                          enemy.bossState = 0;
@@ -187,7 +187,7 @@ export const updateEnemyAI = (enemy: Enemy, p: Player, s: World, audio: AudioMan
                      enemy.vx = (p.x - enemy.x) > 0 ? 5 : -5; enemy.vy += GRAVITY;
                      if (Math.floor(Date.now() / 200) % 2 === 0 && enemy.attackTimer > 0.2) {
                          spawnProjectile(s.projectiles, enemy.x + (enemy.vx>0?enemy.w:0), enemy.y + 40, enemy.vx > 0 ? 1 : -1, 0, 'enemy', 'normal');
-                         enemy.attackTimer = 0;
+                         enemy.attackTimer = 0; enemy.actionTimer = ATTACK_POSE;
                      }
                      if (enemy.aiTimer > 3) { enemy.bossState = 0; enemy.aiTimer = 0; }
                  }
@@ -197,7 +197,7 @@ export const updateEnemyAI = (enemy: Enemy, p: Player, s: World, audio: AudioMan
                  if(enemy.bossState===0) { enemy.vx=(p.x-enemy.x)*0.03; if(enemy.aiTimer>1.5) { const r=Math.random(); enemy.bossState=r<0.3?1:(r<0.5?2:(r<0.7?5:(r<0.85?6:7))); enemy.aiTimer=0; } }
                  else if(enemy.bossState===1 && enemy.aiTimer>1) { // Summon
                     audio.playBossAttack('summon'); 
-                    for(let i=0;i<4;i++) s.enemies.push({id:Math.random().toString(),x:enemy.x+enemy.w/2+(i*30-45),y:enemy.y+enemy.h,w:20,h:20,vx:(Math.random()-0.5)*12,vy:-8,hp:15,maxHp:15,type:'enemy',subType:'bacteria',color:COLORS.enemyBacteria,facing:-1,isGrounded:false,aiTimer:0,attackTimer:0,frameTimer:0,state:0,bossState:0}); enemy.bossState=0; enemy.aiTimer=0; 
+                    for(let i=0;i<4;i++) s.enemies.push({id:Math.random().toString(),x:enemy.x+enemy.w/2+(i*30-45),y:enemy.y+enemy.h,w:20,h:20,vx:(Math.random()-0.5)*12,vy:-8,hp:15,maxHp:15,type:'enemy',subType:'bacteria',color:COLORS.enemyBacteria,facing:-1,isGrounded:false,aiTimer:0,attackTimer:0,frameTimer:0,state:0,bossState:0,animTimer:0,hitTimer:0,actionTimer:0}); enemy.bossState=0; enemy.aiTimer=0; 
                  }
                  else if(enemy.bossState===2 && enemy.aiTimer>0.5) { // Giant Laser
                     audio.playBossAttack('laser'); s.projectiles.push({id:Math.random().toString(),x:enemy.x+enemy.w/2,y:enemy.y+enemy.h,w:30,h:400,vx:(p.x-enemy.x)*0.03,vy:15,hp:1,maxHp:1,type:'projectile',projectileType:'laser',damage:30,owner:'enemy',lifeTime:1,hitIds:[],color:'#ef4444',facing:1,isGrounded:false,frameTimer:0,state:0}); enemy.bossState=0; enemy.aiTimer=0; 
@@ -228,7 +228,7 @@ export const updateEnemyAI = (enemy: Enemy, p: Player, s: World, audio: AudioMan
                          audio.playBossAttack('shoot'); 
                          const ang = Date.now()/200; 
                          for(let i=0;i<3;i++) spawnProjectile(s.projectiles, enemy.x+enemy.w/2,enemy.y+enemy.h/2, Math.cos(ang+i*2), Math.sin(ang+i*2), 'enemy', 'normal'); 
-                         enemy.attackTimer=0; 
+                         enemy.attackTimer=0; enemy.actionTimer=ATTACK_POSE; 
                      } 
                  }
                  else { 
@@ -242,7 +242,7 @@ export const updateEnemyAI = (enemy: Enemy, p: Player, s: World, audio: AudioMan
                                  const ang = (Math.PI*2 * i) / 8;
                                  s.projectiles.push({id:Math.random().toString(),x:enemy.x+enemy.w/2,y:enemy.y+enemy.h/2,w:15,h:15,vx:Math.cos(ang)*8,vy:Math.sin(ang)*8,hp:1,maxHp:1,type:'projectile',projectileType:'bullet',damage:20,owner:'enemy',lifeTime:3,hitIds:[],color:'#ef4444',facing:1,isGrounded:false,frameTimer:0,state:0});
                              }
-                             enemy.attackTimer = 0;
+                             enemy.attackTimer = 0; enemy.actionTimer = ATTACK_POSE;
                          }
                          if(enemy.aiTimer>3) { enemy.bossState=Math.random()>0.5?1:2; enemy.aiTimer=0; } 
                      } 
@@ -258,17 +258,17 @@ export const updateEnemyAI = (enemy: Enemy, p: Player, s: World, audio: AudioMan
                                  const ang = offset + (Math.PI*2*i)/4;
                                  s.projectiles.push({id:Math.random().toString(),x:enemy.x+enemy.w/2,y:enemy.y+enemy.h/2,w:12,h:12,vx:Math.cos(ang)*10,vy:Math.sin(ang)*10,hp:1,maxHp:1,type:'projectile',projectileType:'bullet',damage:15,owner:'enemy',lifeTime:3,hitIds:[],color:'#7f1d1d',facing:1,isGrounded:false,frameTimer:0,state:0});
                              }
-                             enemy.attackTimer = 0;
+                             enemy.attackTimer = 0; enemy.actionTimer = ATTACK_POSE;
                          }
                          if (enemy.aiTimer > 2.0) { enemy.bossState = 0; enemy.aiTimer = 0; }
                      }
                  }
              } else { // King
                  if(enemy.bossState===0) { enemy.vy=Math.sin(Date.now()/500)*0.5; enemy.vx=(p.x-enemy.x)*0.02; if(enemy.aiTimer>2) { enemy.aiTimer=0; const r=Math.random(); enemy.bossState=r<0.3?4:(r<0.6?2:1); } }
-                 else if(enemy.bossState===4 && enemy.attackTimer>0.5) { audio.playBossAttack('shoot'); for(let i=-2;i<=2;i++) spawnProjectile(s.projectiles, enemy.x, enemy.y, -9, i*3, 'enemy', 'normal'); enemy.attackTimer=0; enemy.bossState=0; enemy.aiTimer=0; }
+                 else if(enemy.bossState===4 && enemy.attackTimer>0.5) { audio.playBossAttack('shoot'); for(let i=-2;i<=2;i++) spawnProjectile(s.projectiles, enemy.x, enemy.y, -9, i*3, 'enemy', 'normal'); enemy.attackTimer=0; enemy.actionTimer=ATTACK_POSE; enemy.bossState=0; enemy.aiTimer=0; }
                  else if(enemy.bossState===2) { enemy.vy=-8; if(enemy.y<50) { enemy.bossState=3; enemy.vx=(p.x-enemy.x)*0.1; } }
                  else if(enemy.bossState===3) enemy.vy+=2;
-                 else if(enemy.bossState===1 && enemy.aiTimer>1) { audio.playBossAttack('summon'); s.enemies.push({id:Math.random().toString(),x:enemy.x,y:enemy.y+20,w:20,h:20,vx:-5,vy:-5,hp:10,maxHp:10,type:'enemy',subType:'sugar_rusher',color:COLORS.enemyRusher,facing:-1,isGrounded:false,aiTimer:0,attackTimer:0,frameTimer:0,state:0,bossState:0}); enemy.bossState=0; enemy.aiTimer=0; }
+                 else if(enemy.bossState===1 && enemy.aiTimer>1) { audio.playBossAttack('summon'); s.enemies.push({id:Math.random().toString(),x:enemy.x,y:enemy.y+20,w:20,h:20,vx:-5,vy:-5,hp:10,maxHp:10,type:'enemy',subType:'sugar_rusher',color:COLORS.enemyRusher,facing:-1,isGrounded:false,aiTimer:0,attackTimer:0,frameTimer:0,state:0,bossState:0,animTimer:0,hitTimer:0,actionTimer:0}); enemy.bossState=0; enemy.aiTimer=0; }
              }
              break;
      }

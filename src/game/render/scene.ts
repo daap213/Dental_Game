@@ -1,5 +1,6 @@
 import type { World } from '../world';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../data/physics';
+import { tone } from '../data/palette';
 import { drawBackground, drawPlatforms, drawTransition } from './level';
 import { drawEnemies } from './enemies';
 import { drawProjectiles, drawPowerUp, type AimInput } from './weapons';
@@ -12,12 +13,15 @@ import { drawPlayer } from './player';
  * por último la transición de mandíbulas, que va en coordenadas de pantalla.
  */
 export const renderScene = (ctx: CanvasRenderingContext2D, world: World, aim: AimInput) => {
-  ctx.fillStyle = '#0f172a';
+  ctx.fillStyle = tone('void.out');
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
   drawBackground(ctx, world.camera.x, world.level.stage);
 
   ctx.save();
-  ctx.translate(-world.camera.x, -world.camera.y);
+  // Cámara en enteros: con desplazamiento fraccionario todo el mundo se dibuja
+  // a medio píxel y el pixel art tiembla al moverse. El scroll queda un poco
+  // escalonado, que es el precio correcto en este estilo.
+  ctx.translate(-Math.round(world.camera.x), -Math.round(world.camera.y));
 
   drawPlatforms(ctx, world.platforms);
   world.powerups.forEach((pu) => drawPowerUp(ctx, pu));

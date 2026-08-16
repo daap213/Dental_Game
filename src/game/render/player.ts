@@ -1,110 +1,65 @@
 import type { Player } from '../../types';
 import { drawHeldWeapon, type AimInput } from './weapons';
-
-/** Silueta del diente según la clase elegida. */
-const drawPlayerSprite = (ctx: CanvasRenderingContext2D, p: Player, px: number, py: number) => {
-  ctx.fillStyle = '#fff';
-  ctx.beginPath();
-
-  if (p.character === 'incisor') {
-    // Flat top, rectangular
-    ctx.moveTo(px, py);
-    ctx.lineTo(px + p.w, py);
-    ctx.lineTo(px + p.w - 5, py + p.h);
-    ctx.lineTo(px + 5, py + p.h);
-    ctx.closePath();
-  } else if (p.character === 'canine') {
-    // Pointy
-    ctx.moveTo(px, py + p.h / 3);
-    ctx.lineTo(px + p.w / 2, py - 5);
-    ctx.lineTo(px + p.w, py + p.h / 3);
-    ctx.lineTo(px + p.w - 5, py + p.h);
-    ctx.lineTo(px + 5, py + p.h);
-    ctx.closePath();
-  } else if (p.character === 'premolar') {
-    // Two cusps
-    ctx.moveTo(px + 2, py + 5);
-    ctx.lineTo(px + p.w / 4, py - 2);
-    ctx.lineTo(px + p.w / 2, py + 5);
-    ctx.lineTo(px + p.w * 0.75, py - 2);
-    ctx.lineTo(px + p.w - 2, py + 5);
-    ctx.lineTo(px + p.w - 4, py + p.h);
-    ctx.lineTo(px + 4, py + p.h);
-    ctx.closePath();
-  } else {
-    // MOLAR (Default)
-    ctx.moveTo(px + 4, py + 8);
-    ctx.quadraticCurveTo(px + p.w / 4, py, px + p.w / 2, py + 6);
-    ctx.quadraticCurveTo(px + (3 * p.w) / 4, py, px + p.w - 4, py + 8);
-    ctx.quadraticCurveTo(px + p.w, py + p.h / 2, px + p.w - 6, py + p.h - 4);
-    ctx.lineTo(px + p.w / 2 + 4, py + p.h);
-    ctx.lineTo(px + p.w / 2, py + p.h - 8);
-    ctx.lineTo(px + p.w / 2 - 4, py + p.h);
-    ctx.lineTo(px + 6, py + p.h - 4);
-    ctx.quadraticCurveTo(px, py + p.h / 2, px + 4, py + 8);
-  }
-  ctx.fill();
-
-  // Shading
-  const grad = ctx.createLinearGradient(px, py, px, py + p.h);
-  grad.addColorStop(0, 'rgba(255,255,255,0.8)');
-  grad.addColorStop(1, 'rgba(200,200,200,0.2)');
-  ctx.fillStyle = grad;
-  ctx.fill();
-};
+import { px } from './pixel';
+import { drawSprite } from './sprites/format';
+import { playerSprite, playerSpriteId } from './sprites/player';
+import { playerPose } from './pose';
 
 /**
- * Jugador completo: sombra, escudo, silueta, cara, cinta y arma en mano.
- * No se dibuja si está muerto, y parpadea mientras es invulnerable.
+ * Jugador completo: sombra, escudo, sprite y arma en mano.
+ *
+ * La silueta ya no se dibuja con curvas: es un sprite de 32×32 dibujado a mano
+ * (`sprites/masks/player.ts`) del que se eligen corona por clase y cuerpo por
+ * pose. No se dibuja si está muerto, y parpadea mientras es invulnerable.
  */
 export const drawPlayer = (ctx: CanvasRenderingContext2D, p: Player, aim: AimInput) => {
   if (p.hp <= 0) return;
-  const blinking = p.invincibleTimer > 0 && Math.floor(Date.now() / 100) % 2 !== 0;
+
+  // Parpadeo de invulnerabilidad, con el reloj de animación en vez del reloj del
+  // sistema: así dos partidas iguales parpadean igual.
+  const blinking = p.invincibleTimer > 0 && Math.floor(p.animTimer * 10) % 2 !== 0;
   if (blinking) return;
 
-  ctx.save();
-  const px = p.x;
-  const py = p.y;
+  const pose = playerPose(p);
 
-  ctx.fillStyle = 'rgba(0,0,0,0.3)';
-  ctx.beginPath();
-  ctx.ellipse(px + p.w / 2, py + p.h - 2, 10, 4, 0, 0, Math.PI * 2);
-  ctx.fill();
+  // Sombra: tres tiras, que a esta escala leen mejor que una elipse suave.
+  px(ctx, p.x + 8, p.y + p.h - 2, p.w - 16, 2, 'gum.out');
+  px(ctx, p.x + 11, p.y + p.h, p.w - 22, 1, 'gum.out');
 
-  if (p.shield > 0) {
-    ctx.shadowColor = '#22d3ee';
-    ctx.shadowBlur = 15;
-    ctx.strokeStyle = `rgba(34, 211, 238, ${0.5 + Math.sin(Date.now() / 200) * 0.3})`;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(px + p.w / 2, py + p.h / 2, p.w / 1.5, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-  }
+  if (p.shield > 0) drawShield(ctx, p);
 
-  drawPlayerSprite(ctx, p, px, py);
-
-  // Face
-  const lookOffset = p.facing * 2;
-  ctx.fillStyle = '#1e293b';
-  ctx.beginPath();
-  ctx.ellipse(px + p.w / 2 + 4 + lookOffset, py + 14, 3, 4, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.ellipse(px + p.w / 2 - 4 + lookOffset, py + 14, 3, 4, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Sweatband
-  ctx.fillStyle = '#ef4444';
-  ctx.fillRect(px + 2, py + 8, p.w - 4, 4);
-  if (p.facing === -1) ctx.fillRect(px + p.w - 4, py + 8, 8, 4);
-  else ctx.fillRect(px - 4, py + 8, 8, 4);
-
-  ctx.fillStyle = '#fff';
-  ctx.beginPath();
-  ctx.arc(px + p.w / 2 + p.facing * 10, py + 22, 5, 0, Math.PI * 2);
-  ctx.fill();
+  drawSprite(ctx, playerSpriteId(p.character, pose), playerSprite(p.character, pose), p.x, p.y, p.facing === -1);
 
   drawHeldWeapon(ctx, p, aim);
+};
 
-  ctx.restore();
+/**
+ * Barrera de pasta dental: un anillo de píxeles alrededor del jugador.
+ *
+ * Se dibuja con ocho tramos rectos en lugar de un `arc` con `shadowBlur`, que a
+ * esta resolución se convertía en una mancha borrosa.
+ */
+const drawShield = (ctx: CanvasRenderingContext2D, p: Player) => {
+  const left = p.x - 3;
+  const top = p.y - 2;
+  const right = p.x + p.w + 2;
+  const bottom = p.y + p.h + 1;
+  const pulse = Math.floor(p.animTimer * 6) % 2 === 0;
+  const shell = pulse ? 'laser.mid' : 'laser.light';
+
+  // Lados
+  px(ctx, left, top + 6, 1, bottom - top - 12, shell);
+  px(ctx, right, top + 6, 1, bottom - top - 12, shell);
+  // Arriba y abajo
+  px(ctx, left + 6, top, right - left - 12, 1, shell);
+  px(ctx, left + 6, bottom, right - left - 12, 1, shell);
+  // Esquinas achaflanadas
+  px(ctx, left + 2, top + 2, 4, 1, shell);
+  px(ctx, right - 5, top + 2, 4, 1, shell);
+  px(ctx, left + 2, bottom - 2, 4, 1, shell);
+  px(ctx, right - 5, bottom - 2, 4, 1, shell);
+  px(ctx, left + 1, top + 3, 1, 3, shell);
+  px(ctx, right - 1, top + 3, 1, 3, shell);
+  px(ctx, left + 1, bottom - 5, 1, 3, shell);
+  px(ctx, right - 1, bottom - 5, 1, 3, shell);
 };

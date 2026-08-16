@@ -6,10 +6,26 @@ import { GameOver } from './components/views/GameOver';
 import { PauseMenu } from './components/views/PauseMenu';
 import { PerkMenu } from './components/views/PerkMenu';
 import { Credits } from './components/views/Credits';
+import { SpriteGallery } from './components/views/SpriteGallery';
+import { useIntegerScale } from './components/useIntegerScale';
+import { CANVAS_WIDTH, CANVAS_HEIGHT } from './game/data/physics';
 import { GameState, InputMethod, Perk, LoadoutType, Language, Difficulty, CharacterType } from './types';
 import { generateBriefing } from './services/geminiService';
 
+/**
+ * `?sprites=1` abre la galería de arte en lugar del juego. Es una herramienta de
+ * revisión: permite ver la paleta y todos los sprites de una vez.
+ */
+const showGallery =
+  typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('sprites');
+
 const App: React.FC = () => {
+  const {
+    containerRef: viewportRef,
+    width: viewportWidth,
+    height: viewportHeight,
+  } = useIntegerScale<HTMLDivElement>(CANVAS_WIDTH, CANVAS_HEIGHT);
+
   const [gameState, setGameState] = useState<GameState>(GameState.MENU);
   const [finalScore, setFinalScore] = useState(0);
   const [gameOverMessage, setGameOverMessage] = useState("Diagnosis: Unknown");
@@ -54,9 +70,26 @@ const App: React.FC = () => {
       setGameState(GameState.PLAYING);
   };
 
+  if (showGallery) return <SpriteGallery />;
+
   return (
-    <div className="w-full h-screen bg-slate-900 flex flex-col overflow-hidden relative">
-      <GameCanvas 
+    /**
+     * Pantalla virtual: el juego y toda su interfaz viven dentro de una caja de
+     * 800×450 escalada por un número entero, centrada, con el resto en negro.
+     *
+     * Es lo que mantiene la interfaz pegada al juego: si los menús se
+     * dimensionaran a la ventana y el lienzo a su múltiplo exacto, las tarjetas
+     * de mejora acabarían siendo más anchas que el propio juego.
+     */
+    <div
+      ref={viewportRef}
+      className="flex h-screen w-full items-center justify-center overflow-hidden bg-black"
+    >
+      <div
+        className="relative flex flex-col overflow-hidden bg-slate-900"
+        style={{ width: viewportWidth, height: viewportHeight }}
+      >
+      <GameCanvas
         onGameOver={handleGameOver} 
         gameState={gameState}
         setGameState={setGameState}
@@ -121,6 +154,7 @@ const App: React.FC = () => {
       {gameState === GameState.VICTORY && (
           <Credits onClose={() => setGameState(GameState.MENU)} lang={language} />
       )}
+      </div>
     </div>
   );
 };

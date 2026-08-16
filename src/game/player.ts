@@ -40,6 +40,8 @@ export const createPlayer = ({ loadout, difficulty, character }: RunConfig): Pla
     color: COLORS.player,
     facing: 1,
     isGrounded: false,
+    animTimer: 0,
+    hitTimer: 0,
     character,
     invincibleTimer: 0,
     slowTimer: 0,

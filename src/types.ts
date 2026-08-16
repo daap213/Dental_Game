@@ -31,14 +31,38 @@ export interface Entity extends Rect {
   color: string;
   facing: 1 | -1; // 1 right, -1 left
   isGrounded: boolean;
-  frameTimer: number; // For animation
+  /**
+   * Contador de uso mixto según la entidad: en el jugador es el enfriamiento del
+   * arma en pasos de simulación; en los enemigos, segundos acumulados que usa su
+   * IA. Para animar hay `animTimer`, que siempre significa lo mismo.
+   */
+  frameTimer: number;
   state: number; // For animation state
   dead?: boolean;
 }
 
+/**
+ * Estado que existe solo para dibujar. Lo llevan los personajes (jugador y
+ * enemigos), no los proyectiles ni las partículas, que no tienen poses.
+ */
+export interface Animated {
+  /**
+   * Segundos de simulación acumulados: de aquí sale el fotograma del ciclo de
+   * andar y los pulsos. Nunca influye en la simulación, así que se puede
+   * reiniciar sin consecuencias.
+   */
+  animTimer: number;
+  /**
+   * Segundos que quedan de destello por daño recibido. Lo pone el bloque de
+   * colisiones y lo consume el dibujado: es la única señal de impacto que tiene
+   * el juego.
+   */
+  hitTimer: number;
+}
+
 export type WeaponType = 'normal' | 'spread' | 'laser' | 'mouthwash' | 'floss' | 'toothbrush';
 
-export interface Player extends Entity {
+export interface Player extends Entity, Animated {
   type: 'player';
   character: CharacterType;
   invincibleTimer: number;
@@ -84,11 +108,16 @@ export interface Player extends Entity {
   };
 }
 
-export interface Enemy extends Entity {
+export interface Enemy extends Entity, Animated {
   type: 'enemy';
   subType: 'bacteria' | 'plaque_monster' | 'candy_bomber' | 'tartar_turret' | 'sugar_rusher' | 'boss' | 'sugar_fiend' | 'acid_spitter' | 'gingivitis_grunt';
   aiTimer: number;
   attackTimer: number;
+  /**
+   * Segundos que quedan de pose de ataque. La IA lo pone justo donde lanza el
+   * ataque, que es el único sitio que sabe de verdad que está atacando.
+   */
+  actionTimer: number;
   bossState: number; // 0: Idle, 1: Chase, 2: Charge, 3: Slam, 4: Shoot
   bossVariant?: 'king' | 'phantom' | 'tank' | 'general' | 'deity' | 'wisdom_warden';
   phase?: number;

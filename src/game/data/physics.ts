@@ -62,6 +62,12 @@ export const SHIELD_REGEN_RATE = 10;
 export const KNOCKBACK_X = 5;
 export const KNOCKBACK_Y = -6;
 
+// Presentación (segundos). No afectan a la simulación, solo a qué se dibuja.
+/** Destello al recibir daño, y con él la pose de dolor. */
+export const HIT_FLASH = 0.14;
+/** Cuánto se mantiene la pose de ataque tras lanzarlo. */
+export const ATTACK_POSE = 0.25;
+
 // Invencibilidad (segundos)
 /** Tras recibir un golpe normal. */
 export const HIT_INVULNERABILITY = 2.0;

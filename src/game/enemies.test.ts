@@ -23,7 +23,7 @@ const enemy = (x: number, overrides: Partial<Enemy> = {}): Enemy => ({
   attackTimer: 0,
   frameTimer: 0,
   state: 0,
-  bossState: 0,
+  bossState: 0, animTimer: 0, hitTimer: 0, actionTimer: 0,
   ...overrides,
 });
 
