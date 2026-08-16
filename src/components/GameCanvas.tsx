@@ -1,16 +1,22 @@
 
 import React, { useRef, useEffect, useState } from 'react';
-import { GameState, Entity, Player, Enemy, Projectile, Platform, Particle, PowerUp, LevelState, Rect, WeaponType, InputMethod, Perk, LoadoutType, Language, Difficulty, CharacterType } from '../types';
-import { CANVAS_WIDTH, CANVAS_HEIGHT, GRAVITY, COLORS, PLAYER_SPEED, PLAYER_JUMP, FRICTION, TERMINAL_VELOCITY, PLAYER_SIZE, PLAYER_DASH_SPEED, PLAYER_DASH_DURATION, PLAYER_DASH_COOLDOWN, PLAYER_MAX_JUMPS, MAX_WEAPON_LEVEL, SCORE_MILESTONE_START, SCORE_MILESTONE_INCREMENT, KILL_MILESTONE_START, KILL_MILESTONE_INCREMENT_START, SHIELD_REGEN_DELAY, SHIELD_REGEN_RATE } from '../constants';
+import { GameState, Entity, Platform, WeaponType, InputMethod, Perk, LoadoutType, Language, Difficulty, CharacterType } from '../types';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, GRAVITY, PLAYER_SPEED, PLAYER_JUMP, FRICTION, TERMINAL_VELOCITY, PLAYER_DASH_SPEED, PLAYER_DASH_DURATION, PLAYER_DASH_COOLDOWN, SCORE_MILESTONE_INCREMENT, SHIELD_REGEN_DELAY, SHIELD_REGEN_RATE } from '../game/data/physics';
+import { COLORS } from '../game/data/palette';
 import { generateGameOverMessage } from '../services/geminiService';
-import { checkRectCollide } from '../utils/physics';
+import { checkRectCollide } from '../game/physics';
 
 // Modules
 import { AudioManager } from '../game/audio';
-import { generateLevel, drawBackground, drawPlatforms, drawTransition } from '../game/level';
-import { spawnBoss, spawnEnemy, drawEnemies, updateEnemyAI, spawnHiddenBoss } from '../game/enemies';
-import { spawnProjectile, drawHeldWeapon, drawProjectiles, spawnPowerUp, drawPowerUp } from '../game/weapons';
+import { generateLevel } from '../game/level';
+import { createWorld, hudChanged, type World, type HudSnapshot } from '../game/world';
+import { type RunConfig } from '../game/player';
+import { renderScene } from '../game/render/scene';
+import { spawnBoss, spawnEnemy, updateEnemyAI, spawnHiddenBoss } from '../game/enemies';
+import { spawnProjectile, spawnPowerUp } from '../game/weapons';
 import { getRandomPerks, applyPerk } from '../game/perks';
+import { getDifficulty } from '../game/data/difficulty';
+import { getFireCooldown, HOMING_DAMAGE_THRESHOLD, MAX_LEVEL } from '../game/data/weapons';
 import { GameHUD } from './GameHUD';
 
 interface GameCanvasProps {
@@ -29,21 +35,9 @@ interface GameCanvasProps {
   lang: Language;
 }
 
-const DIFFICULTY_CONFIG = {
-    easy: { dropRate: 0.25, dmgDealt: 1.15, dmgTaken: 0.85, hpMult: 1.25, milestoneMult: 0.75 },
-    normal: { dropRate: 0.15, dmgDealt: 1.0, dmgTaken: 1.0, hpMult: 1.0, milestoneMult: 1.0 },
-    hard: { dropRate: 0.08, dmgDealt: 0.98, dmgTaken: 1.0, hpMult: 1.0, milestoneMult: 1.0 },
-    legend: { dropRate: 0.05, dmgDealt: 0.95, dmgTaken: 1.05, hpMult: 1.0, milestoneMult: 1.30 }
-};
-
 export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, setGameState, sessionId, inputMethod, loadout, difficulty, character, onPerkSelectStart, selectedPerkId, onPerkApplied, onVictory, lang }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [score, setScore] = useState(0);
-  const [hp, setHp] = useState(100);
-  const [stage, setStage] = useState(1);
-  const [bossHp, setBossHp] = useState(0);
-  const [bossMaxHp, setBossMaxHp] = useState(0);
-  const [bossName, setBossName] = useState("Boss");
+  const [hud, setHud] = useState<HudSnapshot>(() => createWorld({ loadout, difficulty, character }).hud);
   const [isMobile, setIsMobile] = useState(false);
 
   // Audio Manager (Singleton-ish per component mount)
@@ -59,34 +53,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       idleTimer: 0
   });
 
+  const runConfig: RunConfig = { loadout, difficulty, character };
+
   // Mutable Game State
-  const entities = useRef<{
-    player: Player;
-    enemies: Enemy[];
-    projectiles: Projectile[];
-    particles: Particle[];
-    powerups: PowerUp[];
-    platforms: Platform[];
-    camera: { x: number; y: number };
-    level: LevelState;
-    waveTimer: number;
-    shake: number;
-    levelTransitioning: boolean;
-    transition: { phase: 'none' | 'closing' | 'opening'; progress: number };
-  }>({
-    player: createPlayer(),
-    enemies: [],
-    projectiles: [],
-    particles: [],
-    powerups: [],
-    platforms: [],
-    camera: { x: 0, y: 0 },
-    level: { stage: 1, distanceTraveled: 0, bossSpawned: false, levelWidth: 8000 },
-    waveTimer: 0,
-    shake: 0,
-    levelTransitioning: false,
-    transition: { phase: 'none', progress: 0 }
-  });
+  const entities = useRef<World>(createWorld(runConfig));
 
   const inputs = useRef({
     left: false, right: false, aimUp: false, down: false, shoot: false, dash: false,
@@ -94,42 +64,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     mouseX: 0, mouseY: 0
   });
 
-  function createPlayer(): Player {
-    const startingWeapon: WeaponType = (loadout === 'all') ? 'normal' : loadout;
-    const initialLevels = { normal: 1, spread: 1, laser: 1, mouthwash: 1, floss: 1, toothbrush: 1 };
-    
-    // Apply Difficulty Modifiers
-    const config = DIFFICULTY_CONFIG[difficulty] || DIFFICULTY_CONFIG.normal;
-    const initialMaxHp = 100 * config.hpMult;
-    
-    return {
-      id: 'player', x: 100, y: 200, w: PLAYER_SIZE, h: PLAYER_SIZE, vx: 0, vy: 0,
-      hp: initialMaxHp, maxHp: initialMaxHp, type: 'player', color: COLORS.player, facing: 1, isGrounded: false,
-      character: character,
-      invincibleTimer: 0, slowTimer: 0, 
-      shield: 0, maxShield: 0, shieldRegenTimer: 0,
-      lives: 0,
-      weapon: startingWeapon, weaponLevel: 1, 
-      weaponLevels: initialLevels,
-      ammo: -1, score: 0,
-      frameTimer: 0, state: 0, jumpCount: 0, maxJumps: PLAYER_MAX_JUMPS, 
-      dashTimer: 0, dashCooldown: 0, consecutiveDashes: 1,
-      stats: { 
-          speedMultiplier: 1, 
-          damageMultiplier: 1 * config.dmgDealt, 
-          dashCooldownMultiplier: 1, 
-          maxDashes: 1, 
-          damageReduction: 0,
-          damageTakenMultiplier: config.dmgTaken
-      },
-      runStats: { 
-          killCount: 0, 
-          nextScoreMilestone: SCORE_MILESTONE_START * config.milestoneMult, 
-          nextKillMilestone: KILL_MILESTONE_START * config.milestoneMult, 
-          currentKillStep: KILL_MILESTONE_INCREMENT_START 
-      }
-    };
-  }
+
 
   // --- Initialization & Loop ---
 
@@ -153,7 +88,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
   useEffect(() => {
       if (selectedPerkId) {
           applyPerk(entities.current.player, selectedPerkId);
-          setHp(entities.current.player.hp); // Update UI
+          entities.current.hud.hp = entities.current.player.hp;
           
           // Force reset inputs
           inputs.current.left = false;
@@ -213,16 +148,33 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     let animationFrameId: number;
     let lastTime = performance.now();
 
+    // Última instantánea publicada a React, para no re-renderizar sin cambios.
+    let published = entities.current.hud;
+
     const loop = (time: number) => {
       const dt = Math.min((time - lastTime) / 1000, 0.1);
       lastTime = time;
-      
+
       if (gameState === GameState.PLAYING) {
           update(dt);
       }
-      
+
       draw(ctx);
-      
+
+      // Puente motor -> UI: se drena una vez por frame, nunca desde dentro
+      // de la simulación.
+      const world = entities.current;
+      for (const event of world.events) {
+          if (event.type === 'perk-offer') onPerkSelectStart(event.perks);
+          else if (event.type === 'victory') onVictory();
+      }
+      world.events.length = 0;
+
+      if (hudChanged(world.hud, published)) {
+          published = { ...world.hud };
+          setHud(published);
+      }
+
       if (gameState === GameState.PLAYING && entities.current.player.hp <= 0 && entities.current.player.lives <= 0) {
            handleGameOver();
       } else {
@@ -234,14 +186,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
   }, [gameState]);
 
   const resetGame = () => {
+    entities.current = createWorld(runConfig);
     const s = entities.current;
-    s.player = createPlayer();
-    s.enemies = []; s.projectiles = []; s.particles = []; s.powerups = [];
-    s.level = { stage: 1, distanceTraveled: 0, bossSpawned: false, levelWidth: 8000 };
-    s.platforms = generateLevel(s.level.levelWidth);
-    s.camera = { x: 0, y: 0 };
-    s.waveTimer = 0; s.shake = 0; s.levelTransitioning = false;
-    s.transition = { phase: 'none', progress: 0 };
     
     hiddenBossState.current = {
         levelStartTime: Date.now(),
@@ -257,14 +203,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         jumpPressed: false, shootPressed: false, dashPressed: false, mouseX: 0, mouseY: 0
     };
 
-    setScore(0); setHp(s.player.maxHp); setStage(1); setBossHp(0);
+    setHud({ ...s.hud });
   };
 
   const performLevelReset = () => {
       const s = entities.current;
       
       if (s.level.stage >= 5) {
-          onVictory();
+          s.events.push({ type: 'victory' });
           return;
       }
 
@@ -273,11 +219,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       s.player.x = 100; s.player.y = 200; 
       // Small heal on level up
       s.player.hp = Math.min(s.player.hp + 20, s.player.maxHp);
-      setHp(s.player.hp);
+      s.hud.hp = s.player.hp;
       
       s.enemies = []; s.projectiles = []; s.powerups = [];
       s.platforms = generateLevel(s.level.levelWidth);
-      s.camera.x = 0; setStage(s.level.stage); setBossHp(0);
+      s.camera.x = 0; s.hud.stage = s.level.stage; s.hud.bossHp = 0;
       s.player.invincibleTimer = 3.0;
 
       // Reset Hidden Boss Trackers for new level
@@ -300,8 +246,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
   };
 
   const triggerPerkSelection = () => {
-      const perks = getRandomPerks(3, lang);
-      onPerkSelectStart(perks);
+      entities.current.events.push({ type: 'perk-offer', perks: getRandomPerks(3, lang) });
   };
 
   // --- Input Handling ---
@@ -408,7 +353,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     if (s.platforms.length === 0) s.platforms = generateLevel(s.level.levelWidth);
     
     const p = s.player;
-    const config = DIFFICULTY_CONFIG[difficulty] || DIFFICULTY_CONFIG.normal;
+    const config = getDifficulty(difficulty);
 
     // --- Hidden Boss Checks ---
     if (!hiddenBossState.current.triggered && !s.levelTransitioning) {
@@ -423,19 +368,19 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             hiddenBossState.current.lastPlayerX = p.x;
         }
         if (hiddenBossState.current.idleTimer > 120) { // 2 minutes
-             spawnHiddenBoss(p, setBossName, setBossMaxHp, setBossHp, audioManager.current, s.enemies, lang);
+             spawnHiddenBoss(s, audioManager.current, lang);
              hiddenBossState.current.triggered = true;
         }
 
         // 2. Stagnant: 3 mins elapsed + low distance
         if (minutesElapsed > 3 && p.x < 1500 && !s.level.bossSpawned) {
-             spawnHiddenBoss(p, setBossName, setBossMaxHp, setBossHp, audioManager.current, s.enemies, lang);
+             spawnHiddenBoss(s, audioManager.current, lang);
              hiddenBossState.current.triggered = true;
         }
 
         // 3. Wrath: >30 kills in < 2 mins
         if (minutesElapsed < 2 && hiddenBossState.current.levelKillCount > 30) {
-             spawnHiddenBoss(p, setBossName, setBossMaxHp, setBossHp, audioManager.current, s.enemies, lang);
+             spawnHiddenBoss(s, audioManager.current, lang);
              hiddenBossState.current.triggered = true;
         }
     }
@@ -544,7 +489,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     }
 
     if (inputs.current.shootPressed && p.frameTimer <= 0) {
-        let dx = 0, dy = 0;
+        let dx: number, dy: number;
 
         if (inputMethod === 'mouse' && !isMobile) {
             const mWX = inputs.current.mouseX + s.camera.x; 
@@ -567,8 +512,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             }
         }
 
-        let sX = p.x + p.w/2; let sY = p.y + p.h/2;
-        if (dy < -0.5) sY = p.y - 10; else sY = p.y + 10;
+        let sX = p.x + p.w/2;
+        const sY = dy < -0.5 ? p.y - 10 : p.y + 10;
         if (Math.abs(dx) > 0.5) sX = p.x + p.w/2 + (Math.sign(dx) * 20);
 
         audioManager.current.playWeaponSound(p.weapon);
@@ -583,12 +528,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
              }
         }
         
-        let cd = 10;
-        if (p.weapon === 'normal') cd = p.weaponLevel >= 2 ? 6 : 10;
-        if (p.weapon === 'spread') cd = 20; if (p.weapon === 'laser') cd = 20;
-        if (p.weapon === 'mouthwash') cd = p.weaponLevel >= 2 ? 22 : 30;
-        if (p.weapon === 'floss') cd = 18; if (p.weapon === 'toothbrush') cd = p.weaponLevel >= 2 ? 15 : 20;
-        p.frameTimer = cd;
+        p.frameTimer = getFireCooldown(p.weapon, p.weaponLevel);
         if (p.weapon !== 'laser' && p.weapon !== 'toothbrush') inputs.current.shootPressed = false; 
     }
     if (p.frameTimer > 0) p.frameTimer--;
@@ -599,7 +539,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         targetX = Math.max(0, Math.min(targetX, s.level.levelWidth - CANVAS_WIDTH));
         s.camera.x += (targetX - s.camera.x) * 0.1;
     } else {
-        let targetX = s.level.levelWidth - CANVAS_WIDTH;
+        const targetX = s.level.levelWidth - CANVAS_WIDTH;
         s.camera.x += (targetX - s.camera.x) * 0.05;
     }
     if (s.shake > 0) {
@@ -610,13 +550,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     if (!s.level.bossSpawned && !s.levelTransitioning && p.x > s.level.levelWidth - 600) {
         s.level.bossSpawned = true;
         hiddenBossState.current.bossSpawnTime = Date.now();
-        spawnBoss(s.level, setBossName, setBossMaxHp, setBossHp, audioManager.current, s.enemies, lang);
+        spawnBoss(s, audioManager.current, lang);
     }
     if (s.level.bossSpawned && !s.levelTransitioning) {
         if (!s.enemies.some(e => e.subType === 'boss')) s.level.bossSpawned = false;
     }
     s.waveTimer += dt;
-    if (!s.level.bossSpawned && !s.levelTransitioning && s.waveTimer > Math.max(0.5, 2.0 - (score / 10000) - (s.level.stage * 0.1))) {
+    if (!s.level.bossSpawned && !s.levelTransitioning && s.waveTimer > Math.max(0.5, 2.0 - (p.score / 10000) - (s.level.stage * 0.1))) {
         spawnEnemy(s.level, s.camera.x, s.enemies);
         s.waveTimer = 0;
     }
@@ -633,7 +573,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             if (proj.projectileType === 'mortar' || proj.projectileType === 'acid') proj.vy += GRAVITY * 0.5;
             
             // Curve logic for high damage bullets (Hidden Boss uses this)
-            if (proj.projectileType === 'bullet' && proj.owner === 'enemy' && proj.damage > 20) {
+            if (proj.projectileType === 'bullet' && proj.owner === 'enemy' && proj.damage > HOMING_DAMAGE_THRESHOLD) {
                  const dx = p.x - proj.x; const dy = p.y - proj.y; const dist = Math.sqrt(dx*dx + dy*dy);
                  if (dist > 0 && dist < 400) { proj.vx += (dx/dist)*0.2; proj.vy += (dy/dist)*0.2; }
             }
@@ -647,7 +587,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         enemy.aiTimer += dt; enemy.attackTimer += dt; enemy.frameTimer += dt;
         const dist = Math.abs(p.x - enemy.x);
         if (dist < CANVAS_WIDTH + 100 || enemy.subType === 'boss') {
-            updateEnemyAI(enemy, p, s, audioManager.current, setBossHp);
+            updateEnemyAI(enemy, p, s, audioManager.current);
             
             enemy.x += enemy.vx;
             if (enemy.subType !== 'candy_bomber' && enemy.subType !== 'acid_spitter' && enemy.subType !== 'boss') checkPlatformCollisions(enemy, s.platforms, true);
@@ -699,7 +639,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                         hiddenBossState.current.levelKillCount++;
                         p.runStats.killCount++;
                         
-                        setScore(p.score); s.shake = 5;
+                        s.hud.score = p.score; s.shake = 5;
                         
                         // Force drop if hidden boss
                         const isHiddenBoss = enemy.bossVariant === 'wisdom_warden';
@@ -715,7 +655,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                                 // 4. Speedrun Check: < 60s
                                 const timeToKill = Date.now() - hiddenBossState.current.bossSpawnTime;
                                 if (timeToKill < 60000) {
-                                     spawnHiddenBoss(p, setBossName, setBossMaxHp, setBossHp, audioManager.current, s.enemies, lang);
+                                     spawnHiddenBoss(s, audioManager.current, lang);
                                      hiddenBossState.current.triggered = true;
                                      return; // Don't transition yet
                                 }
@@ -774,23 +714,23 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
              s.shake = 10;
         }
 
-        setHp(p.hp); 
+        s.hud.hp = p.hp; 
     }
 
     s.powerups.forEach(pu => {
         if (checkRectCollide(p, pu)) {
-            if (pu.subType === 'health') { p.hp = Math.min(p.hp + 30, p.maxHp); setHp(p.hp); }
+            if (pu.subType === 'health') { p.hp = Math.min(p.hp + 30, p.maxHp); s.hud.hp = p.hp; }
             else {
                 const newWeapon = pu.subType as WeaponType;
                 if (!p.weaponLevels) p.weaponLevels = { normal: 1, spread: 1, laser: 1, mouthwash: 1, floss: 1, toothbrush: 1 };
                 if (p.weapon === newWeapon) {
-                    if (p.weaponLevels[newWeapon] < MAX_WEAPON_LEVEL) {
+                    if (p.weaponLevels[newWeapon] < MAX_LEVEL) {
                         p.weaponLevels[newWeapon]++;
                         p.weaponLevel = p.weaponLevels[newWeapon];
                         spawnParticle(p.x, p.y, '#fbbf24', 10); 
-                        setScore(s => s + 500);
+                        p.score += 500; s.hud.score = p.score;
                     } else {
-                        setScore(s => s + 1000);
+                        p.score += 1000; s.hud.score = p.score;
                     }
                 } else {
                     p.weapon = newWeapon;
@@ -806,136 +746,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     s.particles = s.particles.filter(p => p.lifeTime > 0);
   };
 
-  const drawPlayerSprite = (ctx: CanvasRenderingContext2D, p: Player, px: number, py: number) => {
-      // Shape based on CharacterType
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      
-      if (p.character === 'incisor') {
-          // Flat top, rectangular
-          ctx.moveTo(px, py);
-          ctx.lineTo(px + p.w, py);
-          ctx.lineTo(px + p.w - 5, py + p.h);
-          ctx.lineTo(px + 5, py + p.h);
-          ctx.closePath();
-      } else if (p.character === 'canine') {
-          // Pointy
-          ctx.moveTo(px, py + p.h/3);
-          ctx.lineTo(px + p.w/2, py - 5);
-          ctx.lineTo(px + p.w, py + p.h/3);
-          ctx.lineTo(px + p.w - 5, py + p.h);
-          ctx.lineTo(px + 5, py + p.h);
-          ctx.closePath();
-      } else if (p.character === 'premolar') {
-          // Two cusps
-          ctx.moveTo(px + 2, py + 5);
-          ctx.lineTo(px + p.w/4, py - 2);
-          ctx.lineTo(px + p.w/2, py + 5);
-          ctx.lineTo(px + p.w*0.75, py - 2);
-          ctx.lineTo(px + p.w - 2, py + 5);
-          ctx.lineTo(px + p.w - 4, py + p.h);
-          ctx.lineTo(px + 4, py + p.h);
-          ctx.closePath();
-      } else {
-          // MOLAR (Default)
-          ctx.moveTo(px + 4, py + 8);
-          ctx.quadraticCurveTo(px + p.w/4, py, px + p.w/2, py + 6);
-          ctx.quadraticCurveTo(px + 3*p.w/4, py, px + p.w - 4, py + 8);
-          ctx.quadraticCurveTo(px + p.w, py + p.h/2, px + p.w - 6, py + p.h - 4);
-          ctx.lineTo(px + p.w/2 + 4, py + p.h);
-          ctx.lineTo(px + p.w/2, py + p.h - 8);
-          ctx.lineTo(px + p.w/2 - 4, py + p.h);
-          ctx.lineTo(px + 6, py + p.h - 4);
-          ctx.quadraticCurveTo(px, py + p.h/2, px + 4, py + 8);
-      }
-      ctx.fill();
-
-      // Shading
-      const grad = ctx.createLinearGradient(px, py, px, py + p.h);
-      grad.addColorStop(0, 'rgba(255,255,255,0.8)');
-      grad.addColorStop(1, 'rgba(200,200,200,0.2)');
-      ctx.fillStyle = grad; ctx.fill();
-  };
-
   const draw = (ctx: CanvasRenderingContext2D) => {
     const s = entities.current;
-    const p = s.player;
-
-    ctx.fillStyle = '#0f172a';
-    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    // Pass stage for dynamic background
-    drawBackground(ctx, s.camera.x, s.level.stage);
-
-    ctx.save();
-    ctx.translate(-s.camera.x, -s.camera.y);
-
-    drawPlatforms(ctx, s.platforms);
-    s.powerups.forEach(pu => {
-        drawPowerUp(ctx, pu);
+    renderScene(ctx, s, {
+        usingMouse: inputMethod === 'mouse' && !isMobile,
+        aimUp: inputs.current.aimUp,
+        mouseX: inputs.current.mouseX,
+        mouseY: inputs.current.mouseY,
+        cameraX: s.camera.x,
+        cameraY: s.camera.y
     });
-
-    drawEnemies(ctx, s.enemies);
-    drawProjectiles(ctx, s.projectiles, p);
-
-    s.particles.forEach(part => {
-        ctx.globalAlpha = part.alpha;
-        ctx.fillStyle = part.color;
-        ctx.fillRect(part.x, part.y, part.w, part.h);
-        ctx.globalAlpha = 1.0;
-    });
-
-    // Draw Player
-    if (p.hp > 0 && (p.invincibleTimer <= 0 || Math.floor(Date.now() / 100) % 2 === 0)) {
-        ctx.save();
-        const px = p.x; const py = p.y;
-        
-        ctx.fillStyle = 'rgba(0,0,0,0.3)';
-        ctx.beginPath(); ctx.ellipse(px + p.w/2, py + p.h - 2, 10, 4, 0, 0, Math.PI*2); ctx.fill();
-
-        if (p.shield > 0) {
-            ctx.shadowColor = '#22d3ee';
-            ctx.shadowBlur = 15;
-            ctx.strokeStyle = `rgba(34, 211, 238, ${0.5 + Math.sin(Date.now()/200)*0.3})`;
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.arc(px + p.w/2, py + p.h/2, p.w/1.5, 0, Math.PI*2);
-            ctx.stroke();
-            ctx.shadowBlur = 0;
-        }
-
-        drawPlayerSprite(ctx, p, px, py);
-
-        // Face
-        const lookOffset = p.facing * 2;
-        ctx.fillStyle = '#1e293b';
-        ctx.beginPath();
-        ctx.ellipse(px + p.w/2 + 4 + lookOffset, py + 14, 3, 4, 0, 0, Math.PI*2); ctx.fill();
-        ctx.ellipse(px + p.w/2 - 4 + lookOffset, py + 14, 3, 4, 0, 0, Math.PI*2); ctx.fill();
-        
-        // Sweatband
-        ctx.fillStyle = '#ef4444';
-        ctx.fillRect(px + 2, py + 8, p.w - 4, 4);
-        if (p.facing === -1) ctx.fillRect(px + p.w - 4, py + 8, 8, 4); 
-        else ctx.fillRect(px - 4, py + 8, 8, 4);
-
-        ctx.fillStyle = '#fff';
-        ctx.beginPath(); ctx.arc(px + p.w/2 + (p.facing*10), py + 22, 5, 0, Math.PI*2); ctx.fill();
-
-        drawHeldWeapon(ctx, p, {
-             usingMouse: inputMethod === 'mouse' && !isMobile,
-             aimUp: inputs.current.aimUp,
-             mouseX: inputs.current.mouseX,
-             mouseY: inputs.current.mouseY,
-             cameraX: s.camera.x,
-             cameraY: s.camera.y
-        });
-
-        ctx.restore();
-    }
-
-    ctx.restore();
-
-    drawTransition(ctx, s.transition.progress, s.level.stage);
   };
 
   const spawnParticle = (x: number, y: number, color: string, count: number) => {
@@ -972,12 +792,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       />
       <GameHUD 
         player={entities.current.player} 
-        score={score} 
-        stage={stage} 
-        hp={hp} 
-        bossHp={bossHp} 
-        bossMaxHp={bossMaxHp}
-        bossName={bossName}
+        score={hud.score} 
+        stage={hud.stage} 
+        hp={hud.hp} 
+        bossHp={hud.bossHp} 
+        bossMaxHp={hud.bossMaxHp}
+        bossName={hud.bossName}
         isMobile={isMobile}
         handleTouch={handleTouch}
         lang={lang}

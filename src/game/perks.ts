@@ -1,6 +1,6 @@
 
 import { Perk, Player, Language } from '../types';
-import { TEXT } from '../utils/locales';
+import { TEXT } from '../i18n';
 
 // We store IDs and Logic here, but Text is retrieved from LOCALES using ID mapping
 const PERK_DEFINITIONS: Omit<Perk, 'name' | 'description'>[] = [

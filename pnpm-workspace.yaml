@@ -1,0 +1,8 @@
+# Ajustes de pnpm (desde pnpm 10 viven aquí, no en package.json).
+# Scripts de instalación permitidos: solo esbuild los necesita, para enlazar el
+# binario nativo que usa Vite. Los otros dos son postinstall de servidor que no
+# aportan nada a un bundle de navegador.
+allowBuilds:
+  esbuild: true
+  '@google/genai': false
+  protobufjs: false

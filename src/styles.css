@@ -1,0 +1,147 @@
+@import 'tailwindcss';
+
+/* Fuente self-hosted: sustituye al @import de Google Fonts que había en index.html.
+   Press Start 2P solo existe en peso 400 y el juego solo usa el subconjunto latino. */
+@import '@fontsource/press-start-2p/latin-400.css';
+
+@layer base {
+  body {
+    font-family: 'Press Start 2P', system-ui, sans-serif;
+    background-color: #1a202c;
+    color: white;
+    /* Evita el scroll de rebote en móvil mientras se juega. */
+    overflow: hidden;
+  }
+
+  canvas {
+    image-rendering: pixelated;
+  }
+}
+
+@utility no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/*
+ * Lenguaje visual pixel art
+ * -------------------------
+ * Reglas: nada redondeado, nada difuminado y nada de degradados. Los relieves
+ * se hacen con dos aristas planas (clara arriba-izquierda, oscura abajo-derecha)
+ * y las sombras son desplazamientos enteros sin blur, como en una tile de 8x8.
+ */
+@layer components {
+  /* Marco con relieve saliente. El color de borde lo pone quien lo usa. */
+  .pixel-frame {
+    border-style: solid;
+    border-width: 4px;
+    border-radius: 0;
+    box-shadow:
+      inset 3px 3px 0 rgb(255 255 255 / 0.12),
+      inset -3px -3px 0 rgb(0 0 0 / 0.45),
+      6px 6px 0 rgb(0 0 0 / 0.55);
+  }
+
+  /* Marco hundido, para huecos y campos de texto. */
+  .pixel-inset {
+    border-style: solid;
+    border-width: 4px;
+    border-radius: 0;
+    box-shadow:
+      inset 3px 3px 0 rgb(0 0 0 / 0.5),
+      inset -3px -3px 0 rgb(255 255 255 / 0.07);
+  }
+
+  /* Botón: relieve + hundido al pulsar, desplazándose los mismos píxeles
+     que medía su sombra para que parezca que se aplasta contra el fondo. */
+  .pixel-btn {
+    border-style: solid;
+    border-width: 4px;
+    border-radius: 0;
+    box-shadow:
+      inset 3px 3px 0 rgb(255 255 255 / 0.18),
+      inset -3px -3px 0 rgb(0 0 0 / 0.4),
+      5px 5px 0 rgb(0 0 0 / 0.6);
+    transition: none;
+  }
+
+  .pixel-btn:active {
+    transform: translate(5px, 5px);
+    box-shadow:
+      inset 3px 3px 0 rgb(0 0 0 / 0.35),
+      inset -3px -3px 0 rgb(255 255 255 / 0.08);
+  }
+
+  /* Trama de puntos 8x8: sustituye a las transparencias suaves. */
+  .pixel-dither {
+    background-image:
+      linear-gradient(
+        45deg,
+        rgb(255 255 255 / 0.035) 25%,
+        transparent 25%,
+        transparent 75%,
+        rgb(255 255 255 / 0.035) 75%
+      ),
+      linear-gradient(
+        45deg,
+        rgb(255 255 255 / 0.035) 25%,
+        transparent 25%,
+        transparent 75%,
+        rgb(255 255 255 / 0.035) 75%
+      );
+    background-size: 8px 8px;
+    background-position:
+      0 0,
+      4px 4px;
+  }
+
+  /* Líneas de barrido y viñeta de tubo, en una capa que no captura el ratón. */
+  .pixel-crt::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 40;
+    background:
+      repeating-linear-gradient(to bottom, rgb(0 0 0 / 0.22) 0 2px, transparent 2px 4px),
+      radial-gradient(ellipse at center, transparent 55%, rgb(0 0 0 / 0.55) 100%);
+  }
+
+  /* Rótulo con relieve macizo, al estilo de las portadas de 16 bits. */
+  .pixel-title {
+    text-shadow:
+      3px 0 0 #9d174d,
+      -3px 0 0 #9d174d,
+      0 3px 0 #9d174d,
+      0 -3px 0 #9d174d,
+      3px 3px 0 #9d174d,
+      -3px 3px 0 #9d174d,
+      6px 6px 0 rgb(0 0 0 / 0.6);
+  }
+
+  .pixel-text-shadow {
+    text-shadow: 2px 2px 0 rgb(0 0 0 / 0.75);
+  }
+}
+
+/* Parpadeo duro (sin fundido) para el cursor de selección. */
+@keyframes pixel-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.pixel-blink {
+  animation: pixel-blink 1s steps(1, end) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pixel-blink {
+    animation: none;
+  }
+}

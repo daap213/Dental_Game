@@ -30,7 +30,24 @@ El proyecto destaca por no usar *assets* de imagen externos (todo se dibuja con 
 *   **Audio**: Web Audio API (Osciladores, Filtros Biquad, Buffers de Ruido).
 *   **IA**: Google GenAI SDK (`@google/genai`).
 *   **Iconos**: Lucide React.
-*   **Build Tool**: Vite.
+*   **Build Tool**: Vite 7.
+*   **Gestor de paquetes**: pnpm.
+
+---
+
+## 🚀 Desarrollo
+
+Requiere **Node >= 20.19** y **pnpm** (la versión exacta está fijada en el campo `packageManager` de `package.json`).
+
+```bash
+pnpm install
+pnpm dev           # Servidor de desarrollo en http://localhost:3000
+pnpm build         # Build de producción en dist/
+pnpm preview       # Sirve el build ya generado
+pnpm typecheck     # Comprobación de tipos
+```
+
+**Clave de Gemini (opcional):** crea un `.env.local` en la raíz con `GEMINI_API_KEY=tu_clave`. Sin clave el juego funciona igual: los textos de misión y los diagnósticos de Game Over caen a mensajes por defecto localizados. Ten en cuenta que la clave se incrusta en el bundle de cliente, así que es visible para cualquiera que abra el juego.
 
 ---
 
