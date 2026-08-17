@@ -1,89 +1,108 @@
-import type { Projectile, Player, PowerUp } from '../../types';
+import type { Projectile, Player, PowerUp, WeaponType } from '../../types';
+import type { PaletteKey } from '../data/palette';
+import { px } from './pixel';
+import { drawSprite, type SpriteDef } from './sprites/format';
+import { shadeMask, withDetails } from './sprites/shade';
+import { rotate90 } from './sprites/masks/shapes';
+import {
+  projectileArt,
+  powerupDetail,
+  HELD_WEAPONS,
+  POWERUP_BODY,
+  POWERUP_W,
+  POWERUP_H,
+  POWERUP_EMBLEMS,
+} from './sprites/masks/weapons';
 
-export const drawPowerUp = (ctx: CanvasRenderingContext2D, pu: PowerUp) => {
-  const bounce = Math.sin(Date.now() / 200) * 5;
-  const y = pu.y + bounce;
-  const x = pu.x;
-  const w = pu.w;
-  const h = pu.h;
+/**
+ * Dibujado de proyectiles, arma en mano y objetos.
+ *
+ * Todo pasa por el mismo pipeline que el resto del arte: máscara, sombreado con la
+ * rampa del material y horneado. Antes era la única parte del render que seguía
+ * siendo vectorial, con degradados y `shadowBlur`, y se notaba al lado de los
+ * sprites.
+ *
+ * Los proyectiles cambian de tamaño con el nivel del arma, así que se hornean por
+ * tamaño; y los que tienen una punta o un filo se orientan girando la **máscara**
+ * en múltiplos de 90°, que es exacto, en lugar de rotar el lienzo.
+ */
 
-  ctx.save();
+type Dir = 'right' | 'left' | 'up' | 'down';
 
-  // Draw Wings
-  ctx.fillStyle = '#cbd5e1';
-  const wingFlap = Math.sin(Date.now() / 100) * 3;
-  ctx.beginPath();
-  ctx.moveTo(x, y + h / 2);
-  ctx.lineTo(x - 8, y + h / 2 - 5 - wingFlap);
-  ctx.lineTo(x - 8, y + h / 2 + 5 + wingFlap);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(x + w, y + h / 2);
-  ctx.lineTo(x + w + 8, y + h / 2 - 5 - wingFlap);
-  ctx.lineTo(x + w + 8, y + h / 2 + 5 + wingFlap);
-  ctx.fill();
-
-  // Box Body (Metallic Container)
-  ctx.fillStyle = '#475569';
-  ctx.beginPath();
-  ctx.roundRect(x, y, w, h, 6);
-  ctx.fill();
-
-  // Border
-  ctx.strokeStyle = '#94a3b8';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  // Inner Screen
-  ctx.fillStyle = '#0f172a';
-  ctx.beginPath();
-  ctx.roundRect(x + 4, y + 4, w - 8, h - 8, 4);
-  ctx.fill();
-
-  // Icon / Letter
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font = 'bold 12px monospace';
-  ctx.shadowColor = pu.color;
-  ctx.shadowBlur = 5;
-  ctx.fillStyle = pu.color;
-
-  let symbol = '?';
-  switch (pu.subType) {
-    case 'health':
-      symbol = '✚';
-      break; // Plus
-    case 'spread':
-      symbol = 'S';
-      break;
-    case 'laser':
-      symbol = 'L';
-      break;
-    case 'mouthwash':
-      symbol = 'W';
-      break;
-    case 'floss':
-      symbol = 'F';
-      break;
-    case 'toothbrush':
-      symbol = 'T';
-      break;
-    case 'normal':
-      symbol = 'N';
-      break;
-  }
-
-  ctx.fillText(symbol, x + w / 2, y + h / 2 + 1);
-
-  // Gloss
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = 'rgba(255,255,255,0.2)';
-  ctx.beginPath();
-  ctx.arc(x + w - 8, y + 8, 3, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.restore();
+/** Hacia dónde va, quedándose con el eje dominante. */
+const directionOf = (vx: number, vy: number): Dir => {
+  if (Math.abs(vx) >= Math.abs(vy)) return vx >= 0 ? 'right' : 'left';
+  return vy >= 0 ? 'down' : 'up';
 };
+
+const rot180 = (mask: readonly string[]) => rotate90(rotate90(mask));
+
+/** Gira una máscara cuadrada al cuadrante pedido. */
+const orientSquare = (mask: readonly string[], dir: Dir): readonly string[] => {
+  if (dir === 'right') return mask;
+  if (dir === 'down') return rotate90(mask);
+  if (dir === 'left') return rot180(mask);
+  return rotate90(rot180(mask));
+};
+
+const cache = new Map<string, SpriteDef>();
+
+const memo = (id: string, build: () => SpriteDef): SpriteDef => {
+  const hit = cache.get(id);
+  if (hit) return hit;
+  const def = build();
+  cache.set(id, def);
+  return def;
+};
+
+/**
+ * Sprite de un proyectil.
+ *
+ * `sword` es cuadrado y su arco apunta a un lado, así que se gira al cuadrante del
+ * movimiento. `floss` ya viene con el ancho y el alto cambiados cuando se apunta en
+ * vertical, así que solo necesita media vuelta para apuntar al otro lado.
+ */
+const projectileSprite = (proj: Projectile): { def: SpriteDef; flip: boolean } => {
+  const w = Math.max(1, Math.round(proj.w));
+  const h = Math.max(1, Math.round(proj.h));
+  const dir = directionOf(proj.vx, proj.vy);
+  const type = proj.projectileType;
+
+  const spin = type === 'sword' ? dir : type === 'floss' && (dir === 'left' || dir === 'up') ? 'half' : 'none';
+  const flip = spin === 'none' && dir === 'left' && (type === 'wave' || type === 'bullet' || type === 'laser');
+
+  const id = `proj:${type}:${proj.owner}:${w}x${h}:${spin}`;
+
+  const def = memo(id, () => {
+    const art = projectileArt(type, w, h, proj.owner);
+    const mask =
+      spin === 'half' ? rot180(art.mask) : spin === 'none' ? art.mask : orientSquare(art.mask, spin);
+
+    const shaded = shadeMask(mask, art.material);
+    if (!art.detail) return shaded;
+
+    const detailRows =
+      spin === 'half' ? rot180(art.detail) : spin === 'none' ? art.detail : orientSquare(art.detail, spin);
+
+    return withDetails(shaded, {
+      w: mask[0]?.length ?? w,
+      h: mask.length,
+      rows: detailRows,
+      map: { C: `${art.material}.hi` as PaletteKey },
+    });
+  });
+
+  return { def, flip };
+};
+
+export const drawProjectiles = (ctx: CanvasRenderingContext2D, projectiles: Projectile[]) => {
+  projectiles.forEach((proj) => {
+    const { def, flip } = projectileSprite(proj);
+    drawSprite(ctx, `${proj.projectileType}:${def.w}x${def.h}:${proj.owner}`, def, proj.x, proj.y, flip);
+  });
+};
+
+// --- Arma en mano ----------------------------------------------------------
 
 /** Hacia dónde apunta el jugador, para orientar el arma en mano. */
 export interface AimInput {
@@ -95,188 +114,93 @@ export interface AimInput {
   cameraY: number;
 }
 
-export const drawHeldWeapon = (ctx: CanvasRenderingContext2D, p: Player, aimInput: AimInput) => {
-  const type = p.weapon;
-  const facing = p.facing;
-  const hx = p.x + (facing === 1 ? 22 : 10);
-  const hy = p.y + 20;
+const heldSprite = (weapon: WeaponType, up: boolean): SpriteDef =>
+  memo(`held:${weapon}:${up ? 'up' : 'side'}`, () => {
+    const art = HELD_WEAPONS[weapon] ?? HELD_WEAPONS.normal;
+    const mask = up ? rotate90(art.mask) : art.mask;
+    const shaded = shadeMask(mask, art.material);
+    if (!art.detail) return shaded;
 
-  ctx.save();
-  ctx.translate(hx, hy);
+    return withDetails(shaded, {
+      w: mask[0]?.length ?? art.w,
+      h: mask.length,
+      rows: up ? rotate90(art.detail) : art.detail,
+      map: {
+        C: `${art.material}.hi` as PaletteKey,
+        G: 'metal.shade',
+        B: 'laser.light',
+      },
+    });
+  });
 
-  let rotation = 0;
-  if (aimInput.usingMouse) {
-    const mouseWorldX = aimInput.mouseX + aimInput.cameraX;
-    const mouseWorldY = aimInput.mouseY + aimInput.cameraY;
-    rotation = Math.atan2(mouseWorldY - hy, mouseWorldX - hx);
-    if (facing === -1) rotation = rotation - Math.PI;
-  } else {
-    if (aimInput.aimUp) rotation = aimInput.usingMouse ? 0 : (-Math.PI / 2) * facing;
+/**
+ * Arma en mano, con dos orientaciones.
+ *
+ * No hay rotación libre a propósito: girar un sprite de 22×12 un ángulo cualquiera
+ * lo llena de dientes de sierra. Se dibuja de lado y, cuando se apunta claramente
+ * hacia arriba, se usa la misma máscara girada 90°, que es exacto.
+ */
+export const drawHeldWeapon = (ctx: CanvasRenderingContext2D, p: Player, aim: AimInput) => {
+  const handX = p.x + (p.facing === 1 ? 18 : 14);
+  const handY = p.y + 19;
+
+  let up = aim.aimUp;
+  if (aim.usingMouse) {
+    const dx = aim.mouseX + aim.cameraX - (p.x + p.w / 2);
+    const dy = aim.mouseY + aim.cameraY - (p.y + p.h / 2);
+    up = Math.abs(dy) > Math.abs(dx) && dy < 0;
   }
-  ctx.rotate(rotation);
 
-  if (type === 'toothbrush') {
-    if (!aimInput.aimUp && !aimInput.usingMouse)
-      ctx.rotate(facing === 1 ? -Math.PI / 4 : Math.PI / 4);
-    ctx.fillStyle = '#38bdf8';
-    ctx.fillRect(0, -3, 30 * facing, 6);
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(30 * facing, -2, 10 * facing, 4);
-    ctx.fillRect(40 * facing, -4, 12 * facing, 8);
-    ctx.fillStyle = '#0284c7';
-    for (let i = 0; i < 3; i++) ctx.fillRect(42 * facing + i * 3 * facing, -4, 2 * facing, -6);
-  } else if (type === 'floss') {
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.roundRect(-5, -5, 14, 14, 3);
-    ctx.fill();
-    ctx.fillStyle = '#10b981';
-    ctx.fillRect(-2, -2, 8, 8);
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(7 * facing, 0);
-    ctx.lineTo(15 * facing, 5);
-    ctx.stroke();
-  } else if (type === 'mouthwash') {
-    ctx.fillStyle = 'rgba(45, 212, 191, 0.8)';
-    const bw = 24;
-    const bh = 14;
-    if (facing === 1) ctx.fillRect(0, -6, bw, bh);
-    else ctx.fillRect(-bw, -6, bw, bh);
-    ctx.fillStyle = '#0d9488';
-    if (facing === 1) ctx.fillRect(2, 0, bw - 4, bh - 6);
-    else ctx.fillRect(-bw + 2, 0, bw - 4, bh - 6);
-    ctx.fillStyle = '#fff';
-    if (facing === 1) ctx.fillRect(bw, -4, 6, 10);
-    else ctx.fillRect(-bw - 6, -4, 6, 10);
-  } else if (type === 'laser') {
-    ctx.fillStyle = '#64748b';
-    ctx.beginPath();
-    if (facing === 1) {
-      ctx.moveTo(0, -4);
-      ctx.lineTo(20, -2);
-      ctx.lineTo(20, 8);
-      ctx.lineTo(0, 10);
-    } else {
-      ctx.moveTo(0, -4);
-      ctx.lineTo(-20, -2);
-      ctx.lineTo(-20, 8);
-      ctx.lineTo(0, 10);
-    }
-    ctx.fill();
-    ctx.fillStyle = '#06b6d4';
-    if (facing === 1) ctx.fillRect(20, -1, 4, 8);
-    else ctx.fillRect(-24, -1, 4, 8);
+  const def = heldSprite(p.weapon, up);
+
+  if (up) {
+    drawSprite(ctx, `held:${p.weapon}:up`, def, handX - def.w / 2, handY - def.h, p.facing === -1);
   } else {
-    ctx.fillStyle = '#4b5563';
-    const gunX = facing === 1 ? 0 : -22;
-    ctx.fillRect(gunX, -3, 22, 6);
-    ctx.fillStyle = '#1f2937';
-    ctx.fillRect(facing === 1 ? 0 : -6, 0, 6, 8);
-    ctx.fillStyle = '#9ca3af';
-    ctx.fillRect(facing === 1 ? gunX + 22 : gunX - 4, -2, 4, 4);
+    const x = p.facing === 1 ? handX : handX - def.w;
+    drawSprite(ctx, `held:${p.weapon}:side`, def, x, handY - def.h / 2, p.facing === -1);
   }
-  ctx.restore();
 };
 
-export const drawProjectiles = (
-  ctx: CanvasRenderingContext2D,
-  projectiles: Projectile[],
-  p: Player
-) => {
-  projectiles.forEach((proj) => {
-    ctx.fillStyle = proj.color;
-    if (proj.projectileType === 'floss') {
-      ctx.save();
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      const handX = p.x + (p.facing === 1 ? 25 : 5);
-      const handY = p.y + 20;
-      const endX = proj.x + proj.w / 2;
-      const endY = proj.y + proj.h / 2;
-      ctx.moveTo(handX, handY);
-      ctx.quadraticCurveTo((handX + endX) / 2, (handY + endY) / 2 + 5, endX, endY);
-      ctx.stroke();
-      ctx.translate(endX, endY);
-      ctx.rotate(Math.atan2(proj.vy, proj.vx));
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      ctx.arc(0, 0, 4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.moveTo(0, -4);
-      ctx.lineTo(10, 0);
-      ctx.lineTo(0, 4);
-      ctx.fill();
-      ctx.restore();
-    } else if (proj.projectileType === 'sword') {
-      ctx.save();
-      const centerX = proj.x + proj.w / 2;
-      const centerY = proj.y + proj.h / 2;
-      ctx.translate(centerX, centerY);
-      ctx.rotate(Math.atan2(proj.vy, proj.vx));
-      const radius = proj.w / 2;
-      const startAngle = -Math.PI / 3;
-      const endAngle = Math.PI / 3;
-      for (let i = 0; i < 3; i++) {
-        ctx.beginPath();
-        ctx.arc(0, 0, radius - i * 5, startAngle, endAngle);
-        ctx.strokeStyle = `rgba(34, 211, 238, ${1 - i * 0.2})`;
-        ctx.lineWidth = 4 - i;
-        ctx.stroke();
-      }
-      ctx.beginPath();
-      ctx.arc(0, 0, radius - 2, startAngle, endAngle);
-      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.restore();
-    } else if (proj.projectileType === 'wave') {
-      ctx.save();
-      ctx.translate(proj.x, proj.y);
-      ctx.fillStyle = '#5eead4';
-      for (let i = 0; i < 5; i++) {
-        const bx = (i / 5) * proj.w;
-        const by = Math.sin(Date.now() / 50 + i) * (proj.h / 4) + proj.h / 2;
-        ctx.beginPath();
-        ctx.arc(bx, by, 3 + (i % 3), 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.restore();
-    } else if (proj.projectileType === 'laser') {
-      ctx.save();
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(proj.x, proj.y + proj.h * 0.25, proj.w, proj.h * 0.5);
-      ctx.fillStyle = proj.color;
-      ctx.globalAlpha = 0.5;
-      ctx.fillRect(proj.x, proj.y, proj.w, proj.h);
-      ctx.globalAlpha = 1.0;
-      ctx.restore();
-    } else if (proj.projectileType === 'mortar' || proj.projectileType === 'acid') {
-      ctx.beginPath();
-      ctx.arc(proj.x + proj.w / 2, proj.y + proj.h / 2, proj.w / 2, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (proj.projectileType === 'sludge') {
-      ctx.fillStyle = proj.color;
-      ctx.beginPath();
-      ctx.ellipse(
-        proj.x + proj.w / 2,
-        proj.y + proj.h / 2,
-        proj.w / 2,
-        proj.h / 3,
-        0,
-        0,
-        Math.PI * 2
-      );
-      ctx.fill();
-      ctx.fillStyle = '#fff';
-      if (Math.random() > 0.5) ctx.fillRect(proj.x + 5, proj.y + 4, 2, 2);
-    } else {
-      ctx.beginPath();
-      ctx.arc(proj.x + proj.w / 2, proj.y + proj.h / 2, proj.w / 2, 0, Math.PI * 2);
-      ctx.fill();
-    }
+// --- Objetos ---------------------------------------------------------------
+
+type PowerUpEmblem = keyof typeof POWERUP_EMBLEMS;
+
+const powerupSprite = (subType: PowerUpEmblem): SpriteDef =>
+  memo(`powerup:${subType}`, () => {
+    const shaded = shadeMask(POWERUP_BODY, 'metal');
+    return withDetails(shaded, {
+      w: POWERUP_W,
+      h: POWERUP_H,
+      rows: powerupDetail(subType),
+      // El contenido de cada bote lleva el color de lo que da.
+      map: { S: EMBLEM_COLORS[subType] },
+    });
   });
+
+/** Color del emblema de cada objeto: dice de un vistazo qué suelta. */
+const EMBLEM_COLORS: Record<PowerUpEmblem, PaletteKey> = {
+  health: 'candy.light',
+  normal: 'shotPlayer.light',
+  spread: 'shotPlayer.hi',
+  laser: 'laser.light',
+  mouthwash: 'wave.light',
+  floss: 'bacteria.light',
+  toothbrush: 'plaque.light',
+};
+
+/**
+ * Objeto que sueltan los enemigos.
+ *
+ * El bamboleo va con el reloj de simulación que se le pasa, no con `Date.now()`:
+ * así dos partidas iguales lo dibujan igual, que es la condición para poder hornear
+ * y para que el port a Phaser no cambie de aspecto.
+ */
+export const drawPowerUp = (ctx: CanvasRenderingContext2D, pu: PowerUp, time = 0) => {
+  const subType = (pu.subType in POWERUP_EMBLEMS ? pu.subType : 'normal') as PowerUpEmblem;
+  const bob = Math.round(Math.sin(time * 3 + pu.x * 0.05) * 2);
+
+  // Sombra en el suelo: dos tiras, como la del jugador.
+  px(ctx, pu.x + 4, pu.y + POWERUP_H + 2 + bob, POWERUP_W - 8, 1, 'void.shade');
+
+  drawSprite(ctx, `powerup:${subType}`, powerupSprite(subType), pu.x, pu.y + bob);
 };

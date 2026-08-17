@@ -3,7 +3,7 @@ import { Perk, Player, Language } from '../types';
 import { TEXT } from '../i18n';
 
 // We store IDs and Logic here, but Text is retrieved from LOCALES using ID mapping
-const PERK_DEFINITIONS: Omit<Perk, 'name' | 'description'>[] = [
+export const PERK_DEFINITIONS: Omit<Perk, 'name' | 'description'>[] = [
     { id: 'enamel_shield', icon: 'shield', rarity: 'common', color: '#22d3ee', weight: 100 },
     { id: 'vitality_root', icon: 'heart', rarity: 'common', color: '#ef4444', weight: 100 },
     { id: 'extra_filling', icon: 'plus', rarity: 'common', color: '#10b981', weight: 80 },

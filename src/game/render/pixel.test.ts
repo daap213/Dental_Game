@@ -29,10 +29,20 @@ const allIntegers = (calls: Call[]) =>
       Number.isInteger(c.x) && Number.isInteger(c.y) && Number.isInteger(c.w) && Number.isInteger(c.h)
   );
 
+/** Luminancia relativa, para poder comprobar que una rampa va de oscuro a claro. */
+const luminance = (hex: string): number => {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+
+const RAMP_ORDER = ['out', 'shade', 'dark', 'mid', 'light', 'hi'] as const;
+
 describe('paleta', () => {
-  it('todas las rampas tienen los cuatro tonos', () => {
+  it('todas las rampas tienen los seis tonos', () => {
     for (const [name, ramp] of Object.entries(RAMPS)) {
-      for (const t of ['out', 'dark', 'mid', 'light'] as const) {
+      for (const t of RAMP_ORDER) {
         expect(ramp[t], `${name}.${t}`).toMatch(/^#[0-9a-f]{6}$/i);
       }
     }
@@ -41,7 +51,25 @@ describe('paleta', () => {
   it('los tonos de una rampa son distintos entre sí', () => {
     for (const [name, ramp] of Object.entries(RAMPS)) {
       const tones = new Set(Object.values(ramp));
-      expect(tones.size, `${name} repite tonos`).toBe(4);
+      expect(tones.size, `${name} repite tonos`).toBe(RAMP_ORDER.length);
+    }
+  });
+
+  it('cada rampa sube de luminancia de contorno a brillo, sin escalones planos', () => {
+    // Es lo que la convierte en una rampa utilizable: si dos tonos consecutivos
+    // se cruzan, el sombreado automático deja de leerse como volumen.
+    for (const [name, ramp] of Object.entries(RAMPS)) {
+      const lums = RAMP_ORDER.map((t) => luminance(ramp[t]));
+      for (let i = 1; i < lums.length; i++) {
+        expect(lums[i], `${name}: ${RAMP_ORDER[i]} debería ser más claro que ${RAMP_ORDER[i - 1]}`).toBeGreaterThan(lums[i - 1]);
+      }
+    }
+  });
+
+  it('el recorrido de cada rampa es amplio: hay sitio para sombrear', () => {
+    for (const [name, ramp] of Object.entries(RAMPS)) {
+      const range = luminance(ramp.hi) - luminance(ramp.out);
+      expect(range, `${name} tiene un recorrido de solo ${Math.round(range)}`).toBeGreaterThan(90);
     }
   });
 

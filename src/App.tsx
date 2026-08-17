@@ -6,25 +6,27 @@ import { GameOver } from './components/views/GameOver';
 import { PauseMenu } from './components/views/PauseMenu';
 import { PerkMenu } from './components/views/PerkMenu';
 import { Credits } from './components/views/Credits';
-import { SpriteGallery } from './components/views/SpriteGallery';
-import { useIntegerScale } from './components/useIntegerScale';
+import { SpriteGallery, galleryPageFromSearch } from './components/views/SpriteGallery';
+import { useViewportSize } from './components/useViewportSize';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from './game/data/physics';
 import { GameState, InputMethod, Perk, LoadoutType, Language, Difficulty, CharacterType } from './types';
 import { generateBriefing } from './services/geminiService';
 
 /**
- * `?sprites=1` abre la galería de arte en lugar del juego. Es una herramienta de
- * revisión: permite ver la paleta y todos los sprites de una vez.
+ * `?sprites=palette|player|enemies|bosses` abre la galería de arte en lugar del
+ * juego. Es una herramienta de revisión: permite ver toda la paleta y todos los
+ * sprites de una vez, sin tener que jugar hasta encontrarse con cada cosa.
  */
-const showGallery =
-  typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('sprites');
+const galleryPage =
+  typeof window === 'undefined' ? null : galleryPageFromSearch(window.location.search);
 
 const App: React.FC = () => {
   const {
     containerRef: viewportRef,
     width: viewportWidth,
     height: viewportHeight,
-  } = useIntegerScale<HTMLDivElement>(CANVAS_WIDTH, CANVAS_HEIGHT);
+    supersample,
+  } = useViewportSize<HTMLDivElement>(CANVAS_WIDTH, CANVAS_HEIGHT);
 
   const [gameState, setGameState] = useState<GameState>(GameState.MENU);
   const [finalScore, setFinalScore] = useState(0);
@@ -70,27 +72,33 @@ const App: React.FC = () => {
       setGameState(GameState.PLAYING);
   };
 
-  if (showGallery) return <SpriteGallery />;
+  if (galleryPage) return <SpriteGallery page={galleryPage} />;
 
   return (
     /**
-     * Pantalla virtual: el juego y toda su interfaz viven dentro de una caja de
-     * 800×450 escalada por un número entero, centrada, con el resto en negro.
+     * Dos capas, y esto es la parte que importa:
      *
-     * Es lo que mantiene la interfaz pegada al juego: si los menús se
-     * dimensionaran a la ventana y el lienzo a su múltiplo exacto, las tarjetas
-     * de mejora acabarían siendo más anchas que el propio juego.
+     * - **el juego** vive en una caja de proporción 16:9 centrada, porque su
+     *   imagen es una retícula de 800×450 y estirarla a la ventana la
+     *   deformaría;
+     * - **la interfaz** ocupa la ventana entera.
+     *
+     * Antes los menús iban dentro de la caja, y como la caja se calculaba en
+     * múltiplos exactos de 800×450, en una ventana de 1536×695 la interfaz
+     * entera quedaba encerrada en un recuadro de 800×450 en medio de la
+     * pantalla. Un menú es texto y cajas: no tiene retícula que respetar, así
+     * que no tiene por qué pagar ese peaje.
      */
     <div
       ref={viewportRef}
-      className="flex h-screen w-full items-center justify-center overflow-hidden bg-black"
+      className="relative flex h-screen w-full items-center justify-center overflow-hidden bg-black"
     >
       <div
         className="relative flex flex-col overflow-hidden bg-slate-900"
         style={{ width: viewportWidth, height: viewportHeight }}
       >
       <GameCanvas
-        onGameOver={handleGameOver} 
+        onGameOver={handleGameOver}
         gameState={gameState}
         setGameState={setGameState}
         sessionId={sessionId}
@@ -103,7 +111,9 @@ const App: React.FC = () => {
         onPerkApplied={handlePerkApplied}
         onVictory={() => setGameState(GameState.VICTORY)}
         lang={language}
+        supersample={supersample}
       />
+      </div>
 
       {gameState === GameState.MENU && (
         <div className="absolute inset-0 z-50">
@@ -154,7 +164,6 @@ const App: React.FC = () => {
       {gameState === GameState.VICTORY && (
           <Credits onClose={() => setGameState(GameState.MENU)} lang={language} />
       )}
-      </div>
     </div>
   );
 };

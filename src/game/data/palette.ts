@@ -1,72 +1,246 @@
 /**
- * Paleta del juego, organizada en rampas de cuatro tonos.
+ * Paleta del juego, organizada en rampas de seis tonos.
  *
- * El estilo es «contorno + sombreado»: cada material tiene un contorno oscuro
- * (`out`) y tres tonos de relleno (`dark`, `mid`, `light`). Esa es toda la
- * disciplina que hace que un pixel art se vea cohesionado: ningún sprite
- * inventa colores, todos tiran de estas rampas.
+ * Las rampas no son el mismo color más claro y más oscuro: llevan **desviación
+ * de matiz**, que es lo que separa un pixel art plano de uno que parece tener
+ * materia. Y aquí la desviación tiene una excusa física, porque toda la escena
+ * está iluminada por la lámpara del dentista dentro de una boca:
+ *
+ *   · las sombras giran hacia el rojo-magenta del ambiente (la luz que rebota en
+ *     las encías),
+ *   · las luces giran hacia el blanco cálido de la lámpara,
+ *   · el contorno nunca es negro puro, sino el propio material muy oscurecido.
  *
  * Vive en `data/` y no en `render/` a propósito: las entidades llevan `color`
  * como campo y `data/enemies.ts` asigna el color de cada enemigo, así que si
  * la paleta colgara de la capa de presentación el dominio tendría que importar
- * de ella. Aquí la consumen ambas capas sin invertir la dependencia.
+ * de ella.
  */
 
 export interface Ramp {
-  /** Contorno. Nunca negro puro: es el tono del material muy oscurecido. */
+  /** Contorno del lado en sombra. El material muy oscurecido, nunca negro. */
   out: string;
+  /** Sombra profunda, girada hacia el ambiente. */
+  shade: string;
   dark: string;
+  /** Color base del material. */
   mid: string;
   light: string;
+  /** Brillo especular, girado hacia el cálido de la lámpara. */
+  hi: string;
 }
 
 export const RAMPS = {
   // --- Materiales del escenario ---
   /**
-   * Dientes, incluido el jugador. Los tonos van bien separados a propósito: con
-   * un esmalte casi blanco de medio a claro, el volumen no se lee a 32 px.
+   * Esmalte: dientes y jugador. No es blanco, es marfil con sombras malva; un
+   * diente pintado de blanco puro parece plástico.
    */
-  enamel: { out: '#4a2c42', dark: '#9c8b98', mid: '#d5c9d1', light: '#fffdfa' },
-  /** Encías. */
-  gum: { out: '#4c0519', dark: '#9d174d', mid: '#be185d', light: '#f472b6' },
-  /** Lengua: el suelo. */
-  tongue: { out: '#831843', dark: '#9d174d', mid: '#db2777', light: '#f9a8d4' },
-  /** Aparato dental, torretas, cañones. */
-  metal: { out: '#1e293b', dark: '#475569', mid: '#94a3b8', light: '#e2e8f0' },
+  enamel: {
+    out: '#2e1622',
+    shade: '#6b4256',
+    dark: '#a8899a',
+    mid: '#d9cbd2',
+    light: '#f2e9e6',
+    hi: '#fffdf2',
+  },
+  /** Encía: tejido, no plástico rosa. */
+  gum: {
+    out: '#2c0512',
+    shade: '#5c0d24',
+    dark: '#8f1338',
+    mid: '#bf2050',
+    light: '#e05575',
+    hi: '#f7a3b2',
+  },
+  /** Lengua: el suelo. Más rosa y más húmeda que la encía. */
+  tongue: {
+    out: '#3b0a1c',
+    shade: '#6e1030',
+    dark: '#a31a4a',
+    mid: '#d13a6a',
+    light: '#ec7192',
+    hi: '#ffb7c8',
+  },
+  /** Metal: aparato dental, torretas, cañones. Acero frío con brillo cálido. */
+  metal: {
+    out: '#0f1720',
+    shade: '#263445',
+    dark: '#46596e',
+    mid: '#74889c',
+    light: '#a8b8c8',
+    hi: '#eef4f8',
+  },
   /** Piel del dentista del fondo. */
-  skin: { out: '#7f1d1d', dark: '#dc9a9a', mid: '#fca5a5', light: '#fee2e2' },
+  skin: {
+    out: '#4a1414',
+    shade: '#8a3a34',
+    dark: '#bf6a5e',
+    mid: '#e0968a',
+    light: '#f2c0b3',
+    hi: '#fde8dc',
+  },
   /** Bata y mascarilla. */
-  scrubs: { out: '#134e4a', dark: '#0f766e', mid: '#14b8a6', light: '#5eead4' },
+  scrubs: {
+    out: '#06302e',
+    shade: '#0d4f4a',
+    dark: '#12726a',
+    mid: '#199c8f',
+    light: '#4ac4b4',
+    hi: '#a5e8dd',
+  },
 
   // --- Enemigos comunes ---
-  bacteria: { out: '#064e3b', dark: '#047857', mid: '#10b981', light: '#6ee7b7' },
-  plaque: { out: '#78350f', dark: '#b45309', mid: '#d97706', light: '#fbbf24' },
-  candy: { out: '#7f1d1d', dark: '#b91c1c', mid: '#ef4444', light: '#fca5a5' },
-  turret: { out: '#2e1065', dark: '#5b21b6', mid: '#7c3aed', light: '#c4b5fd' },
-  rusher: { out: '#831843', dark: '#be185d', mid: '#f472b6', light: '#fbcfe8' },
-  fiend: { out: '#701a3f', dark: '#be185d', mid: '#ec4899', light: '#f9a8d4' },
-  acid: { out: '#365314', dark: '#4d7c0f', mid: '#a3e635', light: '#d9f99d' },
-  grunt: { out: '#450a0a', dark: '#7f1d1d', mid: '#991b1b', light: '#dc2626' },
+  bacteria: {
+    out: '#04231b',
+    shade: '#07463a',
+    dark: '#0a6b52',
+    mid: '#13996d',
+    light: '#3fc78e',
+    hi: '#9ff0c4',
+  },
+  plaque: {
+    out: '#2b1704',
+    shade: '#573006',
+    dark: '#8a4d0a',
+    mid: '#b8720f',
+    light: '#dfa22c',
+    hi: '#f6d47a',
+  },
+  candy: {
+    out: '#3d0708',
+    shade: '#6e0f13',
+    dark: '#a3181c',
+    mid: '#d42a2a',
+    light: '#ef6a5c',
+    hi: '#ffb9a3',
+  },
+  turret: {
+    out: '#1a0736',
+    shade: '#34125e',
+    dark: '#4f2088',
+    mid: '#6f34b8',
+    light: '#9d6ce0',
+    hi: '#d4b8fa',
+  },
+  rusher: {
+    out: '#3a0722',
+    shade: '#6b0f3f',
+    dark: '#9e1a60',
+    mid: '#d43a8a',
+    light: '#f076b0',
+    hi: '#ffc0dc',
+  },
+  fiend: {
+    out: '#2e0424',
+    shade: '#5c0b45',
+    dark: '#8f1268',
+    mid: '#c02090',
+    light: '#e563bb',
+    hi: '#ffb3e2',
+  },
+  acid: {
+    out: '#1c2604',
+    shade: '#364c07',
+    dark: '#56750c',
+    mid: '#7fa314',
+    light: '#aed23c',
+    hi: '#ddf28c',
+  },
+  grunt: {
+    out: '#260404',
+    shade: '#4a0a0a',
+    dark: '#701212',
+    mid: '#9a1e1e',
+    light: '#c94a3c',
+    hi: '#ea9078',
+  },
 
   // --- Jefes ---
-  /** Piedra y armadura: sirve para rey, fantasma y tanque. */
-  stone: { out: '#18181b', dark: '#3f3f46', mid: '#52525b', light: '#a1a1aa' },
+  /** Piedra y armadura: rey, fantasma y tanque. */
+  stone: {
+    out: '#0c0c10',
+    shade: '#1e1e26',
+    dark: '#33333f',
+    mid: '#4d4d5c',
+    light: '#75758a',
+    hi: '#b0b0c2',
+  },
   /** El guardián oculto, dorado. */
-  warden: { out: '#713f12', dark: '#a16207', mid: '#facc15', light: '#fef08a' },
-  /** La deidad de la caries, fase 2. */
-  void: { out: '#020617', dark: '#1e1b4b', mid: '#312e81', light: '#818cf8' },
+  warden: {
+    out: '#35210a',
+    shade: '#5e3a0d',
+    dark: '#8f5c10',
+    mid: '#c9911c',
+    light: '#eec53f',
+    hi: '#fff2a8',
+  },
+  /** La deidad de la caries y el fondo profundo. */
+  void: {
+    out: '#04040c',
+    shade: '#0b0b1c',
+    dark: '#17173a',
+    mid: '#262657',
+    light: '#45458a',
+    hi: '#7d7dd0',
+  },
 
   // --- Proyectiles y efectos ---
-  shotPlayer: { out: '#1e3a8a', dark: '#2563eb', mid: '#60a5fa', light: '#dbeafe' },
-  shotEnemy: { out: '#064e3b', dark: '#047857', mid: '#059669', light: '#6ee7b7' },
-  laser: { out: '#164e63', dark: '#0e7490', mid: '#06b6d4', light: '#cffafe' },
-  wave: { out: '#4c1d95', dark: '#6d28d9', mid: '#a78bfa', light: '#ede9fe' },
-  melee: { out: '#475569', dark: '#94a3b8', mid: '#e2e8f0', light: '#ffffff' },
-  sludge: { out: '#831843', dark: '#db2777', mid: '#f9a8d4', light: '#fce7f3' },
+  shotPlayer: {
+    out: '#0a1a4a',
+    shade: '#12307e',
+    dark: '#1c4cb8',
+    mid: '#2f74e8',
+    light: '#6ba6ff',
+    hi: '#c8e4ff',
+  },
+  shotEnemy: {
+    out: '#052a1a',
+    shade: '#0a5233',
+    dark: '#0f7a4a',
+    mid: '#14a163',
+    light: '#3fc98d',
+    hi: '#9defc4',
+  },
+  laser: {
+    out: '#062a33',
+    shade: '#0a4a5c',
+    dark: '#0e6f88',
+    mid: '#12a0be',
+    light: '#4fd4e8',
+    hi: '#c4f7ff',
+  },
+  wave: {
+    out: '#221054',
+    shade: '#3a1e86',
+    dark: '#5232b8',
+    mid: '#7455e0',
+    light: '#a68cf5',
+    hi: '#ddd0ff',
+  },
+  melee: {
+    out: '#2a2f3a',
+    shade: '#4c5563',
+    dark: '#77818f',
+    mid: '#a8b2bd',
+    light: '#d8dfe6',
+    hi: '#ffffff',
+  },
+  sludge: {
+    out: '#3a0a2a',
+    shade: '#661548',
+    dark: '#96206b',
+    mid: '#c73a93',
+    light: '#e87ab8',
+    hi: '#ffc4e0',
+  },
 } as const satisfies Record<string, Ramp>;
 
 export type Material = keyof typeof RAMPS;
 export type Tone = keyof Ramp;
+
+/** Los tonos de relleno, del más oscuro al más claro. El contorno va aparte. */
+export const FILL_TONES: readonly Tone[] = ['shade', 'dark', 'mid', 'light', 'hi'];
 
 /** Referencia a un tono concreto, p. ej. `'bacteria.mid'`. */
 export type PaletteKey = `${Material & string}.${Tone}`;

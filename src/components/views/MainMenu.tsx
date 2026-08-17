@@ -1,29 +1,21 @@
 import React, { useState } from 'react';
 import { InputMethod, LoadoutType, Language, Difficulty, CharacterType } from '../../types';
 import {
-  MousePointer,
-  Keyboard,
-  Info,
-  X,
-  ShieldAlert,
   Crosshair,
-  Skull,
-  Sword,
-  Zap,
-  Wind,
-  Waves,
-  Rocket,
-  User,
-  Trophy,
-  Gift,
-  Star,
-  Activity,
-  Shield,
-  Heart,
-  Infinity as InfinityIcon,
   Globe,
+  Infinity as InfinityIcon,
+  Info,
+  Keyboard,
+  MousePointer,
+  Rocket,
+  Sword,
+  User,
+  Waves,
+  Wind,
+  Zap,
 } from 'lucide-react';
 import { Credits } from './Credits';
+import { IntelDatabase } from './IntelDatabase';
 import { TEXT } from '../../i18n';
 import { characterSummary } from '../../game/data/characters';
 import { PixelPanel, PixelButton, PixelLabel, PixelKey } from '../ui/Pixel';
@@ -211,8 +203,12 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                   >
                     <span>{option.label}</span>
                     <span
-                      className={`font-mono text-[7px] leading-none ${
-                        character === option.id ? 'text-pink-100' : 'text-slate-500'
+                      // `slate-500` sobre el fondo de la tarjeta apagada daba
+                      // 2,2:1 de contraste: los números de la clase que no está
+                      // elegida —justo los que hacen falta para comparar— no se
+                      // leían.
+                      className={`font-mono text-[8px] leading-none ${
+                        character === option.id ? 'text-pink-100' : 'text-slate-300'
                       }`}
                     >
                       {option.summary}
@@ -341,293 +337,3 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     </div>
   );
 };
-
-const IntelDatabase: React.FC<{ onClose: () => void; lang: Language }> = ({ onClose, lang }) => {
-  const t = TEXT[lang].database;
-  const w = TEXT[lang].weapons;
-  const pn = TEXT[lang].perk_names;
-  const en = TEXT[lang].enemy_names;
-  const ed = TEXT[lang].enemy_desc;
-  const bn = TEXT[lang].bosses;
-  const bd = TEXT[lang].boss_desc;
-
-  return (
-    <div className="absolute inset-0 bg-slate-900 z-50 overflow-y-auto p-4 md:p-8 animate-in slide-in-from-bottom duration-300">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex justify-between items-center mb-8 border-b-4 border-slate-700 pb-3 sticky top-0 bg-slate-900 z-10 pt-2">
-          <h2 className="text-2xl md:text-3xl font-bold text-green-400 tracking-widest flex items-center gap-3">
-            <ShieldAlert className="w-8 h-8" />
-            {t.title}
-          </h2>
-          <button
-            onClick={onClose}
-            className="pixel-btn border-red-300 bg-red-600 p-2 text-white hover:bg-red-500"
-          >
-            <X className="w-6 h-6" />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pb-10">
-          {/* ACHIEVEMENTS (LOGROS) */}
-          <section className="pixel-frame pixel-dither bg-slate-800 border-slate-600 p-4">
-            <h3 className="text-xl font-bold text-yellow-400 mb-4 flex items-center gap-2 border-b border-yellow-900 pb-2">
-              <Trophy className="w-5 h-5" /> {t.achievements_title}
-            </h3>
-            <p className="text-sm text-slate-400 mb-4">{t.achievements_desc}</p>
-            <div className="space-y-3">
-              <AchievementRow
-                icon={<Star className="w-4 h-4" />}
-                title={t.ach_score_title}
-                desc={t.ach_score_desc}
-                color="text-yellow-200"
-              />
-              <AchievementRow
-                icon={<Skull className="w-4 h-4" />}
-                title={t.ach_kill_title}
-                desc={t.ach_kill_desc}
-                color="text-red-300"
-              />
-              <AchievementRow
-                icon={<Trophy className="w-4 h-4" />}
-                title={t.ach_boss_title}
-                desc={t.ach_boss_desc}
-                color="text-purple-300"
-              />
-            </div>
-          </section>
-
-          {/* REWARDS (RECOMPENSAS) */}
-          <section className="pixel-frame pixel-dither bg-slate-800 border-slate-600 p-4">
-            <h3 className="text-xl font-bold text-pink-400 mb-4 flex items-center gap-2 border-b border-pink-900 pb-2">
-              <Gift className="w-5 h-5" /> {t.rewards_title}
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <PerkCard
-                name={pn.enamel_shield.name}
-                desc={pn.enamel_shield.desc}
-                icon={<Shield className="w-4 h-4" />}
-                color="text-cyan-400"
-              />
-              <PerkCard
-                name={pn.vitality_root.name}
-                desc={pn.vitality_root.desc}
-                icon={<Activity className="w-4 h-4" />}
-                color="text-red-400"
-              />
-              <PerkCard
-                name={pn.aerodynamic_floss.name}
-                desc={pn.aerodynamic_floss.desc}
-                icon={<Wind className="w-4 h-4" />}
-                color="text-yellow-400"
-              />
-              <PerkCard
-                name={pn.extra_dash.name}
-                desc={pn.extra_dash.desc}
-                icon={<Wind className="w-4 h-4" />}
-                color="text-orange-400"
-              />
-              <PerkCard
-                name={pn.thick_enamel.name}
-                desc={pn.thick_enamel.desc}
-                icon={<Shield className="w-4 h-4" />}
-                color="text-indigo-400"
-              />
-              <PerkCard
-                name={pn.temp_immunity.name}
-                desc={pn.temp_immunity.desc}
-                icon={<Zap className="w-4 h-4" />}
-                color="text-purple-400"
-              />
-              <PerkCard
-                name={pn.extra_life.name}
-                desc={pn.extra_life.desc}
-                icon={<Heart className="w-4 h-4" />}
-                color="text-yellow-300"
-              />
-              <PerkCard
-                name={pn.bristle_rage.name}
-                desc={pn.bristle_rage.desc}
-                icon={<Sword className="w-4 h-4" />}
-                color="text-pink-400"
-              />
-            </div>
-          </section>
-
-          {/* WEAPONS */}
-          <section className="pixel-frame pixel-dither bg-slate-800 border-slate-600 p-4">
-            <h3 className="text-xl font-bold text-blue-300 mb-4 flex items-center gap-2 border-b border-blue-900 pb-2">
-              <Crosshair className="w-5 h-5" /> {t.arsenal_title}
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <WeaponCard
-                icon={<Rocket />}
-                name={w.normal.name}
-                desc={w.normal.desc}
-                color="text-gray-300"
-              />
-              <WeaponCard
-                icon={<Zap />}
-                name={w.laser.name}
-                desc={w.laser.desc}
-                color="text-cyan-400"
-              />
-              <WeaponCard
-                icon={<Crosshair />}
-                name={w.spread.name}
-                desc={w.spread.desc}
-                color="text-blue-500"
-              />
-              <WeaponCard
-                icon={<Waves />}
-                name={w.mouthwash.name}
-                desc={w.mouthwash.desc}
-                color="text-purple-400"
-              />
-              <WeaponCard
-                icon={<Wind />}
-                name={w.floss.name}
-                desc={w.floss.desc}
-                color="text-green-400"
-              />
-              <WeaponCard
-                icon={<Sword />}
-                name={w.toothbrush.name}
-                desc={w.toothbrush.desc}
-                color="text-orange-400"
-              />
-            </div>
-          </section>
-
-          {/* BOSSES */}
-          <section className="pixel-frame pixel-dither bg-slate-800 border-slate-600 p-4">
-            <h3 className="text-xl font-bold text-red-400 mb-4 flex items-center gap-2 border-b border-red-900 pb-2">
-              <Skull className="w-5 h-5" /> {t.bosses_title}
-            </h3>
-            <div className="space-y-4">
-              <EnemyRow name={bn.king} type="Level 1" desc={bd.king} color="text-gray-400" />
-              <EnemyRow name={bn.phantom} type="Level 2" desc={bd.phantom} color="text-cyan-300" />
-              <EnemyRow name={bn.tank} type="Level 3" desc={bd.tank} color="text-stone-400" />
-              <EnemyRow name={bn.general} type="Level 4" desc={bd.general} color="text-red-500" />
-              <EnemyRow name={bn.deity} type="Level 5" desc={bd.deity} color="text-purple-500" />
-            </div>
-          </section>
-
-          {/* ENEMIES */}
-          <section className="pixel-frame pixel-dither bg-slate-800 border-slate-600 p-4 lg:col-span-2">
-            <h3 className="text-xl font-bold text-yellow-300 mb-4 flex items-center gap-2 border-b border-yellow-900/50 pb-2">
-              <ShieldAlert className="w-5 h-5" /> {t.enemies_title}
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-              <EnemyCard name={en.bacteria} desc={ed.bacteria} />
-              <EnemyCard name={en.plaque} desc={ed.plaque} />
-              <EnemyCard name={en.bomber} desc={ed.bomber} />
-              <EnemyCard name={en.turret} desc={ed.turret} />
-              <EnemyCard name={en.rusher} desc={ed.rusher} />
-              <EnemyCard name={en.fiend} desc={ed.fiend} />
-              <EnemyCard name={en.spitter} desc={ed.spitter} />
-              <EnemyCard name={en.grunt} desc={ed.grunt} />
-            </div>
-          </section>
-        </div>
-
-        <div className="text-center pb-8">
-          <button
-            onClick={onClose}
-            className="pixel-btn border-slate-500 bg-slate-700 px-8 py-3 text-white hover:bg-slate-600"
-          >
-            {t.close}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const AchievementRow = ({
-  icon,
-  title,
-  desc,
-  color,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  desc: string;
-  color: string;
-}) => (
-  <div className="flex items-center gap-3 pixel-inset bg-slate-900 border-slate-700 p-2">
-    <div className={`pixel-inset border-slate-700 bg-slate-800 p-1.5 ${color}`}>{icon}</div>
-    <div>
-      <h4 className={`font-bold text-sm ${color}`}>{title}</h4>
-      <p className="text-xs text-slate-400">{desc}</p>
-    </div>
-  </div>
-);
-
-const PerkCard = ({
-  icon,
-  name,
-  desc,
-  color,
-}: {
-  icon: React.ReactNode;
-  name: string;
-  desc: string;
-  color: string;
-}) => (
-  <div className="flex items-start gap-3 pixel-inset bg-slate-900 border-slate-700 p-2">
-    <div className={`pixel-inset border-slate-700 bg-slate-800 p-1.5 ${color}`}>{icon}</div>
-    <div>
-      <h4 className={`font-bold text-xs ${color} uppercase`}>{name}</h4>
-      <p className="text-[10px] text-slate-400 leading-tight">{desc}</p>
-    </div>
-  </div>
-);
-
-const WeaponCard = ({
-  icon,
-  name,
-  desc,
-  color,
-}: {
-  icon: React.ReactNode;
-  name: string;
-  desc: string;
-  color: string;
-}) => (
-  <div className="flex items-start gap-3 pixel-inset bg-slate-900 border-slate-700 p-2">
-    <div className={`${color} pixel-inset border-slate-700 bg-slate-800 p-2`}>{icon}</div>
-    <div>
-      <h4 className={`font-bold text-sm ${color} uppercase`}>{name}</h4>
-      <p className="text-xs text-slate-400">{desc}</p>
-    </div>
-  </div>
-);
-
-const EnemyRow = ({
-  name,
-  type,
-  desc,
-  color,
-}: {
-  name: string;
-  type: string;
-  desc: string;
-  color: string;
-}) => (
-  <div className="flex justify-between items-center pixel-inset bg-slate-900 border-red-900 p-2">
-    <div>
-      <h4 className={`font-bold ${color}`}>{name}</h4>
-      <p className="text-xs text-slate-400">{desc}</p>
-    </div>
-    <span className="pixel-inset border-slate-700 bg-slate-800 px-2 py-1 text-[8px] text-slate-300">
-      {type}
-    </span>
-  </div>
-);
-
-const EnemyCard = ({ name, desc }: { name: string; desc: string }) => (
-  <div className="pixel-inset bg-slate-900 border-slate-700 p-2">
-    <h4 className="font-bold text-sm text-yellow-100 mb-1">{name}</h4>
-    <p className="text-xs text-slate-400 leading-tight">{desc}</p>
-  </div>
-);

@@ -1,153 +1,177 @@
 /**
  * Siluetas del jugador, 32×32 (el tamaño exacto del hitbox: `PLAYER_SIZE`).
  *
- * Solo silueta: `#` es lleno y `.` es vacío. El contorno y los tres tonos los
+ * Solo silueta: `#` es lleno y `.` es vacío. El contorno y los seis tonos los
  * pone `shadeMask`, así que la luz viene del mismo sitio en todos los sprites del
- * juego. Los detalles que no salen de la silueta —cinta y ojos— van en su propia
- * capa, con sus propios materiales.
+ * juego. Lo que no sale de la silueta —surco, cinta, ojos, brillo del esmalte—
+ * va en capas de detalle aparte, recortadas a la forma.
+ *
+ * El diente se dibuja con su anatomía: corona con cúspides arriba, un cuello que
+ * estrecha, y raíces que se afinan hasta la punta y sobre las que el personaje se
+ * apoya. La única licencia es que todas las clases tienen dos raíces, incluidas
+ * las que en la realidad tienen una: un incisivo con una sola raíz no puede
+ * caminar.
+ *
+ * Se compone en tres piezas: la corona la elige la clase, el tronco es común, y
+ * los pies cambian con la pose.
  *
  * Este fichero no importa nada a propósito: así se puede previsualizar en
  * terminal sin arrastrar el resto del código.
  */
 
 const EMPTY = '................................';
-/** Cuerpo, 22 px de ancho (x5..x26). */
-const BODY = '.....######################.....';
-/** Cuello del cuerpo antes de las raíces, 20 px (x6..x25). */
-const WAIST = '......####################......';
-/** Las dos raíces: x7..x13 y x18..x24. */
-const ROOTS = '.......#######....#######.......';
-/** Solo la raíz derecha: el paso levantado. */
-const ROOT_RIGHT = '..................#######.......';
 
-// --- Coronas: es lo único que distingue a cada clase de diente ---
+// --- Coronas: lo único que distingue a cada clase (filas 0-15) ---
 
-/** Molar: dos cúspides anchas y redondeadas. La clase de la casa. */
+/** Ancho completo de la corona, 24 px (x4..x27). */
+const CROWN_FULL = '....########################....';
+/** Corona estrecha, 22 px (x5..x26). */
+const CROWN_NARROW = '.....######################.....';
+
+/** Molar: dos cúspides anchas con el surco en medio. */
 export const CROWN_MOLAR: readonly string[] = [
-  '.......######......######.......',
   '......########....########......',
   '.....##########..##########.....',
-  BODY,
-  BODY,
-  BODY,
-  BODY,
-  BODY,
-  BODY,
-  BODY,
-  BODY,
-  BODY,
+  CROWN_FULL,
+  CROWN_FULL,
+  CROWN_FULL,
+  CROWN_FULL,
+  CROWN_FULL,
+  CROWN_FULL,
+  CROWN_FULL,
+  CROWN_FULL,
+  CROWN_FULL,
+  CROWN_FULL,
+  CROWN_FULL,
+  CROWN_FULL,
+  CROWN_FULL,
+  CROWN_FULL,
 ];
 
-/** Incisivo: corte recto, como un cincel. */
-export const CROWN_INCISOR: readonly string[] = [
-  WAIST,
-  WAIST,
-  WAIST,
-  WAIST,
-  BODY,
-  BODY,
-  BODY,
-  BODY,
-  BODY,
-  BODY,
-  BODY,
-  BODY,
-];
+/** Incisivo: borde recto de cincel, más estrecho que el molar. */
+export const CROWN_INCISOR: readonly string[] = Array<string>(16).fill(CROWN_NARROW);
 
-/** Colmillo: punta afilada. */
+/** Colmillo: cúspide única en punta. */
 export const CROWN_CANINE: readonly string[] = [
   '...............##...............',
   '..............####..............',
   '.............######.............',
   '............########............',
+  '...........##########...........',
   '..........############..........',
+  '.........##############.........',
   '........################........',
-  WAIST,
-  BODY,
-  BODY,
-  BODY,
-  BODY,
-  BODY,
+  '.......##################.......',
+  '......####################......',
+  CROWN_NARROW,
+  CROWN_NARROW,
+  CROWN_NARROW,
+  CROWN_NARROW,
+  CROWN_NARROW,
+  CROWN_NARROW,
 ];
 
-/** Premolar: dos cúspides estrechas y más marcadas. */
+/** Premolar: dos cúspides estrechas y marcadas. */
 export const CROWN_PREMOLAR: readonly string[] = [
-  '........####........####........',
-  '.......######......######.......',
-  '......########....########......',
-  '.....##########..##########.....',
-  BODY,
-  BODY,
-  BODY,
-  BODY,
-  BODY,
-  BODY,
-  BODY,
-  BODY,
+  '........#####......#####........',
+  '.......#######....#######.......',
+  '......#########..#########......',
+  CROWN_NARROW,
+  CROWN_NARROW,
+  CROWN_NARROW,
+  CROWN_NARROW,
+  CROWN_NARROW,
+  CROWN_NARROW,
+  CROWN_NARROW,
+  CROWN_NARROW,
+  CROWN_NARROW,
+  CROWN_NARROW,
+  CROWN_NARROW,
+  CROWN_NARROW,
+  CROWN_NARROW,
 ];
 
-// --- Cuerpos: es lo que distingue a cada pose ---
+/** Cuello y arranque de las dos raíces. Común a todas las clases (filas 16-25). */
+export const TRUNK: readonly string[] = [
+  ...Array<string>(16).fill(EMPTY),
+  '.....######################.....',
+  '......####################......',
+  '.......##################.......',
+  '.......##################.......',
+  '.......########..########.......',
+  '.......########..########.......',
+  '.......#######....#######.......',
+  '.......#######....#######.......',
+  '........######....######........',
+  '........######....######........',
+];
+
+// --- Pies: lo único que distingue a cada pose (filas 26-31) ---
 
 /** De pie: las dos raíces apoyadas. */
-export const BODY_IDLE: readonly string[] = [
-  ...Array<string>(12).fill(EMPTY),
-  BODY,
-  BODY,
-  BODY,
-  BODY,
-  BODY,
-  BODY,
-  BODY,
-  BODY,
-  BODY,
-  BODY,
-  BODY,
-  BODY,
-  WAIST,
-  WAIST,
-  ROOTS,
-  ROOTS,
-  ROOTS,
-  ROOTS,
-  ROOTS,
-  ROOTS,
+export const FEET_IDLE: readonly string[] = [
+  ...Array<string>(26).fill(EMPTY),
+  '........#####......#####........',
+  '........#####......#####........',
+  '.........####......####.........',
+  '.........####......####.........',
+  '.........###........###.........',
+  '.........###........###.........',
 ];
 
-/** Andando: la raíz izquierda se levanta. */
-export const BODY_WALK: readonly string[] = [
-  ...BODY_IDLE.slice(0, 30),
-  ROOT_RIGHT,
-  ROOT_RIGHT,
+/** Andando: la raíz izquierda se despega del suelo. */
+export const FEET_WALK: readonly string[] = [
+  ...Array<string>(26).fill(EMPTY),
+  '........#####......#####........',
+  '........#####......#####........',
+  '.........####......####.........',
+  '..........###......####.........',
+  '....................###.........',
+  '....................###.........',
 ];
 
 /** En el aire: las dos raíces recogidas. */
-export const BODY_JUMP: readonly string[] = [
-  ...BODY_IDLE.slice(0, 29),
-  EMPTY,
+export const FEET_JUMP: readonly string[] = [
+  ...Array<string>(26).fill(EMPTY),
+  '........#####......#####........',
+  '.........####......####.........',
+  '.........####......####.........',
+  '..........##........##..........',
   EMPTY,
   EMPTY,
 ];
 
-// --- Detalles: cinta y cara ---
+// --- Detalles: surco, cinta, cara y brillo del esmalte ---
 
-/** Cinta de la frente y ojos mirando al frente. */
+/**
+ * Cara y cinta. `B` y `b` son la cinta, `E` el blanco del ojo, `P` la pupila,
+ * `G` el destello, `H` el brillo del esmalte y `F` el surco de la corona.
+ * Se recorta a la silueta, así que la misma capa vale para las cuatro coronas.
+ */
 export const FACE_IDLE: readonly string[] = [
-  ...Array<string>(13).fill(EMPTY),
-  '.....RRRRRRRRRRRRRRRRRRRRRR.....',
-  '.....RRRRRRRRRRRRRRRRRRRRRR.....',
-  '.....rrrrrrrrrrrrrrrrrrrrrr.....',
   EMPTY,
-  '..........eee....eee............',
-  '..........eWe....eWe............',
-  '..........eee....eee............',
-  ...Array<string>(12).fill(EMPTY),
+  EMPTY,
+  '...............FF...............',
+  '......HH.......FF...............',
+  '......HH.......FF...............',
+  '.......H.......FF...............',
+  '....BBBBBBBBBBBBBBBBBBBBBBBB....',
+  '....BBBBBBBBBBBBBBBBBBBBBBBB....',
+  '....bbbbbbbbbbbbbbbbbbbbbbbb....',
+  EMPTY,
+  '.........EEEE......EEEE.........',
+  '.........EPPE......EPPE.........',
+  '.........EPPE......EPPE.........',
+  '.........GEEE......GEEE.........',
+  ...Array<string>(18).fill(EMPTY),
 ];
 
-/** Ojos en cruz: acaba de recibir un golpe. */
+/** Ojos apretados: acaba de recibir un golpe. */
 export const FACE_HURT: readonly string[] = [
-  ...FACE_IDLE.slice(0, 17),
-  '..........e.e....e.e............',
-  '...........e......e.............',
-  '..........e.e....e.e............',
-  ...Array<string>(12).fill(EMPTY),
+  ...FACE_IDLE.slice(0, 10),
+  '.........P..P......P..P.........',
+  '..........PP........PP..........',
+  '.........P..P......P..P.........',
+  EMPTY,
+  ...Array<string>(18).fill(EMPTY),
 ];

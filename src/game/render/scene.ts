@@ -24,9 +24,9 @@ export const renderScene = (ctx: CanvasRenderingContext2D, world: World, aim: Ai
   ctx.translate(-Math.round(world.camera.x), -Math.round(world.camera.y));
 
   drawPlatforms(ctx, world.platforms);
-  world.powerups.forEach((pu) => drawPowerUp(ctx, pu));
+  world.powerups.forEach((pu) => drawPowerUp(ctx, pu, world.triggers.levelTime));
   drawEnemies(ctx, world.enemies);
-  drawProjectiles(ctx, world.projectiles, world.player);
+  drawProjectiles(ctx, world.projectiles);
   drawParticles(ctx, world.particles);
   drawPlayer(ctx, world.player, aim);
 

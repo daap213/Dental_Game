@@ -160,5 +160,18 @@ export const bake = (
 /** Vacía la caché de horneado. Solo lo necesitan la galería y los tests. */
 export const clearBakeCache = () => cache.clear();
 
+/**
+ * Descarta los horneados cuyo id empiece por el prefijo dado.
+ *
+ * Lo necesita el fondo de los créditos, que se hornea al ancho de la ventana:
+ * sin esto, arrastrar el borde de la ventana dejaría en la caché un lienzo de
+ * dos megapíxeles por cada ancho intermedio, y la caché no expira nunca.
+ */
+export const dropBakes = (prefix: string) => {
+  for (const id of cache.keys()) {
+    if (id.startsWith(prefix)) cache.delete(id);
+  }
+};
+
 /** Cuántos sprites hay horneados ahora mismo. Para depurar. */
 export const bakedCount = () => cache.size;

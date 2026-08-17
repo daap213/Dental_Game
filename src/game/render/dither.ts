@@ -10,13 +10,9 @@ import { px, type PixelTarget } from './pixel';
  * nivel de 0 a 16 decide qué píxeles del bloque de 4×4 llevan el segundo tono.
  */
 
-/** Matriz de Bayer 4×4, valores 0-15. */
-export const BAYER_4 = [
-  [0, 8, 2, 10],
-  [12, 4, 14, 6],
-  [3, 11, 1, 9],
-  [15, 7, 13, 5],
-] as const;
+// La matriz vive en `sprites/shade.ts`, que la necesita sin poder importar nada.
+export { BAYER_4 } from './sprites/shade';
+import { BAYER_4 } from './sprites/shade';
 
 export const DITHER_LEVELS = 17; // 0 = todo A, 16 = todo B
 
@@ -80,6 +76,80 @@ export const dither = (
       if (maskRow[((pxx % 4) + 4) % 4]) ctx.fillRect(pxx, py, 1, 1);
     }
   }
+};
+
+/**
+ * Versión rápida del tramado, para superficies grandes.
+ *
+ * `dither` pinta un rectángulo de 1×1 por píxel, y eso son 180.000 llamadas para
+ * una capa de fondo a pantalla completa. Aquí el patrón de 4×4 se construye una
+ * vez como textura y se repite con **una** llamada. El patrón se ancla al origen
+ * del lienzo, así que dos rectángulos contiguos siguen encajando sin costura.
+ *
+ * Necesita un contexto de verdad (`createPattern`); con uno de pega cae en el
+ * camino lento, que es lo que quieren los tests.
+ */
+const patterns = new Map<string, CanvasPattern | null>();
+
+const ditherPattern = (
+  ctx: CanvasRenderingContext2D,
+  over: PaletteKey,
+  level: number
+): CanvasPattern | null => {
+  const key = `${over}:${Math.round(level)}`;
+  const cached = patterns.get(key);
+  if (cached !== undefined) return cached;
+
+  let pattern: CanvasPattern | null = null;
+  if (typeof document !== 'undefined' && typeof ctx.createPattern === 'function') {
+    const tile = document.createElement('canvas');
+    tile.width = 4;
+    tile.height = 4;
+    const tileCtx = tile.getContext('2d');
+    if (tileCtx) {
+      const mask = bayerMask(level);
+      tileCtx.fillStyle = tone(over);
+      for (let y = 0; y < 4; y++) {
+        for (let x = 0; x < 4; x++) if (mask[y][x]) tileCtx.fillRect(x, y, 1, 1);
+      }
+      pattern = ctx.createPattern(tile, 'repeat');
+    }
+  }
+
+  patterns.set(key, pattern);
+  return pattern;
+};
+
+export const ditherFill = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  base: PaletteKey,
+  over: PaletteKey,
+  level: number
+) => {
+  const rx = Math.round(x);
+  const ry = Math.round(y);
+  const rw = Math.round(w);
+  const rh = Math.round(h);
+  if (rw <= 0 || rh <= 0) return;
+
+  const coverage = bayerCoverage(level);
+  px(ctx, rx, ry, rw, rh, coverage === 16 ? over : base);
+  if (coverage === 0 || coverage === 16) return;
+
+  const pattern = ditherPattern(ctx, over, level);
+  if (!pattern) {
+    dither(ctx, rx, ry, rw, rh, base, over, level);
+    return;
+  }
+
+  ctx.save();
+  ctx.fillStyle = pattern;
+  ctx.fillRect(rx, ry, rw, rh);
+  ctx.restore();
 };
 
 /**

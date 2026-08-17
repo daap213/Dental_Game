@@ -1,5 +1,6 @@
 import type { CharacterType } from '../../../types';
 import type { PlayerPose } from '../pose';
+import type { PaletteKey } from '../../data/palette';
 import type { SpriteDef } from './format';
 import { shadeMask, unionMasks, withDetails } from './shade';
 import {
@@ -7,9 +8,10 @@ import {
   CROWN_INCISOR,
   CROWN_CANINE,
   CROWN_PREMOLAR,
-  BODY_IDLE,
-  BODY_WALK,
-  BODY_JUMP,
+  TRUNK,
+  FEET_IDLE,
+  FEET_WALK,
+  FEET_JUMP,
   FACE_IDLE,
   FACE_HURT,
 } from './masks/player';
@@ -17,10 +19,10 @@ import {
 /**
  * Sprites del jugador: 4 clases × 4 poses.
  *
- * No hay 16 dibujos: hay 4 coronas y 3 cuerpos, y las 16 combinaciones salen de
- * unirlos. Además de ahorrar trabajo, garantiza que las cuatro clases se muevan
- * exactamente igual y solo se distingan por lo que las distingue de verdad, que
- * es la forma del diente.
+ * No hay 16 dibujos. Hay 4 coronas, un tronco y 3 juegos de pies, y las 16
+ * combinaciones salen de unirlos antes de sombrear. Además de ahorrar trabajo,
+ * garantiza que las cuatro clases se muevan igual y solo se distingan por lo que
+ * las distingue de verdad: la forma del diente.
  */
 
 const CROWNS: Record<CharacterType, readonly string[]> = {
@@ -30,21 +32,28 @@ const CROWNS: Record<CharacterType, readonly string[]> = {
   premolar: CROWN_PREMOLAR,
 };
 
-const BODIES: Record<PlayerPose, readonly string[]> = {
-  idle: BODY_IDLE,
-  walk: BODY_WALK,
-  jump: BODY_JUMP,
-  // Al recibir el golpe el cuerpo no cambia: cambia la cara.
-  hurt: BODY_IDLE,
+const FEET: Record<PlayerPose, readonly string[]> = {
+  idle: FEET_IDLE,
+  walk: FEET_WALK,
+  jump: FEET_JUMP,
+  // Al recibir el golpe los pies no cambian: cambia la cara.
+  hurt: FEET_IDLE,
 };
 
-/** Colores de la capa de detalle. La cinta y los ojos no son esmalte. */
-const FACE_COLORS = {
-  R: 'candy.mid',
-  r: 'candy.dark',
-  e: 'metal.out',
-  W: 'enamel.light',
-} as const;
+/**
+ * Colores de la capa de detalle. Nada de esto es esmalte: la cinta es tela, los
+ * ojos son oscuros con un destello metálico, y el surco de la corona es la sombra
+ * más profunda del propio esmalte.
+ */
+const FACE_COLORS: Record<string, PaletteKey> = {
+  B: 'candy.mid',
+  b: 'candy.shade',
+  E: 'enamel.hi',
+  P: 'metal.out',
+  G: 'metal.hi',
+  H: 'enamel.hi',
+  F: 'enamel.shade',
+};
 
 const face = (pose: PlayerPose): SpriteDef => ({
   w: 32,
@@ -63,7 +72,11 @@ export const playerSprite = (character: CharacterType, pose: PlayerPose): Sprite
   const hit = cache.get(id);
   if (hit) return hit;
 
-  const silhouette = unionMasks(CROWNS[character] ?? CROWN_MOLAR, BODIES[pose] ?? BODY_IDLE);
+  const silhouette = unionMasks(
+    CROWNS[character] ?? CROWN_MOLAR,
+    TRUNK,
+    FEET[pose] ?? FEET_IDLE
+  );
   const def = withDetails(shadeMask(silhouette, 'enamel'), face(pose));
 
   cache.set(id, def);

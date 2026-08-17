@@ -11,7 +11,7 @@ import {
     STAGE_CLEAR_DELAY, LEVEL_UP_HEAL, HEALTH_PICKUP,
     SCORE_PER_KILL, SCORE_PER_BOSS, SCORE_WEAPON_LEVEL_UP, SCORE_WEAPON_MAXED,
 } from '../game/data/physics';
-import { COLORS } from '../game/data/palette';
+import { COLORS, tone } from '../game/data/palette';
 import { generateGameOverMessage } from '../services/geminiService';
 import { checkRectCollide } from '../game/physics';
 
@@ -55,9 +55,11 @@ interface GameCanvasProps {
   onPerkApplied: () => void;
   onVictory: () => void;
   lang: Language;
+  /** Múltiplo entero al que se dibuja el búfer. Ver `components/scale.ts`. */
+  supersample: number;
 }
 
-export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, setGameState, sessionId, inputMethod, loadout, difficulty, character, onPerkSelectStart, selectedPerkId, onPerkApplied, onVictory, lang }) => {
+export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, setGameState, sessionId, inputMethod, loadout, difficulty, character, onPerkSelectStart, selectedPerkId, onPerkApplied, onVictory, lang, supersample }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Audio Manager (Singleton-ish per component mount)
@@ -480,7 +482,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             }
             p.invincibleTimer = PLAYER_DASH_DURATION;
             p.vx = p.facing * PLAYER_DASH_SPEED; p.vy = 0;
-            spawnParticle(p.x, p.y + p.h/2, '#fff', 10);
+            spawnParticle(p.x, p.y + p.h/2, tone('enamel.hi'), 10);
             inputs.current.dashPressed = false;
         }
     }
@@ -500,10 +502,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     if (inputs.current.jumpPressed) {
        if (p.isGrounded) {
            p.vy = PLAYER_JUMP; p.isGrounded = false; p.jumpCount = 1;
-           spawnParticle(p.x + p.w/2, p.y + p.h, '#fff', 5);
+           spawnParticle(p.x + p.w/2, p.y + p.h, tone('enamel.light'), 5);
        } else if (p.jumpCount < p.maxJumps && p.dashTimer <= 0) {
            p.vy = PLAYER_JUMP; p.jumpCount++;
-           spawnParticle(p.x + p.w/2, p.y + p.h, '#88ccff', 5);
+           spawnParticle(p.x + p.w/2, p.y + p.h, tone('laser.light'), 5);
        }
        inputs.current.jumpPressed = false;
     }
@@ -533,7 +535,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         // Golpe seco, no el sonido de game over: caerse casi nunca es mortal.
         audioManager.current.playBossAttack('slam');
         s.shake = 12;
-        spawnParticle(p.x + p.w / 2, p.y + p.h, '#f472b6', 12);
+        spawnParticle(p.x + p.w / 2, p.y + p.h, tone('gum.light'), 12);
         if (survived && s.level.bossSpawned) {
             // La arena del jefe tiene sus propios límites: que reaparezca dentro.
             const arenaLeft = s.level.levelWidth - 800;
@@ -697,7 +699,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                     enemy.hitTimer = HIT_FLASH;
                     if (pierces) proj.hitIds.push(enemy.id);
                     else proj.lifeTime = 0;
-                    spawnParticle(proj.x, proj.y, '#fff', 3);
+                    spawnParticle(proj.x, proj.y, tone('enamel.hi'), 3);
                     if (enemy.hp <= 0 && !enemy.dead) {
                         enemy.dead = true;
                         const isHiddenBoss = enemy.bossVariant === HIDDEN_BOSS.variant;
@@ -799,7 +801,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
              p.lives--;
              p.hp = p.maxHp;
              p.invincibleTimer = RESPAWN_INVULNERABILITY;
-             spawnParticle(p.x, p.y, '#ffd700', 30);
+             spawnParticle(p.x, p.y, tone('warden.light'), 30);
              s.shake = 20;
              audioManager.current.playPowerUp();
         } else {
@@ -823,7 +825,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                     if (p.weaponLevels[newWeapon] < MAX_LEVEL) {
                         p.weaponLevels[newWeapon]++;
                         p.weaponLevel = p.weaponLevels[newWeapon];
-                        spawnParticle(p.x, p.y, '#fbbf24', 10);
+                        spawnParticle(p.x, p.y, tone('warden.hi'), 10);
                         p.score += SCORE_WEAPON_LEVEL_UP;
                     } else {
                         p.score += SCORE_WEAPON_MAXED;
@@ -844,6 +846,20 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
   const draw = (ctx: CanvasRenderingContext2D) => {
     const s = entities.current;
+
+    // Cambiar el tamaño del búfer reinicia el estado del contexto —la
+    // transformación y la interpolación incluidas—, y React lo cambia cada vez
+    // que la ventana cambia de tamaño. Así que ambas se reafirman en cada frame
+    // en lugar de una sola vez al arrancar el bucle: si no, al redimensionar se
+    // volvía a interpolar cada sprite y el mundo se dibujaba a escala 1 en la
+    // esquina de un búfer grande.
+    //
+    // El factor se lee del propio búfer, no de la prop, para que no puedan
+    // discrepar.
+    const ss = ctx.canvas.width / CANVAS_WIDTH;
+    setupPixelContext(ctx);
+    ctx.setTransform(ss, 0, 0, ss, 0, 0);
+
     renderScene(ctx, s, {
         usingMouse: inputMethod === 'mouse' && !isMobile && inputs.current.mouseSeen,
         aimUp: inputs.current.aimUp,
@@ -879,16 +895,21 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
   return (
     <>
-      {/* El lienzo llena su contenedor, que `App` ya dimensiona en un múltiplo
-          exacto de 800×450: así cada píxel lógico ocupa un número entero de
-          píxeles de pantalla, que es la condición para que el pixel art se vea
-          nítido y no hormiguee al desplazarse. */}
+      {/* El búfer se dibuja a un múltiplo **entero** de 800×450 y el elemento
+          llena su contenedor, que `App` dimensiona al hueco disponible. Así el
+          pixel art se compone en una retícula exacta —cada píxel lógico es un
+          cuadrado de S×S— y el compositor solo tiene que *reducir* esa imagen
+          hasta la caja.
+
+          Sin `image-rendering: pixelated` a propósito: aquí se está reduciendo,
+          y en una reducción el vecino más cercano tira píxeles enteros a la
+          basura. El remuestreo suave del compositor es uniforme, que es lo que
+          evita el hormigueo. */}
       <canvas
         ref={canvasRef}
-        width={CANVAS_WIDTH}
-        height={CANVAS_HEIGHT}
+        width={CANVAS_WIDTH * supersample}
+        height={CANVAS_HEIGHT * supersample}
         className="pointer-events-none block h-full w-full"
-        style={{ imageRendering: 'pixelated' }}
       />
       {/* El HUD solo lee la instantánea publicada: nada de `entities.current`
           durante el render, que además era lo que hacía que el escudo, las vidas
