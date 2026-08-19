@@ -1,16 +1,27 @@
 import type { Player } from '../../types';
-import { drawHeldWeapon, type AimInput } from './weapons';
+import { aimingUp, drawHeldWeapon, type AimInput } from './weapons';
 import { px } from './pixel';
 import { drawSprite } from './sprites/format';
-import { playerSprite, playerSpriteId } from './sprites/player';
-import { playerPose } from './pose';
+import {
+  BODY_OFFSET_X,
+  BODY_OFFSET_Y,
+  armPlacement,
+  armSprite,
+  armSpriteId,
+  playerSprite,
+  playerSpriteId,
+} from './sprites/player';
+import { BODY_H, BODY_W } from './sprites/masks/player';
+import { armPose, playerPose } from './pose';
+import { PLAYER_SIZE } from '../data/physics';
 
 /**
- * Jugador completo: sombra, escudo, sprite y arma en mano.
+ * Jugador completo: sombra, escudo, cuerpo, brazo y arma.
  *
- * La silueta ya no se dibuja con curvas: es un sprite de 32×32 dibujado a mano
- * (`sprites/masks/player.ts`) del que se eligen corona por clase y cuerpo por
- * pose. No se dibuja si está muerto, y parpadea mientras es invulnerable.
+ * El dibujo mide `BODY_W × BODY_H` y es **mayor que la caja de colisión**, anclado por los
+ * pies. Se estampa en tres piezas y en este orden: cuerpo, brazo, arma. El brazo va aparte
+ * del cuerpo porque si entrara en su silueta cada pose necesitaría variante de brazo
+ * bajado y alzado, y los sprites se multiplicarían por dos.
  */
 export const drawPlayer = (ctx: CanvasRenderingContext2D, p: Player, aim: AimInput) => {
   if (p.hp <= 0) return;
@@ -21,29 +32,45 @@ export const drawPlayer = (ctx: CanvasRenderingContext2D, p: Player, aim: AimInp
   if (blinking) return;
 
   const pose = playerPose(p);
+  const flip = p.facing === -1;
+  const arm = armPose(p, aimingUp(p, aim));
+  const place = armPlacement(p.character, arm);
+  const armDef = armSprite(arm);
 
-  // Sombra: tres tiras, que a esta escala leen mejor que una elipse suave.
-  px(ctx, p.x + 8, p.y + p.h - 2, p.w - 16, 2, 'gum.out');
-  px(ctx, p.x + 11, p.y + p.h, p.w - 22, 1, 'gum.out');
+  // Sombra: dos tiras al ancho de la **huella de los pies**, no del dibujo. El dibujo
+  // mide 34 y los pies apenas 20: una sombra de 34 haría flotar al personaje.
+  px(ctx, p.x + 6, p.y + p.h - 2, p.w - 12, 2, 'gum.out');
+  px(ctx, p.x + 9, p.y + p.h, p.w - 18, 1, 'gum.out');
 
   if (p.shield > 0) drawShield(ctx, p);
 
-  drawSprite(ctx, playerSpriteId(p.character, pose), playerSprite(p.character, pose), p.x, p.y, p.facing === -1);
+  drawSprite(ctx, playerSpriteId(p.character, pose), playerSprite(p.character, pose), p.x, p.y, flip);
 
-  drawHeldWeapon(ctx, p, aim);
+  // El brazo y el puño se espejan **sobre el centro de la caja**, que es exactamente el
+  // centro del dibujo porque la diferencia de anchos es par. Un ancho impar dejaría el eje
+  // a medio píxel y el personaje daría un salto lateral al girarse.
+  const armX = flip ? PLAYER_SIZE - place.x - armDef.w : place.x;
+  const handX = flip ? PLAYER_SIZE - 1 - place.handX : place.handX;
+  drawSprite(ctx, armSpriteId(arm), armDef, p.x + armX, p.y + place.y, flip);
+
+  drawHeldWeapon(ctx, p, aim, { x: p.x + handX, y: p.y + place.handY });
 };
 
 /**
  * Barrera de pasta dental: un anillo de píxeles alrededor del jugador.
  *
- * Se dibuja con ocho tramos rectos en lugar de un `arc` con `shadowBlur`, que a
- * esta resolución se convertía en una mancha borrosa.
+ * Ciñe el **dibujo**, no la caja de colisión. Sobre la caja, la corona sobresalía por
+ * arriba y se veía la cabeza fuera de la barrera, que es justo lo contrario de lo que una
+ * barrera tiene que contar.
+ *
+ * Se dibuja con tramos rectos en lugar de un `arc` con `shadowBlur`, que a esta resolución
+ * se convertía en una mancha borrosa.
  */
 const drawShield = (ctx: CanvasRenderingContext2D, p: Player) => {
-  const left = p.x - 3;
-  const top = p.y - 2;
-  const right = p.x + p.w + 2;
-  const bottom = p.y + p.h + 1;
+  const left = p.x + BODY_OFFSET_X - 3;
+  const top = p.y + BODY_OFFSET_Y - 2;
+  const right = p.x + BODY_OFFSET_X + BODY_W + 2;
+  const bottom = p.y + BODY_OFFSET_Y + BODY_H + 1;
   const pulse = Math.floor(p.animTimer * 6) % 2 === 0;
   const shell = pulse ? 'laser.mid' : 'laser.light';
 

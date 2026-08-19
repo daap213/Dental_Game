@@ -140,16 +140,35 @@ const heldSprite = (weapon: WeaponType, up: boolean): SpriteDef =>
  * lo llena de dientes de sierra. Se dibuja de lado y, cuando se apunta claramente
  * hacia arriba, se usa la misma máscara girada 90°, que es exacto.
  */
-export const drawHeldWeapon = (ctx: CanvasRenderingContext2D, p: Player, aim: AimInput) => {
-  const handX = p.x + (p.facing === 1 ? 18 : 14);
-  const handY = p.y + 19;
+/**
+ * Si se está apuntando claramente hacia arriba.
+ *
+ * Se exporta porque la decisión la necesitan **dos** sitios: el arma, para girarse, y el
+ * brazo, para alzarse. Calculada dos veces se podrían desincronizar y quedaría un brazo
+ * bajado con el arma apuntando al cielo.
+ */
+export const aimingUp = (p: Player, aim: AimInput): boolean => {
+  if (!aim.usingMouse) return aim.aimUp;
+  const dx = aim.mouseX + aim.cameraX - (p.x + p.w / 2);
+  const dy = aim.mouseY + aim.cameraY - (p.y + p.h / 2);
+  return Math.abs(dy) > Math.abs(dx) && dy < 0;
+};
 
-  let up = aim.aimUp;
-  if (aim.usingMouse) {
-    const dx = aim.mouseX + aim.cameraX - (p.x + p.w / 2);
-    const dy = aim.mouseY + aim.cameraY - (p.y + p.h / 2);
-    up = Math.abs(dy) > Math.abs(dx) && dy < 0;
-  }
+/**
+ * @param hand Dónde está el puño, en píxeles de mundo. Lo calcula `armPlacement` a partir
+ *   del propio dibujo del brazo: antes eran dos números escritos aquí a mano —`p.x + 18`
+ *   y `p.y + 19`— que no sabían nada del sprite, así que mover el puño dejaba el arma
+ *   flotando y nada avisaba.
+ */
+export const drawHeldWeapon = (
+  ctx: CanvasRenderingContext2D,
+  p: Player,
+  aim: AimInput,
+  hand: { x: number; y: number }
+) => {
+  const handX = hand.x;
+  const handY = hand.y;
+  const up = aimingUp(p, aim);
 
   const def = heldSprite(p.weapon, up);
 

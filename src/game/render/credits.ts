@@ -211,7 +211,10 @@ const scene = (w: number) =>
     ctx.save();
     ctx.translate(heroX, heroY);
     ctx.scale(3, 3);
-    drawSprite(ctx, playerSpriteId('molar', 'idle'), hero, 0, 0);
+    // Se compensan los desplazamientos de anclaje **dentro** de la escala: `drawSprite`
+    // los aplica, y aquí valen el triple, así que sin compensarlos el héroe quedaba
+    // dieciocho píxeles por encima del horizonte y la sombra ya no le tocaba los pies.
+    drawSprite(ctx, playerSpriteId('molar', 'idle'), hero, -(hero.offsetX ?? 0), -(hero.offsetY ?? 0));
     ctx.restore();
   });
 

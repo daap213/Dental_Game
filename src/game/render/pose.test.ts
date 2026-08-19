@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { enemyPose, playerPose, walkPhase, WALK_FPS } from './pose';
+import { enemyPose, playerPose, walkPhase, PLAYER_WALK_FPS, WALK_FPS } from './pose';
 import { createPlayer } from '../player';
 import type { Enemy, Player } from '../../types';
 
@@ -67,20 +67,36 @@ describe('poses de jugador', () => {
     expect(playerPose(player())).toBe('idle');
   });
 
-  it('en el aire es salto, aunque se mueva', () => {
-    expect(playerPose(player({ isGrounded: false, vx: 6 }))).toBe('jump');
+  /**
+   * En el aire, el signo de `vy` decide.
+   *
+   * Antes subir y caer eran el mismo fotograma: `vy` estaba en el estado desde el
+   * principio y el dibujado no lo miraba, así que el salto doble no tenía peso.
+   */
+  it('en el aire distingue subir de caer, aunque se mueva', () => {
+    expect(playerPose(player({ isGrounded: false, vx: 6, vy: -8 }))).toBe('rise');
+    expect(playerPose(player({ isGrounded: false, vx: 6, vy: 4 }))).toBe('fall');
+    // En la cima, con la velocidad ya a cero, cuenta como caída.
+    expect(playerPose(player({ isGrounded: false, vy: 0 }))).toBe('fall');
   });
 
   it('el daño manda sobre el salto', () => {
     expect(playerPose(player({ isGrounded: false, hitTimer: 0.1 }))).toBe('hurt');
   });
 
-  it('correr por el suelo alterna andar e idle', () => {
+  /**
+   * Correr recorre las **cuatro** fases del paso, y ninguna de ellas es el idle.
+   *
+   * Antes el ciclo alternaba `walk` con `idle`: la mitad del tiempo el personaje estaba
+   * en la pose de estar quieto, y el resultado se leía como un tic y no como un paso.
+   */
+  it('correr por el suelo recorre las cuatro fases del paso', () => {
     const poses = new Set<string>();
     for (let i = 0; i < 20; i++) {
-      poses.add(playerPose(player({ vx: 5, animTimer: i / WALK_FPS / 2 })));
+      poses.add(playerPose(player({ vx: 5, animTimer: i / PLAYER_WALK_FPS })));
     }
-    expect(poses).toEqual(new Set(['walk', 'idle']));
+    expect(poses).toEqual(new Set(['walk1', 'walk2', 'walk3', 'walk4']));
+    expect(poses.has('idle')).toBe(false);
   });
 });
 

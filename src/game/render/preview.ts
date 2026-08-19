@@ -9,7 +9,17 @@ import { createPlayer } from '../player';
 import { spawnProjectile } from '../weapons';
 import { px } from './pixel';
 import { drawSprite } from './sprites/format';
-import { playerSprite, playerSpriteId } from './sprites/player';
+import {
+  BODY_OFFSET_X,
+  BODY_OFFSET_Y,
+  PLAYER_POSES,
+  armPlacement,
+  armSprite,
+  armSpriteId,
+  playerSprite,
+  playerSpriteId,
+} from './sprites/player';
+import { BODY_H, BODY_W } from './sprites/masks/player';
 import { enemySprite, enemySpriteId, hasEnemySprite } from './sprites/enemies';
 import { bossSprite, bossSpriteId } from './bosses';
 import { drawProjectiles, drawHeldWeapon, drawPowerUp } from './weapons';
@@ -68,15 +78,35 @@ const cyclePose = <T,>(poses: readonly T[], t: number): T =>
 
 // --- Personajes ------------------------------------------------------------
 
+/**
+ * El ciclo de poses de la ficha va más rápido que el de los enemigos, porque el jugador
+ * tiene ocho y a 0,9 s por pose la tarjeta tardaba siete segundos en dar la vuelta.
+ */
+const PLAYER_POSE_SECONDS = 0.45;
+
 const characterItems = (): PreviewItem[] =>
   (Object.keys(CHARACTER_PROFILES) as CharacterType[]).map((character) => ({
     id: `character:${character}`,
     key: character,
-    w: 32,
-    h: 32,
+    // El tamaño sale del propio sprite, no de la caja de colisión: el dibujo es mayor.
+    w: BODY_W + 6,
+    h: BODY_H,
     draw: (ctx, t) => {
-      const pose = cyclePose(['idle', 'walk', 'jump', 'hurt'] as const, t);
-      drawSprite(ctx, playerSpriteId(character, pose), playerSprite(character, pose), 0, 0);
+      const pose =
+        PLAYER_POSES[Math.floor(Math.max(0, t) / PLAYER_POSE_SECONDS) % PLAYER_POSES.length];
+      // Se compensan los desplazamientos de anclaje: `drawSprite` los aplica, y en una
+      // tarjeta que empieza en el origen dejarían la corona cortada por arriba.
+      drawSprite(
+        ctx,
+        playerSpriteId(character, pose),
+        playerSprite(character, pose),
+        -BODY_OFFSET_X,
+        -BODY_OFFSET_Y
+      );
+      // Y el brazo, que va aparte del cuerpo pero es parte del personaje: sin él la ficha
+      // mostraría algo distinto de lo que se ve en partida.
+      const arm = armPlacement(character, 'side');
+      drawSprite(ctx, armSpriteId('side'), armSprite('side'), arm.x - BODY_OFFSET_X, arm.y - BODY_OFFSET_Y);
     },
   }));
 
@@ -172,14 +202,15 @@ const weaponItems = (): PreviewItem[] =>
       player.y = 12;
       player.facing = 1;
 
-      drawHeldWeapon(ctx, player, {
-        usingMouse: false,
-        aimUp: false,
-        mouseX: 0,
-        mouseY: 0,
-        cameraX: 0,
-        cameraY: 0,
-      });
+      // El puño sale del propio dibujo del brazo, igual que en partida: así la ficha no
+      // puede quedarse mostrando el arma en un sitio donde ya no está la mano.
+      const hand = armPlacement(player.character, 'side');
+      drawHeldWeapon(
+        ctx,
+        player,
+        { usingMouse: false, aimUp: false, mouseX: 0, mouseY: 0, cameraX: 0, cameraY: 0 },
+        { x: player.x + hand.handX, y: player.y + hand.handY }
+      );
 
       const shots: Projectile[] = [];
       spawnProjectile(shots, 48, WEAPON_PREVIEW_H / 2, 1, 0, 'player', weapon, player);
@@ -322,16 +353,23 @@ const effectItems = (): PreviewItem[] => [
   {
     id: 'effect:shield',
     key: 'shield',
-    w: 40,
-    h: 40,
+    w: BODY_W + 10,
+    h: BODY_H + 10,
     draw: (ctx, t) => {
       const player = createPlayer({ loadout: 'all', difficulty: 'normal', character: 'premolar' });
       player.x = 4;
       player.y = 4;
       player.animTimer = t;
-      // El escudo se dibuja con el jugador, así que se muestra el conjunto.
-      drawSprite(ctx, playerSpriteId('premolar', 'idle'), playerSprite('premolar', 'idle'), 4, 4);
-      shieldRing(ctx, 4, 4, 32, 32, t);
+      // El escudo se dibuja con el jugador, así que se muestra el conjunto. Ciñe el
+      // **dibujo**, no la caja: sobre la caja la corona asomaba fuera de la barrera.
+      drawSprite(
+        ctx,
+        playerSpriteId('premolar', 'idle'),
+        playerSprite('premolar', 'idle'),
+        5 - BODY_OFFSET_X,
+        5 - BODY_OFFSET_Y
+      );
+      shieldRing(ctx, 5, 5, BODY_W, BODY_H, t);
     },
   },
 ];
