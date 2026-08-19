@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { claimScoreMilestone, claimKillMilestone } from './progression';
+import {
+  claimScoreMilestone,
+  claimKillMilestone,
+  killMilestones,
+  scoreMilestones,
+} from './progression';
 import type { Player } from '../types';
 
 type RunStats = Player['runStats'];
@@ -79,5 +84,34 @@ describe('hitos por puntuación', () => {
     claimScoreMilestone(leyenda, 6200, 1.3);
 
     expect(facil.nextScoreMilestone).toBeLessThan(leyenda.nextScoreMilestone);
+  });
+});
+
+/**
+ * Los umbrales que la ficha de conocimiento anuncia salen de aquí, no de una frase traducida.
+ *
+ * Este test es el que hace que **anunciar y reclamar no puedan discrepar**, que es exactamente lo
+ * que pasó y quedó escrito en la cabecera de `progression.ts`: el menú prometía 20, 30, 50, 80 y
+ * el juego daba 20, 40, 70, 110.
+ */
+describe('umbrales anunciados', () => {
+  it('la secuencia de bajas es la que de verdad se reclama', () => {
+    expect(killMilestones(5)).toEqual([20, 30, 50, 80, 120]);
+  });
+
+  it('y coincide paso por paso con lo que reclama el juego', () => {
+    const stats = freshStats();
+    const reclamados: number[] = [];
+
+    for (let kills = 0; kills <= 400 && reclamados.length < 5; kills++) {
+      stats.killCount = kills;
+      if (claimKillMilestone(stats, 1)) reclamados.push(kills);
+    }
+
+    expect(reclamados).toEqual(killMilestones(5));
+  });
+
+  it('la de puntuación empieza en 6.200 y sube de 8.000 en 8.000', () => {
+    expect(scoreMilestones(3)).toEqual([6200, 14200, 22200]);
   });
 });

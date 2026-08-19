@@ -1,4 +1,7 @@
 import React from 'react';
+import type { Language } from '../../types';
+import { TEXT } from '../../i18n';
+import { groupTitle, previewLabel } from '../../i18n/subjects';
 import { previewGroups, type PreviewGroupId } from '../../game/render/preview';
 import { PixelCanvas } from '../PixelCanvas';
 import { useIntegerScale } from '../useIntegerScale';
@@ -26,7 +29,10 @@ const SCALES: Partial<Record<PreviewGroupId, number>> = {
   scenes: 1,
 };
 
-export const SpriteGallery: React.FC<{ page: PreviewGroupId }> = ({ page }) => {
+export const SpriteGallery: React.FC<{ page: PreviewGroupId; lang: Language }> = ({
+  page,
+  lang,
+}) => {
   const groups = previewGroups();
   const { containerRef, width } = useIntegerScale<HTMLDivElement>(CANVAS_WIDTH, CANVAS_HEIGHT);
   const scale = SCALES[page] ?? 1;
@@ -34,7 +40,7 @@ export const SpriteGallery: React.FC<{ page: PreviewGroupId }> = ({ page }) => {
   return (
     <div ref={containerRef} className="min-h-screen w-full bg-black p-4 text-slate-300">
       <div className="mx-auto" style={{ maxWidth: Math.max(width, 640) }}>
-        <p className="mb-3 font-mono text-[10px] tracking-widest text-slate-500">
+        <p className="mb-1 font-mono text-[10px] tracking-widest text-slate-500">
           {groups.map((group) => (
             <span key={group.id}>
               {group.id === page ? `[${group.id}]` : group.id}
@@ -42,6 +48,24 @@ export const SpriteGallery: React.FC<{ page: PreviewGroupId }> = ({ page }) => {
             </span>
           ))}
         </p>
+        {/*
+         * El nombre del grupo, traducido, junto al identificador técnico de arriba.
+         *
+         * `groupTitle` y `previewLabel` existían para la galería que la ficha del juego llevaba
+         * incrustada, y al quitarla de allí se quedaban sin ningún consumidor de producción: vivas
+         * solo por sus tests. Aquí valen de verdad —saber que `tartar_spire` es la Aguja de Sarro
+         * ahorra ir a buscarlo— y el identificador se queda, que es lo que una herramienta de
+         * revisión necesita.
+         */}
+        <h1 className="text-[11px] tracking-[0.2em] text-slate-300 uppercase">
+          {TEXT[lang].database.gallery_title} · {groupTitle(lang, page)}
+        </h1>
+        {/*
+         * `gallery_title` y `gallery_desc` estaban en la ficha del juego, describiendo la galería
+         * que llevaba incrustada. Al quitarla de allí su sitio es este, que es la galería de
+         * verdad.
+         */}
+        <p className="mb-3 text-[8px] text-slate-600">{TEXT[lang].database.gallery_desc}</p>
 
         {groups
           .filter((group) => group.id === page)
@@ -59,8 +83,13 @@ export const SpriteGallery: React.FC<{ page: PreviewGroupId }> = ({ page }) => {
                       label={item.key}
                     />
                   </div>
-                  <figcaption className="font-mono text-[9px] text-slate-500">
-                    {item.key} · {item.w}×{item.h}
+                  <figcaption className="text-center">
+                    <span className="block max-w-[10rem] truncate text-[8px] text-slate-400">
+                      {previewLabel(lang, group.id, item.key)}
+                    </span>
+                    <span className="font-mono text-[9px] text-slate-600">
+                      {item.key} · {item.w}×{item.h}
+                    </span>
                   </figcaption>
                 </figure>
               ))}

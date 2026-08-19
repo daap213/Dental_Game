@@ -72,7 +72,7 @@ const App: React.FC = () => {
       setGameState(GameState.PLAYING);
   };
 
-  if (galleryPage) return <SpriteGallery page={galleryPage} />;
+  if (galleryPage) return <SpriteGallery page={galleryPage} lang={language} />;
 
   return (
     /**

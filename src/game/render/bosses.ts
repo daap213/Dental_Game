@@ -47,34 +47,98 @@ const king = (state: number): BossArt => {
   const w = 120;
   const h = 160;
 
-  // Corona del diente: dos cúspides anchas.
+  /**
+   * Un molar **desgastado**, y el desgaste va en la silueta.
+   *
+   * Las manchas de caries de la capa de detalle ya estaban, pero la forma seguía siendo un
+   * diente sano: dos cúspides iguales, lisas y simétricas, sobre dos raíces gemelas. Un diente
+   * que lleva años perdiendo la batalla no tiene esa forma, y a esta escala lo que cuenta la
+   * historia es el **contorno**, no el color.
+   *
+   * Las dos cúspides son ahora de **alturas distintas** y la izquierda está más baja y más
+   * plana, que es como se desgasta un molar: por donde muerde.
+   */
   const crown = merge(
-    ellipse(w, h, 40, 60, 38, 44),
-    ellipse(w, h, 80, 60, 38, 44),
-    rect(w, h, 6, 46, 108, 60)
+    ellipse(w, h, 38, 63, 37, 41),
+    ellipse(w, h, 80, 58, 36, 44),
+    rect(w, h, 6, 48, 108, 58)
   );
-  // Dos raíces gruesas.
+
+  /**
+   * Lo que le quita material: mordiscos en el borde de mordida, un **astillado** en la esquina
+   * y una **cavidad abierta de verdad** en la cúspide izquierda.
+   *
+   * La cavidad es el elemento clave: una mancha oscura se lee como suciedad, pero un agujero
+   * recortado en la silueta se lee como caries. Y en el fondo del agujero, en la capa de
+   * detalle, va el tono más oscuro para que tenga hondura.
+   */
+  /**
+   * El desgaste tiene que morder **el contorno**, y ahí está la trampa que me costó una
+   * iteración: la primera tanda de mordiscos cayó donde la corona real ya tapa el diente, con lo
+   * que no cambió una silueta que seguía siendo un rectángulo redondeado. Un rasgo que no
+   * sobresale del contorno no existe.
+   *
+   * Así que los mordiscos van a los **costados y a la base**, a alturas distintas en cada lado
+   * —una erosión simétrica no es erosión—, y la cavidad es un **agujero de verdad** en el faldón,
+   * lejos de los ojos y de la boca para no dejarlo tuerto por accidente.
+   */
+  const wear = merge(
+    // Costado izquierdo comido a media altura, y el derecho más abajo.
+    ellipse(w, h, 4, 68, 13, 16),
+    ellipse(w, h, 116, 88, 12, 14),
+    // Y dos muescas menores, para que el canto no quede en dos curvas limpias.
+    ellipse(w, h, 10, 96, 9, 8),
+    ellipse(w, h, 110, 58, 8, 9),
+    // El astillado de la esquina de arriba a la derecha: un trozo que salta y se va.
+    wedge(w, h, 98, 20, 22, 20, 'tr'),
+    // La cavidad: un agujero abierto en el faldón, bajo el ojo izquierdo.
+    ellipse(w, h, 22, 88, 9, 8)
+  );
+
+  /**
+   * Raíces **desiguales y reabsorbidas**: una más corta, más fina y con la punta comida, que es
+   * lo que le pasa a una raíz enferma. Dos raíces gemelas de treinta y dos por cincuenta y
+   * cuatro eran dos patas de mesa.
+   */
   const roots = merge(
-    rect(w, h, 20, 100, 32, 54, 10),
-    rect(w, h, 68, 100, 32, 54, 10)
+    rect(w, h, 19, 100, 31, 52, 10),
+    rect(w, h, 70, 100, 26, 44, 9),
+    // Una tercera raíz corta y pegada, para romper la pareja.
+    rect(w, h, 52, 104, 16, 30, 7)
   );
-  // Corona de rey, con tres puntas.
+  const rootWear = merge(
+    ellipse(w, h, 22, 152, 10, 9),
+    ellipse(w, h, 84, 145, 9, 8),
+    ellipse(w, h, 60, 135, 7, 7)
+  );
+
+  /**
+   * La corona de rey, **abollada**: la punta de la derecha está partida y el aro se hunde por
+   * ese lado. Un rey en decadencia con la corona intacta no cuenta lo mismo, y es el detalle
+   * que ata el desgaste al personaje en vez de solo al diente.
+   */
   const regalia = merge(
     rect(w, h, 24, 18, 72, 14),
     spike(w, h, 32, 2, 18, 10),
     spike(w, h, 60, 0, 18, 12),
-    spike(w, h, 88, 2, 18, 10)
+    // La tercera punta, roma: lo que queda de ella.
+    rect(w, h, 84, 8, 10, 10, 2)
   );
+  const regaliaWear = merge(ellipse(w, h, 93, 20, 8, 7), rect(w, h, 44, 16, 6, 4));
 
   // Costuras: la base de la corona de rey y el cuello entre corona y raíces, más
   // el surco entre las dos cúspides. Sin ellas es un bulto único.
   const seams = merge(
     rect(w, h, 22, 32, 76, 2),
     rect(w, h, 18, 98, 84, 2),
-    rect(w, h, 58, 18, 4, 30)
+    // El surco central va desviado, porque las cúspides ya no son iguales.
+    rect(w, h, 56, 20, 4, 32)
   );
 
-  const mask = subtract(merge(crown, roots, regalia), seams);
+  const mask = subtract(
+    merge(crown, roots, regalia),
+    merge(seams, wear, rootWear, regaliaWear)
+  );
 
   // La boca se abre al rugir (estado 4: dispara).
   const mouth = state === 4 ? ellipse(w, h, 60, 88, 22, 14) : ellipse(w, h, 60, 88, 20, 5);
@@ -160,25 +224,67 @@ const phantom = (state: number): BossArt => {
   const gathering = state === 1;
   const firing = state === 3;
 
-  // Recogido es más estrecho y más alto: la masa se junta antes de salir disparada.
+  /**
+   * **Era simétrico**, y eso es lo que lo hacía leerse como un icono y no como un ser: una
+   * campana centrada con cinco jirones idénticos a intervalos de dieciocho píxeles.
+   *
+   * Ahora la campana está **descentrada** —el bulto carga hacia la izquierda y una joroba
+   * asoma por el hombro derecho— y lo que cuelga son **tentáculos de largos distintos**, no un
+   * fleco. Es placa: se estira en hebras, no en un dobladillo.
+   */
+  // `lean` y no `shift`: `shift` es una primitiva de forma que este módulo importa y reexporta,
+  // y taparla con un número dentro de una función es la clase de sombra que muerde más tarde.
+  const lean = gathering ? 4 : 0;
   const body = merge(
-    ellipse(w, h, 50, 44, gathering ? 31 : 40, gathering ? 45 : 40),
-    rect(w, h, gathering ? 19 : 10, 44, gathering ? 62 : 80, 40)
+    ellipse(w, h, 46 + lean, 44, gathering ? 31 : 39, gathering ? 45 : 41),
+    // La joroba del hombro: rompe la campana sin sacarla de su caja.
+    ellipse(w, h, 72, 34, gathering ? 13 : 18, gathering ? 12 : 15),
+    rect(w, h, gathering ? 19 : 9, 44, gathering ? 62 : 78, 40)
   );
-  // Borde inferior deshilachado: cinco jirones. Recogidos, se encogen con él.
-  const tatters = merge(
-    ...[0, 1, 2, 3, 4].map((i) =>
-      ellipse(
-        w,
-        h,
-        gathering ? 24 + i * 13 : 14 + i * 18,
-        84 + (i % 2 === 0 ? 0 : 6),
-        gathering ? 7 : 9,
-        gathering ? 9 : 12
+
+  /**
+   * Los tentáculos: cada uno una columna de elipses que se estrechan al bajar, con su propio
+   * largo, su propia deriva lateral y su propio grosor. La deriva es lo que los curva, y sin
+   * curva un tentáculo es un carámbano.
+   */
+  const arms: readonly { x: number; reach: number; thick: number; drift: number }[] = gathering
+    ? [
+        { x: 34, reach: 3, thick: 6, drift: -2 },
+        { x: 49, reach: 5, thick: 7, drift: 0 },
+        { x: 62, reach: 2, thick: 5, drift: 2 },
+      ]
+    : [
+        { x: 17, reach: 5, thick: 8, drift: -3 },
+        { x: 36, reach: 3, thick: 6, drift: 2 },
+        { x: 52, reach: 7, thick: 9, drift: 3 },
+        { x: 70, reach: 4, thick: 7, drift: -2 },
+        { x: 85, reach: 2, thick: 5, drift: 3 },
+      ];
+  /**
+   * **Arrancan en el canto del cuerpo, no dentro de él**, y esa es la corrección que costó una
+   * pasada: puestos a `y = 74` quedaban enterrados bajo la campana —que llega a 85— y solo
+   * asomaban unos muñones. Un rasgo que no sobresale del contorno no existe.
+   *
+   * El paso y el alcance están calculados para que el más largo acabe dentro de los cien píxeles:
+   * si se pasa, `ellipse` lo recorta y queda con la punta plana, que es el dobladillo recto que
+   * había antes con otro nombre.
+   */
+  const tentacles = merge(
+    ...arms.flatMap((arm) =>
+      Array.from({ length: arm.reach }, (_, k) =>
+        ellipse(
+          w,
+          h,
+          arm.x + Math.round(arm.drift * k * 0.9),
+          81 + k * 3,
+          Math.max(2, arm.thick - Math.round(k * 0.9)),
+          Math.max(2, arm.thick - k + 2)
+        )
       )
     )
   );
-  const mask = subtract(merge(body, tatters), rect(w, h, 0, 92, w, 8));
+
+  const mask = merge(body, tentacles);
 
   return {
     w,
@@ -455,22 +561,10 @@ const grain = (
   });
 
 /**
- * Pozo: anillos que se oscurecen hacia el centro.
- *
- * Un disco relleno con un ojo en medio se lee como una moneda. Oscureciendo hacia dentro se
- * lee como un hueco, que es lo que la deidad tenía que ser.
+ * Aquí vivía `well`, que oscurecía en anillos hacia el centro para que un disco relleno no se
+ * leyera como una moneda. Se ha ido con el problema que resolvía: la deidad ya no es un disco.
+ * Y sobre una rampa casi negra el remedio era peor que la enfermedad, porque borraba el núcleo.
  */
-const well = (w: number, h: number, cx: number, cy: number, radius: number): string[] =>
-  Array.from({ length: h }, (_, y) => {
-    let row = '';
-    for (let x = 0; x < w; x++) {
-      const d = Math.hypot(x - cx, y - cy) / radius;
-      if (d > 1 || d < 0.32) row += '.';
-      else if (d > 0.74) row += 'S';
-      else row += 'M';
-    }
-    return row;
-  });
 
 /** La cavidad que se abre al cargar: negra dentro, con el borde al rojo. */
 const throat = (width: number, height: number): string[] =>
@@ -615,16 +709,77 @@ const deity = (phase: number, state: number): BossArt => {
   const w = 140;
   const h = 140;
 
-  const core = ellipse(w, h, 70, 70, 26, 26);
+  /**
+   * **Era demasiado circular**: un núcleo redondo, seis pétalos idénticos a la misma distancia
+   * y un anillo perfecto. Tres circunferencias concéntricas se leen como un diagrama.
+   *
+   * Sigue siendo radial —es su identidad, y su ataque de fase 2 gira— pero cada elemento tiene
+   * ahora su propia medida. El **núcleo** deja de ser un círculo: son tres óvalos desalineados.
+   * Los **pétalos** varían de radio orbital y de tamaño. Y el **anillo se rompe**: le faltan
+   * tramos, tiene grosor desigual y lleva esquirlas sueltas por fuera.
+   */
+  const core = merge(
+    ellipse(w, h, 70, 70, 26, 22),
+    ellipse(w, h, 64, 65, 19, 20),
+    ellipse(w, h, 77, 76, 15, 16)
+  );
+
+  /**
+   * **Los pétalos son el contorno.** El primer arreglo mantuvo el anillo exterior y solo le
+   * quitó bocados, y salió peor: los pétalos crecidos llegaron a tocarlo, el hueco entre ambos
+   * se rellenó y la pieza acabó siendo un **donut con radios** —más circular que antes, no
+   * menos—. Un aro cerrado siempre gana al resto de la forma, porque define el borde él solo.
+   *
+   * Sin aro, lo que dibuja el canto son seis lóbulos de tamaños y órbitas distintas, y el canto
+   * sale desigual sin dejar de ser radial, que es su identidad y lo que su ataque de fase 2 gira.
+   */
   const petals = merge(
     ...[0, 1, 2, 3, 4, 5].map((i) => {
       const angle = (Math.PI * 2 * i) / 6 + (phase === 2 ? Math.PI / 6 : 0);
-      const cx = 70 + Math.cos(angle) * 44;
-      const cy = 70 + Math.sin(angle) * 44;
-      return ellipse(w, h, cx, cy, 20, 20);
+      // Distancia y tamaño propios de cada pétalo, siempre los mismos y nunca iguales.
+      const orbit = 38 + hashInt(13, i, 3);
+      const size = 15 + hashInt(11, i, 7);
+      return ellipse(
+        w,
+        h,
+        70 + Math.cos(angle) * orbit,
+        70 + Math.sin(angle) * orbit,
+        size,
+        size - hashInt(6, i, 13)
+      );
     })
   );
-  const ring = subtract(ellipse(w, h, 70, 70, 66, 66), ellipse(w, h, 70, 70, 58, 58));
+
+  /**
+   * Del aro solo quedan **dos arcos sueltos**, en lados distintos y de grosores distintos: restos
+   * de algo que fue circular. Cerrarlos otra vez sería volver al donut.
+   */
+  const arcs = merge(
+    ...[
+      { from: 2.5, to: 4.1, radius: 62, thick: 7 },
+      { from: 5.6, to: 6.5, radius: 58, thick: 5 },
+    ].flatMap((arc) =>
+      Array.from({ length: 14 }, (_, k) => {
+        const angle = arc.from + ((arc.to - arc.from) * k) / 13;
+        return ellipse(
+          w,
+          h,
+          70 + Math.cos(angle) * arc.radius,
+          70 + Math.sin(angle) * arc.radius,
+          arc.thick,
+          arc.thick
+        );
+      })
+    )
+  );
+
+  // Y esquirlas desprendidas, en tres sitios cualesquiera.
+  const debris = merge(
+    ellipse(w, h, 121, 44, 6, 5),
+    ellipse(w, h, 24, 100, 5, 6),
+    ellipse(w, h, 92, 126, 4, 4)
+  );
+  const ring = merge(arcs, debris);
 
   return {
     w,
@@ -653,10 +808,13 @@ const deity = (phase: number, state: number): BossArt => {
           [0.9, 'H'],
         ]),
         /**
-         * Y el pozo va **ceñido al núcleo**. Con radio 64 cubría el sprite entero y les comía
-         * el volumen a los pétalos, que es justo lo que hacía legible a esta variante.
+         * El pozo se ha ido. Estaba para que un disco relleno no se leyera como una moneda, y
+         * ese problema lo resuelve ahora la propia forma irregular. Sobre `void` —que va de
+         * `#04040c` a `#7d7dd0`— oscurecer el centro **borraba el núcleo**: quedaba un agujero
+         * negro con el ojo flotando dentro. Un remedio que ya no hace falta y que costaba la
+         * pieza central.
          */
-        well(w, h, 70, 70, 38),
+        blank(w, h),
         0,
         0
       ),
@@ -683,9 +841,75 @@ const warden = (state: number): BossArt => {
   const h = 140;
   const judging = state === 2;
 
-  const crown = merge(ellipse(w, h, 60, 54, 46, 44), rect(w, h, 16, 40, 88, 46));
-  const roots = merge(rect(w, h, 26, 84, 26, 50, 8), rect(w, h, 66, 84, 26, 50, 8));
-  const halo = subtract(ellipse(w, h, 60, 30, 40, 14), ellipse(w, h, 60, 30, 32, 8));
+  /**
+   * **Era simétrico de arriba abajo**: corona centrada, dos raíces gemelas de veintiséis por
+   * cincuenta y un halo perfectamente redondo. Un cordal es justo lo contrario —es el diente que
+   * sale torcido, con las raíces fusionadas y desiguales, y por eso hay que sacarlo—.
+   *
+   * Tres cambios: la corona se **inclina**, las raíces son **tres y retorcidas**, y le salen
+   * **alas** por los costados, que es lo que un juez con halo pedía.
+   */
+  /**
+   * La corona **encoge** para dejar sitio arriba y a los lados.
+   *
+   * Antes era una elipse de radio 44×43 centrada en `(57, 54)`, o sea de `y = 11` a `y = 97`: se
+   * tragaba el halo, que va a `y = 28`, y se tragaba el lóbulo y las alas. Todo lo que añadí caía
+   * dentro de ella y no cambiaba el contorno. Bajándola y afinándola, los tres rasgos asoman.
+   */
+  const crown = merge(
+    ellipse(w, h, 56, 62, 41, 34),
+    // Un lóbulo alto a la derecha, por encima del canto de la corona: no acaba plana.
+    ellipse(w, h, 84, 38, 19, 16),
+    rect(w, h, 16, 48, 82, 38)
+  );
+
+  /**
+   * Las alas: dos flancos de tres plumas, **distintos entre sí**. La izquierda está más plegada
+   * y la derecha más abierta, porque dos alas iguales vuelven a ser un icono.
+   */
+  const wings = merge(
+    ...[
+      // Ala izquierda, plegada: tres plumas cortas.
+      { x: 10, y: 56, long: 20, tall: 6 },
+      { x: 6, y: 66, long: 24, tall: 5 },
+      { x: 11, y: 75, long: 17, tall: 4 },
+      // Y la derecha, abierta: más larga y más separada.
+      { x: 104, y: 50, long: 26, tall: 7 },
+      { x: 108, y: 62, long: 30, tall: 6 },
+      { x: 111, y: 73, long: 22, tall: 5 },
+    ].map((f) => ellipse(w, h, f.x, f.y, f.long / 2, f.tall))
+  );
+
+  /**
+   * Tres raíces, de largos y grosores distintos, y cada una **desviada** hacia un lado. La
+   * desviación es lo que las retuerce: dos rectángulos verticales gemelos eran dos patas.
+   */
+  const roots = merge(
+    ...[
+      { x: 24, top: 84, wide: 24, tall: 50, bend: -5 },
+      { x: 52, top: 88, wide: 17, tall: 38, bend: 3 },
+      { x: 72, top: 84, wide: 22, tall: 44, bend: 6 },
+    ].flatMap((r) =>
+      // Cada raíz son tres tramos que se van desplazando: la curva sale del apilado.
+      [0, 1, 2].map((k) =>
+        rect(
+          w,
+          h,
+          r.x + Math.round((r.bend * k) / 2),
+          r.top + Math.round((r.tall * k) / 3),
+          Math.max(6, r.wide - k * 4),
+          Math.round(r.tall / 3) + 4,
+          5
+        )
+      )
+    )
+  );
+
+  // El halo, ladeado y de grosor desigual: uno perfecto es una anilla de metal.
+  const halo = subtract(
+    ellipse(w, h, 58, 28, 41, 14),
+    ellipse(w, h, 61, 30, 32, 8)
+  );
 
   /**
    * Las raíces de un cordal van **retorcidas**, que es media razón de que haya que sacarlo.
@@ -710,7 +934,7 @@ const warden = (state: number): BossArt => {
     w,
     h,
     material: 'warden',
-    mask: merge(halo, crown, roots),
+    mask: merge(halo, wings, crown, roots),
     detail: stamp(
       stamp(
         stamp(
