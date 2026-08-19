@@ -1,5 +1,5 @@
 import type { Enemy } from '../../types';
-import { COLORS } from './palette';
+import { COLORS, type PaletteKey } from './palette';
 
 export interface EnemySpawnEntry {
   /** Umbral inferior del `Math.random()` que selecciona este enemigo. */
@@ -75,7 +75,7 @@ export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
   },
   {
     threshold: 0.7,
-    subType: 'tartar_turret',
+    subType: 'tartar_spire',
     w: 32,
     h: 48,
     color: COLORS.enemyTurret,
@@ -193,13 +193,68 @@ export const pickEnemySpawn = (roll: number): EnemySpawnEntry =>
   ENEMY_SPAWN_TABLE.find((entry) => roll > entry.threshold) ??
   ENEMY_SPAWN_TABLE[ENEMY_SPAWN_TABLE.length - 1];
 
+/** Cómo se deshace algo al morir. */
+export interface DeathBurst {
+  color: PaletteKey;
+  /** Cuántas motas. Lo mineral se descascarilla en muchas; lo espectral, en pocas. */
+  count: number;
+  /**
+   * Cuánto se reparten por el cuerpo, de 0 a 1.
+   *
+   * 0 las saca todas del centro geométrico exacto, que es lo que hacían **todas** y por lo que
+   * un jefe de 160×140 se deshacía desde un punto.
+   */
+  spread: number;
+}
+
+const DEFAULT_DEATH: DeathBurst = { color: 'enamel.hi', count: 26, spread: 0.5 };
+
+/**
+ * La muerte de cada uno, en lugar de la misma para todos.
+ *
+ * Morían **exactamente igual**: ochenta cuadraditos del color plano del enemigo, los ochenta
+ * desde el centro geométrico, sin gravedad y durante tres cuartos de segundo. Una bacteria de
+ * 32×32 y un jefe de 160×140 se deshacían con el mismo efecto.
+ *
+ * Lo que dice de qué acabas de matar es **de qué está hecho**: el sarro se descascarilla en
+ * muchas motas opacas y repartidas por toda su mole; el fantasma se deshace en pocas y claras;
+ * el absceso salpica; y el cristal de azúcar estalla en esquirlas brillantes.
+ */
+const DEATH_BURSTS: Record<string, DeathBurst> = {
+  // Comunes
+  bacteria: { color: 'bacteria.light', count: 16, spread: 0.6 },
+  plaque_monster: { color: 'plaque.light', count: 30, spread: 0.8 },
+  candy_bomber: { color: 'candy.light', count: 22, spread: 0.7 },
+  tartar_spire: { color: 'tartarCrust.light', count: 30, spread: 0.9 },
+  sugar_rusher: { color: 'rusher.hi', count: 18, spread: 0.5 },
+  sugar_fiend: { color: 'fiend.light', count: 22, spread: 0.7 },
+  acid_spitter: { color: 'acid.light', count: 26, spread: 0.7 },
+  gingivitis_grunt: { color: 'gumSick.light', count: 28, spread: 0.8 },
+  biofilm_crawler: { color: 'bacteria.hi', count: 20, spread: 0.9 },
+  calculus_shell: { color: 'tartarCrust.light', count: 32, spread: 0.8 },
+  abscess_bloater: { color: 'gumSick.light', count: 44, spread: 1 },
+  enamel_borer: { color: 'enamelStained.light', count: 20, spread: 0.6 },
+  // Jefes: más motas, y repartidas por toda la mole en vez de saliendo de un punto.
+  king: { color: 'enamel.hi', count: 70, spread: 1 },
+  phantom: { color: 'laser.hi', count: 34, spread: 1 },
+  calculus: { color: 'tartarCrust.hi', count: 90, spread: 1 },
+  general: { color: 'gumSick.light', count: 72, spread: 1 },
+  deity: { color: 'void.hi', count: 96, spread: 1 },
+  wisdom_warden: { color: 'warden.hi', count: 80, spread: 1 },
+};
+
+export const deathBurstFor = (enemy: Enemy): DeathBurst =>
+  (enemy.subType === 'boss'
+    ? DEATH_BURSTS[enemy.bossVariant ?? '']
+    : DEATH_BURSTS[enemy.subType]) ?? DEFAULT_DEATH;
+
 export const enemyHpForStage = (entry: EnemySpawnEntry, stage: number): number =>
   entry.baseHp + stage * entry.hpPerStage;
 
 export interface BossEntry {
   variant: NonNullable<Enemy['bossVariant']>;
   /** Clave dentro de TEXT[lang].bosses. */
-  nameKey: 'king' | 'phantom' | 'tank' | 'general' | 'deity' | 'wisdom';
+  nameKey: 'king' | 'phantom' | 'calculus' | 'general' | 'deity' | 'wisdom';
   maxHp: number;
   w: number;
   h: number;
@@ -212,7 +267,7 @@ export interface BossEntry {
 export const STAGE_BOSSES: readonly BossEntry[] = [
   { variant: 'king', nameKey: 'king', maxHp: 1500, w: 120, h: 160, color: '#3f3f46', contactDamage: 25 },
   { variant: 'phantom', nameKey: 'phantom', maxHp: 2200, w: 100, h: 100, color: '#22d3ee', contactDamage: 24 },
-  { variant: 'tank', nameKey: 'tank', maxHp: 3500, w: 160, h: 140, color: '#57534e', contactDamage: 28 },
+  { variant: 'calculus', nameKey: 'calculus', maxHp: 3500, w: 160, h: 140, color: '#57534e', contactDamage: 28 },
   { variant: 'general', nameKey: 'general', maxHp: 3000, w: 100, h: 180, color: '#dc2626', contactDamage: 24 },
   { variant: 'deity', nameKey: 'deity', maxHp: 6000, w: 140, h: 140, color: '#0f172a', contactDamage: 30 },
 ];

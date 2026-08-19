@@ -123,7 +123,7 @@ export interface Enemy extends Entity, Animated {
     | 'bacteria'
     | 'plaque_monster'
     | 'candy_bomber'
-    | 'tartar_turret'
+    | 'tartar_spire'
     | 'sugar_rusher'
     | 'boss'
     | 'sugar_fiend'
@@ -143,7 +143,7 @@ export interface Enemy extends Entity, Animated {
    */
   actionTimer: number;
   bossState: number; // 0: Idle, 1: Chase, 2: Charge, 3: Slam, 4: Shoot
-  bossVariant?: 'king' | 'phantom' | 'tank' | 'general' | 'deity' | 'wisdom_warden';
+  bossVariant?: 'king' | 'phantom' | 'calculus' | 'general' | 'deity' | 'wisdom_warden';
   phase?: number;
   /**
    * Cota a la que la barrena se enterró.

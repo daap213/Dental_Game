@@ -19,7 +19,7 @@ export const ENEMY_TEXT_KEY: Record<CommonEnemy, keyof (typeof TEXT)['en']['enem
   bacteria: 'bacteria',
   plaque_monster: 'plaque',
   candy_bomber: 'bomber',
-  tartar_turret: 'turret',
+  tartar_spire: 'spire',
   sugar_rusher: 'rusher',
   sugar_fiend: 'fiend',
   acid_spitter: 'spitter',
@@ -75,7 +75,7 @@ export const previewLabel = (lang: Language, group: PreviewGroupId, key: string)
     const map: Record<string, keyof (typeof TEXT)['en']['bosses']> = {
       king: 'king',
       phantom: 'phantom',
-      tank: 'tank',
+      calculus: 'calculus',
       general: 'general',
       deity: 'deity',
       wisdom_warden: 'wisdom',

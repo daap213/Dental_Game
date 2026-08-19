@@ -279,16 +279,48 @@ export class AudioManager {
       gain.gain.linearRampToValueAtTime(0, t + 2);
       osc.connect(gain).connect(this.ctx.destination);
       osc.start(t); osc.stop(t + 2);
-    } else if (variant === 'tank') {
-      const osc = this.ctx.createOscillator();
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(50, t);
-      osc.frequency.linearRampToValueAtTime(20, t + 1);
-      const gain = this.ctx.createGain();
-      gain.gain.setValueAtTime(0.5, t);
-      gain.gain.exponentialRampToValueAtTime(0.01, t + 1);
-      osc.connect(gain).connect(this.ctx.destination);
-      osc.start(t); osc.stop(t + 1);
+    } else if (variant === 'calculus') {
+      /**
+       * Piedra que se agrieta, no un motor.
+       *
+       * Aquí había una sierra cayendo de 50 a 20 Hz: un diésel al ralentí, y sonaba a eso
+       * porque el jefe era un carro de combate. Un depósito mineral no tiene motor, así que
+       * la entrada son dos capas: **ruido filtrado** que abre y se cierra —el crujido de una
+       * costra que cede— sobre un **golpe grave** que le da el peso de las tres mil quinientas
+       * de vida que tiene.
+       */
+      const bufferSize = Math.floor(this.ctx.sampleRate * 1.4);
+      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+      const grind = this.ctx.createBufferSource();
+      grind.buffer = buffer;
+      // El filtro barre hacia abajo: lo que empieza como raspado acaba como derrumbe.
+      const crackle = this.ctx.createBiquadFilter();
+      crackle.type = 'bandpass';
+      crackle.Q.value = 1.6;
+      crackle.frequency.setValueAtTime(2600, t);
+      crackle.frequency.exponentialRampToValueAtTime(320, t + 1.2);
+      const grindGain = this.ctx.createGain();
+      grindGain.gain.setValueAtTime(0, t);
+      grindGain.gain.linearRampToValueAtTime(0.34, t + 0.18);
+      grindGain.gain.exponentialRampToValueAtTime(0.01, t + 1.3);
+      grind.connect(crackle).connect(grindGain).connect(this.ctx.destination);
+      grind.start(t);
+      grind.stop(t + 1.4);
+
+      // Y el golpe: una masa que se asienta.
+      const thud = this.ctx.createOscillator();
+      thud.type = 'triangle';
+      thud.frequency.setValueAtTime(90, t);
+      thud.frequency.exponentialRampToValueAtTime(34, t + 0.7);
+      const thudGain = this.ctx.createGain();
+      thudGain.gain.setValueAtTime(0.4, t);
+      thudGain.gain.exponentialRampToValueAtTime(0.01, t + 0.8);
+      thud.connect(thudGain).connect(this.ctx.destination);
+      thud.start(t);
+      thud.stop(t + 0.8);
     } else if (variant === 'general') {
         [440, 554, 659].forEach((f, i) => { 
             const osc = this.ctx!.createOscillator();

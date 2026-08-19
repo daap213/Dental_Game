@@ -29,7 +29,15 @@ const MATERIALS: Record<EnemySubType, Material> = {
   bacteria: 'bacteria',
   plaque_monster: 'plaque',
   candy_bomber: 'candy',
-  tartar_turret: 'turret',
+  /**
+   * Iba con la rampa `turret`, que es **morada**. Un sarro morado no es sarro de nada, y el
+   * nombre de esa rampa —`turret`— es el mismo síntoma que el cañón que tenía: los enemigos se
+   * concibieron como arquetipos de juego de acción y se vistieron de dental después.
+   *
+   * Ahora comparte `tartarCrust` con la coraza de sarro, que es lo coherente: son la misma
+   * sustancia. La rampa `turret` se queda sin usar, como `stone`.
+   */
+  tartar_spire: 'tartarCrust',
   sugar_rusher: 'rusher',
   sugar_fiend: 'fiend',
   acid_spitter: 'acid',

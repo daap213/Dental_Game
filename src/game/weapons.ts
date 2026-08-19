@@ -25,7 +25,29 @@ export const spawnProjectile = (projectiles: Projectile[], x: number, y: number,
     });
 
     if (owner === 'enemy') {
-        projectiles.push({ ...base(), x, y, w: ENEMY_BULLET.size, h: ENEMY_BULLET.size, vx: dx * ENEMY_BULLET.speed, vy: 0, hp: 1, maxHp: 1, damage: ENEMY_BULLET.damage, lifeTime: ENEMY_BULLET.lifeTime, projectileType: 'bullet', color: COLORS.projectileEnemy } as Projectile);
+        /**
+         * La dirección se **normaliza y se usa entera**, la vertical incluida.
+         *
+         * Antes esto era `vx: dx * speed, vy: 0`: aceptaba `dy` y lo tiraba, y multiplicaba
+         * `dx` en bruto sin normalizarlo. Cuatro ataques estaban roto por eso, y tres de ellos
+         * son movimientos estrella de jefe:
+         *
+         * - La bomba del bombardero de caramelo pedía `(0, 1)` —caer— y recibía `(0, 0)`: un
+         *   perdigón **inmóvil colgado en el aire** mientras el bombardero seguía su camino.
+         * - La espiral de la deidad pedía `(cos θ, sin θ)` y se quedaba en tres perdigones
+         *   horizontales que además **se paraban en seco** cada vez que el coseno pasaba por
+         *   cero.
+         * - El abanico de cinco del rey pedía `(-9, i*3)` y, con el `dx` sin normalizar, salían
+         *   cinco balas **superpuestas** a 81 px por paso: cruzaban la pantalla en diez frames.
+         * - Y la ráfaga del fantasma, lo mismo.
+         *
+         * Con `hypot` a cero se dispara al frente en vez de dejar un proyectil quieto, que es
+         * el caso degenerado que producía la bomba fantasma.
+         */
+        const len = Math.hypot(dx, dy);
+        const ux = len > 0 ? dx / len : 1;
+        const uy = len > 0 ? dy / len : 0;
+        projectiles.push({ ...base(), x, y, w: ENEMY_BULLET.size, h: ENEMY_BULLET.size, vx: ux * ENEMY_BULLET.speed, vy: uy * ENEMY_BULLET.speed, hp: 1, maxHp: 1, damage: ENEMY_BULLET.damage, lifeTime: ENEMY_BULLET.lifeTime, projectileType: 'bullet', color: COLORS.projectileEnemy } as Projectile);
         return;
     }
     if (!player) return;

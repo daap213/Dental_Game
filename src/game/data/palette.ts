@@ -400,7 +400,8 @@ export const COLORS = {
   enemyBacteria: RAMPS.bacteria.mid,
   enemyPlaque: RAMPS.plaque.mid,
   enemyCandy: RAMPS.candy.mid,
-  enemyTurret: RAMPS.turret.mid,
+  /** El sarro comparte sustancia con la coraza: la rampa morada `turret` ya no se usa. */
+  enemyTurret: RAMPS.tartarCrust.mid,
   enemyRusher: RAMPS.rusher.mid,
   enemyBoss: RAMPS.stone.dark,
   enemySugarFiend: RAMPS.fiend.mid,

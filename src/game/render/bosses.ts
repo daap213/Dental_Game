@@ -3,7 +3,8 @@ import type { Material, PaletteKey } from '../data/palette';
 import { drawSprite } from './sprites/format';
 import type { SpriteDef } from './sprites/format';
 import { shadeMask, withDetails } from './sprites/shade';
-import { blank, ellipse, rect, spike, wedge, annulus, merge, subtract, stamp, shift } from './sprites/masks/shapes';
+import { blank, ellipse, rect, spike, wedge, merge, subtract, stamp, shift } from './sprites/masks/shapes';
+import { hash, hashInt, jitter } from './noise';
 
 /**
  * Dibujado de los jefes.
@@ -78,6 +79,31 @@ const king = (state: number): BossArt => {
   // La boca se abre al rugir (estado 4: dispara).
   const mouth = state === 4 ? ellipse(w, h, 60, 88, 22, 14) : ellipse(w, h, 60, 88, 20, 5);
 
+  /**
+   * La superficie de un molar **podrido**, que es lo que su nombre promete y lo que su cuerpo
+   * no contaba: eran dos ojos y una boca sobre un degradado limpio.
+   *
+   * Cuatro cosas, y todas son vocabulario de un diente enfermo: los **surcos** de las cúspides,
+   * las **manchas de caries** que se abren desde ellos, la **grieta** que baja por el cuello y
+   * una franja de **sarro** en la línea de la encía, donde de verdad se acumula.
+   */
+  const decay = merge(
+    // Surcos: la fisura central y las dos que bajan por cada cúspide.
+    tint(rect(w, h, 58, 50, 3, 40), 'S'),
+    tint(rect(w, h, 34, 56, 2, 26), 'S'),
+    tint(rect(w, h, 84, 58, 2, 24), 'S'),
+    // Caries: tres focos de tamaños distintos, abiertos desde los surcos.
+    tint(ellipse(w, h, 40, 52, 11, 8), 'M'),
+    tint(ellipse(w, h, 78, 46, 8, 6), 'M'),
+    tint(ellipse(w, h, 59, 70, 6, 5), 'M'),
+    // Y la grieta del cuello, que es por donde un molar así se acaba partiendo.
+    tint(rect(w, h, 46, 96, 2, 22), 'S')
+  );
+  // El sarro de la línea de la encía: una franja de grano, no una raya.
+  const gumLine = merge(
+    ...[0, 1, 2].map((i) => tint(rect(w, h, 16 + i * 30, 100 + i, 26 - i * 2, 4), 'S'))
+  );
+
   return {
     w,
     h,
@@ -85,7 +111,25 @@ const king = (state: number): BossArt => {
     mask,
     detail: withMouth(
       stamp(
-        stamp(blank(w, h), eyeBlock(14, 10, state === 4), 32, 62),
+        stamp(
+          stamp(
+            stamp(
+              grain(w, h, 11, [
+                [0.978, 'M'],
+                [0.93, 'S'],
+              ]),
+              decay,
+              0,
+              0
+            ),
+            gumLine,
+            0,
+            0
+          ),
+          eyeBlock(14, 10, state === 4),
+          32,
+          62
+        ),
         eyeBlock(14, 10, state === 4),
         74,
         62
@@ -101,15 +145,37 @@ const king = (state: number): BossArt => {
 // Fantasma de placa: 100×100. Espectro traslúcido de borde deshilachado.
 // ---------------------------------------------------------------------------
 
-const phantom = (): BossArt => {
+/**
+ * **No tenía dibujo de ataque.** `phantom()` ni recibía el estado, así que embestía y disparaba
+ * con exactamente la misma imagen con la que flotaba esperando: el jugador no tenía nada que
+ * leer antes de comerse la embestida.
+ *
+ * Ahora el cuerpo hace las dos cosas que un espectro puede hacer: **se recoge** antes de
+ * embestir —estado 1, que es el medio segundo de aviso que la IA ya tenía y no se veía— y **se
+ * abre** al disparar. Los dos estados existían; lo que faltaba era enseñarlos.
+ */
+const phantom = (state: number): BossArt => {
   const w = 100;
   const h = 100;
+  const gathering = state === 1;
+  const firing = state === 3;
 
-  const body = merge(ellipse(w, h, 50, 44, 40, 40), rect(w, h, 10, 44, 80, 40));
-  // Borde inferior deshilachado: cinco jirones.
+  // Recogido es más estrecho y más alto: la masa se junta antes de salir disparada.
+  const body = merge(
+    ellipse(w, h, 50, 44, gathering ? 31 : 40, gathering ? 45 : 40),
+    rect(w, h, gathering ? 19 : 10, 44, gathering ? 62 : 80, 40)
+  );
+  // Borde inferior deshilachado: cinco jirones. Recogidos, se encogen con él.
   const tatters = merge(
     ...[0, 1, 2, 3, 4].map((i) =>
-      ellipse(w, h, 14 + i * 18, 84 + (i % 2 === 0 ? 0 : 6), 9, 12)
+      ellipse(
+        w,
+        h,
+        gathering ? 24 + i * 13 : 14 + i * 18,
+        84 + (i % 2 === 0 ? 0 : 6),
+        gathering ? 7 : 9,
+        gathering ? 9 : 12
+      )
     )
   );
   const mask = subtract(merge(body, tatters), rect(w, h, 0, 92, w, 8));
@@ -119,9 +185,21 @@ const phantom = (): BossArt => {
     h,
     material: 'laser',
     mask,
-    // Al desvanecerse (estado 5) solo quedan los ojos.
     detail: stamp(
-      stamp(blank(w, h), eyeBlock(16, 12, true), 22, 36),
+      stamp(
+        stamp(
+          // Hebras de biofilm por dentro: es placa, no humo, y la translucidez necesita tener
+          // de qué estar hecha.
+          strands(w, h, 23),
+          // Al disparar se le abre una raja por donde salen las balas.
+          firing ? tint(ellipse(w, h, 50, 68, 20, 7), 'M') : blank(w, h),
+          0,
+          0
+        ),
+        eyeBlock(16, 12, true),
+        22,
+        36
+      ),
       eyeBlock(16, 12, true),
       62,
       36
@@ -129,85 +207,292 @@ const phantom = (): BossArt => {
   };
 };
 
+/**
+ * Hebras verticales: grano estirado a lo largo del eje `y`.
+ *
+ * El truco es pedirle al `hash` una frecuencia baja en vertical y alta en horizontal, con lo que
+ * las motas se encadenan en columnas en vez de dispersarse. Sirve para todo lo fibroso: biofilm,
+ * pulpa, tejido.
+ */
+const strands = (w: number, h: number, seed: number): string[] =>
+  Array.from({ length: h }, (_, y) => {
+    let row = '';
+    for (let x = 0; x < w; x++) {
+      const n = hash(x * 1.9, y * 0.11, seed);
+      if (n > 0.9) row += 'H';
+      else if (n > 0.74) row += 'S';
+      else row += '.';
+    }
+    return row;
+  });
+
 // ---------------------------------------------------------------------------
-// Tanque de sarro: 160×140. Oruga, casco y cañón que apunta.
+// Coloso de cálculo: 160×140. Una concreción de sarro, no un vehículo.
 // ---------------------------------------------------------------------------
 
-const tank = (state: number): BossArt => {
+/**
+ * Lo que había aquí era un carro de combate, pieza por pieza: torreta trapezoidal,
+ * mantelete, cañón horizontal de 52 px con freno de boca, casco con glacis inclinado,
+ * tubo de escape, cinco ruedas de rodaje y dos orugas de quince eslabones. En material
+ * `metal`. Dentro de una boca.
+ *
+ * Es acorazado, y eso se queda —es el jefe de la fase del sarro y tiene 3.500 de vida—,
+ * pero lo es por **estar calcificado**, no por llevar blindaje. El sarro es cálculo
+ * dental: una costra mineral que se deposita en capas sobre el diente y se agarra a él.
+ *
+ * Dos reglas gobiernan el dibujo, y las dos salen de mirar por qué la versión anterior
+ * gritaba «máquina»:
+ *
+ * - **Nada se repite a intervalos iguales.** Cinco ruedas equidistantes y treinta
+ *   eslabones idénticos son maquinaria por sí solos, independientemente de lo que
+ *   representen. Una concreción crece a empujones, así que cada lóbulo tiene su tamaño
+ *   y su sitio, sacados de `hash` para que sean siempre los mismos sin ser regulares.
+ * - **Las costuras van partidas y desalineadas.** Una ranura recta de lado a lado es
+ *   una plancha atornillada. Los estratos de una costra se solapan y se interrumpen.
+ */
+const calculus = (state: number): BossArt => {
   const w = 160;
   const h = 140;
+  // El estado 1 es el que antes levantaba el cañón. Ahora la costra se parte para
+  // cargar, así que sigue siendo el aviso del ataque y sigue teniendo dibujo propio.
+  const charging = state === 1;
 
-  // Tren de rodaje: bastidor con cinco ruedas dentro. Las ruedas no se dibujan
-  // encima, se **recortan**: un hueco de un píxel a su alrededor obliga al
-  // sombreado a poner contorno ahí, y así se leen como ruedas en lugar de fundirse
-  // con el bastidor en una losa. Los eslabones de la oruga, igual: ranuras
-  // verticales en las bandas de rodadura.
-  const frame = rect(w, h, 6, 96, 148, 40, 10);
-  const wheelGaps = merge(
-    ...[0, 1, 2, 3, 4].map((i) => annulus(w, h, 26 + i * 27, 116, 14, 14, 2))
+  /**
+   * **Terrazas, no elipses.** El primer intento apiló elipses grandes y salió un borrón:
+   * a este tamaño dos óvalos que se solapan se funden en una masa sin lectura, y los
+   * estratos dibujados por dentro se perdían como ruido. Un depósito se lee por su
+   * **contorno escalonado**, así que las capas son escalones de verdad —cada una más
+   * estrecha y desplazada respecto a la de abajo— y el escalón ya crea su propio borde.
+   */
+  /**
+   * La pila **se inclina**. Centrada salía una pirámide simétrica, y la simetría es otro
+   * rasgo de objeto fabricado: el cálculo se deposita apoyado contra el diente, así que
+   * crece hacia un lado y deja el otro despejado. Ese lado despejado es, además, por donde
+   * asoma el conducto.
+   */
+  const layers = [
+    { y: 104, x: 6, width: 148, tall: 22 },
+    { y: 82, x: 12, width: 124, tall: 24 },
+    { y: 61, x: 18, width: 94, tall: 23 },
+    { y: 40, x: 24, width: 66, tall: 23 },
+    { y: 22, x: 31, width: 42, tall: 20 },
+  ];
+  const terraces = merge(...layers.map((l) => rect(w, h, l.x, l.y, l.width, l.tall, 5)));
+
+  /**
+   * Grietas internas, y no son adorno: **son lo que da relieve**.
+   *
+   * El sombreado saca la pendiente de la distancia a un borde, así que el interior de una
+   * terraza de ciento cuarenta píxeles de ancho queda lejos de todo y sale plano y oscuro
+   * —la primera versión tenía la mitad de abajo convertida en una sombra—. Restando grietas
+   * se crean bordes por dentro, y con ellos el volumen. Es la misma herramienta con la que
+   * el carro de combate separaba sus ruedas; aquí sirve para lo contrario.
+   *
+   * Cortas, de largos distintos y sin alinearse entre ellas: una grieta que cruza la pieza
+   * entera vuelve a ser una junta de montaje.
+   */
+  const cracks = merge(
+    rect(w, h, 22, 114, 34, 2),
+    rect(w, h, 68, 111, 25, 2),
+    rect(w, h, 104, 117, 30, 2),
+    rect(w, h, 41, 120, 18, 2),
+    rect(w, h, 88, 122, 22, 2),
+    rect(w, h, 30, 92, 27, 2),
+    rect(w, h, 74, 88, 33, 2),
+    rect(w, h, 112, 95, 24, 2),
+    rect(w, h, 38, 71, 22, 2),
+    rect(w, h, 84, 68, 26, 2),
+    // Y dos casi verticales, para que no todo sea horizontal.
+    rect(w, h, 61, 100, 2, 14),
+    rect(w, h, 97, 78, 2, 11)
   );
-  const trackLinks = merge(
-    ...Array.from({ length: 15 }, (_, i) =>
-      merge(rect(w, h, 12 + i * 10, 96, 2, 6), rect(w, h, 12 + i * 10, 130, 2, 6))
+
+  // El remate: cúspides nodulares de tamaños distintos, que es la firma del cálculo.
+  const crest = merge(
+    ...[34, 43, 51, 61, 70].map((cx, i) =>
+      ellipse(w, h, cx, 20 + jitter(5, cx, i), 5 + hashInt(4, cx, i), 8 + hashInt(7, cx, i + 9))
     )
   );
-  const running = subtract(frame, merge(wheelGaps, trackLinks));
 
-  // Casco con el frontal inclinado: un rectángulo al que se le bisela la esquina.
-  const hullBox = rect(w, h, 14, 56, 132, 42, 4);
-  const hull = subtract(hullBox, wedge(w, h, 118, 56, 28, 22, 'tr'));
-  const deck = rect(w, h, 22, 48, 74, 10, 3);
-  const exhaust = rect(w, h, 12, 40, 12, 18, 3);
+  /**
+   * La falda por la que se agarra al diente.
+   *
+   * **Aquí había seis bulbos en fila y leían como ruedas**, aunque cada uno tuviera su
+   * tamaño: estaban a 25, 28, 26, 29 y 22 píxeles unos de otros, o sea casi equidistantes,
+   * y seis lóbulos parecidos alineados a lo largo de una base ancha son un tren de rodaje
+   * pase lo que pase. La lección es que la regla no era «que no midan lo mismo», era **que
+   * no formen serie**.
+   *
+   * Así que ahora es un borde **desgarrado**: dos lóbulos grandes y asimétricos que sí
+   * cuelgan, y el resto del canto roto a mordiscos de anchos distintos. Ninguna repetición
+   * que seguir con la vista.
+   */
+  const skirt = merge(
+    ellipse(w, h, 34, 128, 21, 11),
+    ellipse(w, h, 108, 125, 15, 9),
+    ellipse(w, h, 137, 122, 10, 6)
+  );
+  const skirtBites = merge(
+    ellipse(w, h, 8, 130, 10, 9),
+    ellipse(w, h, 62, 132, 14, 7),
+    ellipse(w, h, 86, 129, 8, 8),
+    ellipse(w, h, 124, 131, 7, 6),
+    ellipse(w, h, 151, 127, 12, 10)
+  );
 
-  // Torreta con mantelete, y el cañón que se levanta para el mortero (estado 1).
-  const turret = subtract(rect(w, h, 44, 24, 62, 34, 6), wedge(w, h, 92, 24, 14, 12, 'tr'));
-  const mantlet = rect(w, h, 100, 32, 10, 18, 2);
-  const barrel = state === 1 ? rect(w, h, 96, 0, 14, 34, 2) : rect(w, h, 108, 36, 52, 10, 1);
-  const muzzle = state === 1 ? rect(w, h, 92, 0, 22, 8, 2) : rect(w, h, 148, 32, 12, 18, 2);
+  // Por donde escupe: un reborde a la derecha con una **fisura restada**. Se dibuja
+  // quitando material justamente porque no es un tubo montado encima, es una grieta.
+  const vent = ellipse(w, h, 137, 72, 20, 13);
+  const fissure = merge(
+    rect(w, h, 142, 70, 18, 3),
+    rect(w, h, 136, 66, 8, 2),
+    rect(w, h, 139, 76, 9, 2)
+  );
 
-  // Costuras: separan bastidor, casco, torreta y cañón. Sin ellas todo se funde en
-  // una mancha, porque el sombreado no sabe dónde acaba una pieza y empieza otra.
-  const seams = merge(
-    rect(w, h, 10, 94, 140, 2),
-    rect(w, h, 40, 56, 70, 2),
-    rect(w, h, 20, 46, 78, 2),
-    state === 1 ? rect(w, h, 94, 32, 18, 2) : rect(w, h, 106, 34, 2, 14)
+  /**
+   * Mordiscos en el canto: lo que separa una costra de una escalera de obra. Cada
+   * terraza pierde un trozo por un lado distinto, así que ningún escalón queda recto de
+   * punta a punta.
+   */
+  const bites = merge(
+    ellipse(w, h, 14, 101, 11, 8),
+    ellipse(w, h, 141, 102, 12, 7),
+    ellipse(w, h, 129, 84, 12, 7),
+    ellipse(w, h, 22, 64, 9, 7),
+    ellipse(w, h, 106, 66, 10, 6),
+    ellipse(w, h, 87, 43, 9, 8),
+    ellipse(w, h, 32, 27, 7, 6)
+  );
+
+  // Al cargar, el remate se **abre**: una grieta lo parte y por ella se ve la cavidad.
+  // Es lo que sustituye al cañón levantándose.
+  const split = charging
+    ? merge(rect(w, h, 49, 14, 6, 26), wedge(w, h, 40, 14, 18, 11, 'tl'))
+    : blank(w, h);
+
+  const mask = subtract(
+    merge(terraces, crest, skirt, vent),
+    merge(cracks, bites, skirtBites, fissure, split)
   );
 
   return {
     w,
     h,
-    material: 'metal',
-    mask: subtract(merge(running, hull, deck, exhaust, turret, mantlet, barrel, muzzle), seams),
+    material: 'tartarCrust',
+    mask,
     detail: stamp(
-      stamp(
-        // Escotilla y remaches en la cubierta, y la óptica en la torreta.
-        stamp(blank(w, h), rivets(70, 6), 26, 50),
-        eyeBlock(18, 12, state !== 0),
-        56,
-        32
-      ),
-      hatch(22, 10),
-      66,
-      26
+      // Un solo ojo, como tenía, hundido entre dos capas. Se enciende al cargar.
+      stamp(crust(w, h), eyeBlock(20, 14, charging), 44, 45),
+      // Y al cargar, la cavidad abierta: oscura por dentro y caliente en el borde.
+      charging ? throat(18, 26) : blank(0, 0),
+      41,
+      15
     ),
   };
 };
 
-/** Fila de remaches, para que una plancha lisa no parezca cartón. */
-const rivets = (width: number, spacing: number): string[] => {
-  let row = '';
-  for (let x = 0; x < width; x++) row += x % spacing === 0 ? 'S' : '.';
-  return [row, row.replace(/S/g, 'H')];
-};
-
-/** Escotilla: un rectángulo hundido con su bisagra. */
-const hatch = (width: number, height: number): string[] =>
-  Array.from({ length: height }, (_, y) => {
-    if (y === 0 || y === height - 1) return 'M'.repeat(width);
-    if (y === 1) return 'H'.repeat(width);
-    return `M${'S'.repeat(Math.max(0, width - 2))}M`;
+/**
+ * La textura de la costra: grano que brilla, picaduras, vetas y **esmalte asomando**.
+ *
+ * El esmalte es la parte que la ata a una boca: el sarro no es una piedra suelta, es una
+ * capa **sobre un diente**, y verlo asomar por los huecos es lo que lo cuenta sin
+ * escribirlo. Va con `hash` y no con `Math.random`, porque el arte se hornea una vez: con
+ * azar de verdad, cada partida tendría una costra distinta y no habría forma de volver a
+ * la que se vio.
+ *
+ * La densidad se modula por franjas horizontales para que el grano refuerce los estratos
+ * en vez de pelearse con ellos.
+ */
+const crust = (w: number, h: number): string[] =>
+  Array.from({ length: h }, (_, y) => {
+    // Franjas: el depósito es más basto en unas capas que en otras.
+    const band = 0.86 + Math.sin(y * 0.42) * 0.05;
+    let row = '';
+    for (let x = 0; x < w; x++) {
+      const n = hash(x * 0.83, y * 1.31, 41);
+      if (n > 0.988) row += 'T';
+      else if (n > 0.966) row += 'M';
+      else if (n > 0.93) row += 'H';
+      else if (n > band) row += 'S';
+      else row += '.';
+    }
+    return row;
   });
+
+/**
+ * Convierte una silueta en una mancha de detalle del carácter que se le diga.
+ *
+ * Deja usar las mismas primitivas de forma para el detalle que para la máscara, que es cómo se
+ * dibuja una caries —una elipse oscura— sin escribirla a mano fila por fila.
+ */
+const tint = (shape: readonly string[], ch: string): string[] =>
+  shape.map((row) => row.replace(/#/g, ch));
+
+/**
+ * Grano de superficie: motas deterministas con la mezcla de caracteres que se le pida.
+ *
+ * Es lo que separa un cuerpo con superficie de un degradado liso, y era lo que les faltaba a
+ * los seis jefes: todos tenían una cara sobre un cuerpo vacío. `levels` va de umbral más alto
+ * a más bajo, así que lo escaso se escribe primero.
+ *
+ * Con `hash` y no con `Math.random`: el arte se hornea una vez, y con azar de verdad cada
+ * partida tendría un jefe con otra piel y no habría forma de volver a la que se vio.
+ */
+const grain = (
+  w: number,
+  h: number,
+  seed: number,
+  levels: readonly (readonly [number, string])[]
+): string[] =>
+  Array.from({ length: h }, (_, y) => {
+    let row = '';
+    for (let x = 0; x < w; x++) {
+      const n = hash(x * 0.83, y * 1.31, seed);
+      const hit = levels.find(([threshold]) => n > threshold);
+      row += hit ? hit[1] : '.';
+    }
+    return row;
+  });
+
+/**
+ * Pozo: anillos que se oscurecen hacia el centro.
+ *
+ * Un disco relleno con un ojo en medio se lee como una moneda. Oscureciendo hacia dentro se
+ * lee como un hueco, que es lo que la deidad tenía que ser.
+ */
+const well = (w: number, h: number, cx: number, cy: number, radius: number): string[] =>
+  Array.from({ length: h }, (_, y) => {
+    let row = '';
+    for (let x = 0; x < w; x++) {
+      const d = Math.hypot(x - cx, y - cy) / radius;
+      if (d > 1 || d < 0.32) row += '.';
+      else if (d > 0.74) row += 'S';
+      else row += 'M';
+    }
+    return row;
+  });
+
+/** La cavidad que se abre al cargar: negra dentro, con el borde al rojo. */
+const throat = (width: number, height: number): string[] =>
+  Array.from({ length: height }, (_, y) => {
+    const t = y / Math.max(1, height - 1);
+    // Se estrecha hacia dentro, como una grieta y no como un agujero taladrado.
+    const half = Math.round((width / 2) * (1 - t * 0.75));
+    let row = '';
+    for (let x = 0; x < width; x++) {
+      const d = Math.abs(x - (width - 1) / 2);
+      if (d > half) row += '.';
+      else if (d > half - 1.5) row += 'R';
+      else row += 'M';
+    }
+    return row;
+  });
+
+/**
+ * Aquí vivían `rivets` y `hatch` —una fila de remaches y una escotilla con bisagra— y se
+ * han ido con el carro de combate al que servían. Eran las dos piezas de vocabulario
+ * puramente mecánico del fichero, y no las usaba nadie más.
+ */
 
 // ---------------------------------------------------------------------------
 // General Gingivitis: 100×180. Alto, con gorra y cabeza inflamada.
@@ -252,6 +537,26 @@ const general = (state: number): BossArt => {
   // mirada.
   const angry = state >= 5;
 
+  /**
+   * Se llama Gingivitis y su cuerpo no lo decía: tenía estrella y medallas —era el más poblado
+   * de los seis— pero la carne era degradado liso.
+   *
+   * Lo que hace que un tejido se lea **inflamado** son dos cosas: **pliegues** donde la piel no
+   * da más de sí, y un **brillo tenso**, porque una encía hinchada está estirada y reluce. Los
+   * pliegues van cortos y desalineados: una línea que cruza la cara entera es una cicatriz.
+   */
+  const inflamed = merge(
+    tint(rect(w, h, 24, 44, 19, 2), 'S'),
+    tint(rect(w, h, 57, 41, 17, 2), 'S'),
+    tint(rect(w, h, 28, 72, 23, 2), 'S'),
+    tint(rect(w, h, 59, 75, 15, 2), 'S'),
+    tint(rect(w, h, 30, 116, 21, 2), 'S'),
+    tint(rect(w, h, 54, 124, 18, 2), 'S'),
+    tint(ellipse(w, h, 33, 47, 9, 5), 'H'),
+    tint(ellipse(w, h, 67, 63, 6, 4), 'H'),
+    tint(ellipse(w, h, 40, 106, 7, 4), 'H')
+  );
+
   return {
     w,
     h,
@@ -260,7 +565,12 @@ const general = (state: number): BossArt => {
     detail: stamp(
       stamp(
         stamp(
-          stamp(blank(w, h), eyeBlock(20, 13, angry), 22, 50),
+          stamp(
+            stamp(grain(w, h, 53, [[0.955, 'S']]), inflamed, 0, 0),
+            eyeBlock(20, 13, angry),
+            22,
+            50
+          ),
           eyeBlock(20, 13, angry),
           58,
           50
@@ -321,7 +631,39 @@ const deity = (phase: number, state: number): BossArt => {
     h,
     material: 'void',
     mask: merge(core, petals, ring),
-    detail: stamp(blank(w, h), eyeBlock(24, 18, state !== 0 || phase === 2), 58, 60),
+    /**
+     * Era **un ojo de 24×18 sobre ciento cuarenta por ciento cuarenta**, o sea el jefe más
+     * vacío del juego con diferencia: el resto del cuerpo era degradado liso.
+     *
+     * Ahora lleva tres capas. El **pozo** oscurece hacia el centro para que el disco se lea
+     * como un hueco y no como una moneda. Las **esquirlas de esmalte** (`T`) son lo único
+     * dental que esta variante tenía: es una entidad abstracta, y sembrarle fragmentos de
+     * diente en órbita la ata a la boca en la que está. Y el grano fino le da superficie.
+     */
+    detail: stamp(
+      stamp(
+        /**
+         * Grano **claro**, no oscuro. La rampa `void` ya es casi negra —de `#04040c` a
+         * `#7d7dd0`—, así que sembrarla de motas oscuras solo la enturbia: el primer intento
+         * convirtió una flor de seis pétalos en un disco sucio. Lo que se ve sobre negro son
+         * los brillos y las esquirlas de esmalte.
+         */
+        grain(w, h, 7, [
+          [0.972, 'T'],
+          [0.9, 'H'],
+        ]),
+        /**
+         * Y el pozo va **ceñido al núcleo**. Con radio 64 cubría el sprite entero y les comía
+         * el volumen a los pétalos, que es justo lo que hacía legible a esta variante.
+         */
+        well(w, h, 70, 70, 38),
+        0,
+        0
+      ),
+      eyeBlock(24, 18, state !== 0 || phase === 2),
+      58,
+      60
+    ),
   };
 };
 
@@ -329,26 +671,62 @@ const deity = (phase: number, state: number): BossArt => {
 // Guardián del Juicio: 120×140. Cordal dorado con tercer ojo.
 // ---------------------------------------------------------------------------
 
-const warden = (): BossArt => {
+/**
+ * Como el fantasma, **atacaba con la cara de esperar**: `warden()` no recibía el estado.
+ *
+ * Su estado 2 es la lluvia de orbes de juicio, y ahora se ve venir: los dos ojos cerrados **se
+ * abren**. Un juez que sentencia con los ojos cerrados no dice nada; abriéndolos, el ataque
+ * tiene lectura y encima cuenta algo del personaje.
+ */
+const warden = (state: number): BossArt => {
   const w = 120;
   const h = 140;
+  const judging = state === 2;
 
   const crown = merge(ellipse(w, h, 60, 54, 46, 44), rect(w, h, 16, 40, 88, 46));
   const roots = merge(rect(w, h, 26, 84, 26, 50, 8), rect(w, h, 66, 84, 26, 50, 8));
   const halo = subtract(ellipse(w, h, 60, 30, 40, 14), ellipse(w, h, 60, 30, 32, 8));
+
+  /**
+   * Las raíces de un cordal van **retorcidas**, que es media razón de que haya que sacarlo.
+   * Dos vetas oscuras en cada una, desviadas, y el oro de su rampa como incrustación en las
+   * grietas en vez de como color de relleno.
+   */
+  const rootVeins = merge(
+    tint(rect(w, h, 34, 90, 2, 40), 'S'),
+    tint(rect(w, h, 41, 100, 2, 30), 'S'),
+    tint(rect(w, h, 74, 94, 2, 36), 'S'),
+    tint(rect(w, h, 81, 88, 2, 26), 'S'),
+    tint(rect(w, h, 30, 116, 8, 2), 'M'),
+    tint(rect(w, h, 78, 108, 9, 2), 'M')
+  );
+  const inlay = merge(
+    tint(rect(w, h, 28, 60, 20, 2), 'Y'),
+    tint(rect(w, h, 74, 66, 18, 2), 'Y'),
+    tint(rect(w, h, 44, 44, 2, 12), 'Y')
+  );
 
   return {
     w,
     h,
     material: 'warden',
     mask: merge(halo, crown, roots),
-    // Los dos ojos cerrados y el tercero abierto en la frente.
     detail: stamp(
       stamp(
-        stamp(blank(w, h), closedEye(18), 24, 68),
-        closedEye(18),
+        stamp(
+          stamp(
+            stamp(grain(w, h, 31, [[0.96, 'S']]), rootVeins, 0, 0),
+            inlay,
+            0,
+            0
+          ),
+          judging ? eyeBlock(18, 13, true) : closedEye(18),
+          24,
+          judging ? 66 : 68
+        ),
+        judging ? eyeBlock(18, 13, true) : closedEye(18),
         78,
-        68
+        judging ? 66 : 68
       ),
       thirdEye(20, 26),
       50,
@@ -433,15 +811,15 @@ const cache = new Map<string, SpriteDef>();
 const build = (variant: string, state: number, phase: number): BossArt => {
   switch (variant) {
     case 'phantom':
-      return phantom();
-    case 'tank':
-      return tank(state);
+      return phantom(state);
+    case 'calculus':
+      return calculus(state);
     case 'general':
       return general(state);
     case 'deity':
       return deity(phase, state);
     case 'wisdom_warden':
-      return warden();
+      return warden(state);
     default:
       return king(state);
   }
@@ -496,7 +874,7 @@ export const drawBoss = (ctx: CanvasRenderingContext2D, e: Enemy) => {
 export const BOSS_VARIANTS = [
   'king',
   'phantom',
-  'tank',
+  'calculus',
   'general',
   'deity',
   'wisdom_warden',

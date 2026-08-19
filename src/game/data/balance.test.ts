@@ -63,7 +63,7 @@ describe('jefes', () => {
   it('cada stage 1-5 tiene su jefe con la vida esperada', () => {
     expect(getStageBoss(1)).toMatchObject({ variant: 'king', maxHp: 1500 });
     expect(getStageBoss(2)).toMatchObject({ variant: 'phantom', maxHp: 2200 });
-    expect(getStageBoss(3)).toMatchObject({ variant: 'tank', maxHp: 3500 });
+    expect(getStageBoss(3)).toMatchObject({ variant: 'calculus', maxHp: 3500 });
     expect(getStageBoss(4)).toMatchObject({ variant: 'general', maxHp: 3000 });
     expect(getStageBoss(5)).toMatchObject({ variant: 'deity', maxHp: 6000 });
   });
@@ -100,7 +100,7 @@ describe('tabla de enemigos', () => {
     expect(pickEnemySpawn(0.93).subType).toBe('plaque_monster');
     expect(pickEnemySpawn(0.88).subType).toBe('calculus_shell');
     expect(pickEnemySpawn(0.8).subType).toBe('gingivitis_grunt');
-    expect(pickEnemySpawn(0.72).subType).toBe('tartar_turret');
+    expect(pickEnemySpawn(0.72).subType).toBe('tartar_spire');
     expect(pickEnemySpawn(0.66).subType).toBe('enamel_borer');
     expect(pickEnemySpawn(0.58).subType).toBe('acid_spitter');
     expect(pickEnemySpawn(0.52).subType).toBe('biofilm_crawler');
@@ -142,7 +142,7 @@ describe('tabla de enemigos', () => {
     expect(enemyHpForStage(bacteria, 1)).toBe(24);
     expect(enemyHpForStage(bacteria, 5)).toBe(40);
 
-    const turret = ENEMY_SPAWN_TABLE.find((e) => e.subType === 'tartar_turret')!;
+    const turret = ENEMY_SPAWN_TABLE.find((e) => e.subType === 'tartar_spire')!;
     expect(enemyHpForStage(turret, 1)).toBe(50);
     expect(enemyHpForStage(turret, 5)).toBe(50);
   });

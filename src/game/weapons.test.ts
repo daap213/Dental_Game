@@ -296,6 +296,48 @@ describe('spawnProjectile — proyectil enemigo', () => {
     });
   });
 
+  /**
+   * La bala enemiga **puede ir hacia abajo**.
+   *
+   * `vy` estaba fijado a cero, así que la bomba del bombardero de caramelo —que pide `(0, 1)`,
+   * caer— salía con velocidad cero: un perdigón inmóvil colgado en el aire durante sus dos
+   * segundos de vida, mientras el bombardero seguía volando. Es el fallo más visible de los
+   * cuatro que causaba, porque el ataque simplemente no existía.
+   */
+  it('una bala enemiga hacia abajo cae de verdad', () => {
+    const out: Projectile[] = [];
+    spawnProjectile(out, 0, 0, 0, 1, 'enemy', 'normal');
+
+    expect(out[0].vx).toBe(0);
+    expect(out[0].vy).toBe(ENEMY_BULLET.speed);
+  });
+
+  /**
+   * La dirección se normaliza, así que la velocidad es la de la tabla y solo la de la tabla.
+   *
+   * Sin normalizar, el abanico del rey pedía `dx = -9` y salía a **81 px por paso**: diez
+   * frames para cruzar la pantalla entera.
+   */
+  it('la dirección se normaliza: la velocidad sale de la tabla', () => {
+    const out: Projectile[] = [];
+    spawnProjectile(out, 0, 0, -9, 0, 'enemy', 'normal');
+    spawnProjectile(out, 0, 0, 3, 3, 'enemy', 'normal');
+
+    for (const proj of out) {
+      expect(Math.hypot(proj.vx, proj.vy)).toBeCloseTo(ENEMY_BULLET.speed);
+    }
+    // Y la diagonal sigue siendo diagonal, no se aplasta a horizontal.
+    expect(out[1].vy).toBeCloseTo(out[1].vx);
+  });
+
+  /** Una dirección nula dispara al frente en vez de dejar el proyectil quieto. */
+  it('una dirección nula no deja un proyectil parado', () => {
+    const out: Projectile[] = [];
+    spawnProjectile(out, 0, 0, 0, 0, 'enemy', 'normal');
+
+    expect(Math.hypot(out[0].vx, out[0].vy)).toBeCloseTo(ENEMY_BULLET.speed);
+  });
+
   it('un disparo de jugador sin jugador no genera nada', () => {
     const out: Projectile[] = [];
     spawnProjectile(out, 0, 0, 1, 0, 'player', 'normal');

@@ -143,14 +143,21 @@ const enemyItems = (): PreviewItem[] =>
 
 // --- Jefes -----------------------------------------------------------------
 
-/** Estado que mejor muestra a cada jefe atacando. */
+/**
+ * Estado que mejor muestra a cada jefe atacando.
+ *
+ * El fantasma y el guardián estaban a **cero** —o sea reposo—, y no era un descuido de esta
+ * tabla: era que ninguno de los dos tenía dibujo de ataque, así que no había otro estado que
+ * poner. Ahora el fantasma se recoge antes de embestir (1) y el guardián abre los ojos para
+ * sentenciar (2).
+ */
 const BOSS_ATTACK_STATE: Record<string, number> = {
   king: 4,
-  phantom: 0,
-  tank: 1,
+  phantom: 1,
+  calculus: 1,
   general: 6,
   deity: 1,
-  wisdom_warden: 0,
+  wisdom_warden: 2,
 };
 
 const bossItems = (): PreviewItem[] =>

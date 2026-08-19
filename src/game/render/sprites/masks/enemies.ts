@@ -221,21 +221,36 @@ const CANDY: EnemyArt = {
 };
 
 // ---------------------------------------------------------------------------
-// Torreta de sarro: 32×48. Columna mineral con cañón.
+// Concreción de sarro: 32×48. Columna mineral que escupe por una grieta.
 // ---------------------------------------------------------------------------
 
+/**
+ * Tenía un **cañón**: `rect(32, 48, 20, 20, 12, 7, 1)`, un tubo de doce por siete saliendo
+ * del costado, y una boca de metal en la capa de detalle que en ataque se encendía en rojo
+ * como un fogonazo. Dentro de una boca, y en el mismo juego cuyo jefe de esta fase era un
+ * carro de combate.
+ *
+ * Ahora el costado se **abulta** y por ese abultamiento se abre una **fisura restada**. Que
+ * sea material quitado y no una pieza añadida es la diferencia entre una grieta en la piedra
+ * y un tubo atornillado, y es lo único que hace falta cambiar para que deje de ser un arma.
+ */
 const TURRET_BASE = rect(32, 48, 2, 40, 28, 8, 3);
 const TURRET_COLUMN = merge(
   rect(32, 48, 8, 14, 16, 28, 2),
   rect(32, 48, 10, 6, 12, 10, 3),
   spike(32, 48, 16, 0, 8, 6)
 );
-const TURRET_BARREL = rect(32, 48, 20, 20, 12, 7, 1);
+const TURRET_VENT = ellipse(32, 48, 25, 24, 8, 7);
+const TURRET_FISSURE = merge(
+  rect(32, 48, 25, 23, 7, 2),
+  rect(32, 48, 22, 19, 3, 1),
+  rect(32, 48, 24, 28, 4, 1)
+);
 
 const TURRET: EnemyArt = {
   w: 32,
   h: 48,
-  mask: merge(TURRET_BASE, TURRET_COLUMN, TURRET_BARREL),
+  mask: subtract(merge(TURRET_BASE, TURRET_COLUMN, TURRET_VENT), TURRET_FISSURE),
   detail: [
     ...blank(32, 4),
     '...............H................',
@@ -250,10 +265,14 @@ const TURRET: EnemyArt = {
     '..........EPPRRPPE..............',
     '..........EEEEEEEE..............',
     '................................',
-    '...........SSSSSS.....WWWWWWWWWW',
-    '...........S....S.....WMMMMMMMMW',
-    '...........SSSSSS.....WWWWWWWWWW',
-    ...blank(32, 29),
+    '...........SSSSSS...............',
+    '...........S....S....SS.........',
+    '...........SSSSSS...S..MM.......',
+    '....................S...MMM.....',
+    '.....................S..MM......',
+    '......................SS........',
+    '.......................S........',
+    ...blank(32, 22),
   ],
   attack: [
     ...blank(32, 12),
@@ -262,10 +281,14 @@ const TURRET: EnemyArt = {
     '..........ERRRRRRE..............',
     '..........EEEEEEEE..............',
     '................................',
-    '...........SSSSSS.....WWWWWWWWWW',
-    '...........S....S.....WRRRRRRRRW',
-    '...........SSSSSS.....WWWWWWWWWW',
-    ...blank(32, 28),
+    '...........SSSSSS...............',
+    '...........S....S....SR.........',
+    '...........SSSSSS...S.RRR.......',
+    '....................S..RRRR.....',
+    '.....................S.RRR......',
+    '......................SR........',
+    '.......................S........',
+    ...blank(32, 21),
   ],
   hurt: [
     ...blank(32, 12),
@@ -698,7 +721,7 @@ export const ENEMY_ART = {
   bacteria: normalize(BACTERIA),
   plaque_monster: normalize({ ...PLAQUE, mask: PLAQUE_WITH_HOLE }),
   candy_bomber: normalize(CANDY),
-  tartar_turret: normalize(TURRET),
+  tartar_spire: normalize(TURRET),
   sugar_rusher: normalize(RUSHER),
   sugar_fiend: normalize(FIEND),
   acid_spitter: normalize(SPITTER),

@@ -171,7 +171,7 @@ export const updateEnemyAI = (enemy: Enemy, p: Player, s: World, audio: AudioMan
         case 'plaque_monster': enemy.vx = enemy.x > p.x ? -2 : 2; enemy.vy += GRAVITY; break;
         case 'candy_bomber': enemy.vy = Math.sin(Date.now()/200); enemy.vx = -4; 
             if(enemy.attackTimer > 2 && Math.abs(enemy.x-p.x)<50) { spawnProjectile(s.projectiles, enemy.x, enemy.y+20, 0, 1, 'enemy', 'normal'); enemy.attackTimer=0; enemy.actionTimer=ATTACK_POSE; } break;
-        case 'tartar_turret': enemy.vx = 0; enemy.vy += GRAVITY;
+        case 'tartar_spire': enemy.vx = 0; enemy.vy += GRAVITY;
             if(enemy.attackTimer > 3 && Math.abs(p.x-enemy.x)<400) { 
                 const angle = Math.atan2(p.y-enemy.y, p.x-enemy.x);
                 s.projectiles.push({id:Math.random().toString(),x:enemy.x+enemy.w/2,y:enemy.y+enemy.h/2,w:8,h:8,vx:Math.cos(angle)*5,vy:Math.sin(angle)*5,hp:1,maxHp:1,type:'projectile',projectileType:'bullet',damage:10,owner:'enemy',lifeTime:3,hitIds:[],color:COLORS.projectileEnemy,facing:1,isGrounded:false,frameTimer:0,state:0});
@@ -332,8 +332,21 @@ export const updateEnemyAI = (enemy: Enemy, p: Player, s: World, audio: AudioMan
                  if(enemy.bossState===0) { enemy.vx=(p.x-enemy.x)*0.03; if(enemy.aiTimer>1.5) { enemy.bossState=Math.random()>0.7?5:1; enemy.aiTimer=0; } }
                  else if(enemy.bossState===1) { enemy.vx=0; if(enemy.aiTimer>0.5) { enemy.bossState=2; audio.playBossAttack('charge'); enemy.vx=(p.x<enemy.x)?-20:20; enemy.aiTimer=0; } }
                  else if(enemy.bossState===2) { enemy.vy=(p.y-enemy.y)*0.1; if(enemy.aiTimer>0.8) { enemy.bossState=3; enemy.aiTimer=0; enemy.vx=0; } }
-                 else if(enemy.bossState===3 && enemy.aiTimer>0.3) { audio.playBossAttack('shoot'); for(let i=-2;i<=2;i++) spawnProjectile(s.projectiles, enemy.x+enemy.w/2, enemy.y+enemy.h/2, p.facing, 0, 'enemy', 'normal'); enemy.bossState=0; enemy.aiTimer=0; }
-             } else if (enemy.bossVariant==='tank') {
+                 else if(enemy.bossState===3 && enemy.aiTimer>0.3) {
+                    audio.playBossAttack('shoot');
+                    /**
+                     * Ráfaga en abanico **hacia el jugador**.
+                     *
+                     * Apuntaba con `p.facing` —el `facing` del **jugador**, no la dirección
+                     * hacia él—, así que mirando hacia otro lado el fantasma disparaba al lado
+                     * contrario. Y el índice del bucle no se usaba, con lo que las cinco balas
+                     * salían superpuestas: cinco proyectiles para el trabajo de uno.
+                     */
+                    const toward = Math.sign(p.x - enemy.x) || 1;
+                    for(let i=-2;i<=2;i++) spawnProjectile(s.projectiles, enemy.x+enemy.w/2, enemy.y+enemy.h/2, toward*3, i, 'enemy', 'normal');
+                    enemy.bossState=0; enemy.aiTimer=0;
+                 }
+             } else if (enemy.bossVariant==='calculus') {
                  // IMPROVED TANK AI (Level 3)
                  if(enemy.bossState===0) { enemy.vx=(p.x-enemy.x)>0?3:-3; enemy.vy+=GRAVITY; if(enemy.aiTimer>2.5) { enemy.bossState=Math.random()>0.5?1:(Math.random()>0.5?2:3); enemy.aiTimer=0; } }
                  else if(enemy.bossState===1) { // Mortar (Enhanced: 3 shells)
@@ -432,7 +445,20 @@ export const updateEnemyAI = (enemy: Enemy, p: Player, s: World, audio: AudioMan
                  }
              } else { // King
                  if(enemy.bossState===0) { enemy.vy=Math.sin(Date.now()/500)*0.5; enemy.vx=(p.x-enemy.x)*0.02; if(enemy.aiTimer>2) { enemy.aiTimer=0; const r=Math.random(); enemy.bossState=r<0.3?4:(r<0.6?2:1); } }
-                 else if(enemy.bossState===4 && enemy.attackTimer>0.5) { audio.playBossAttack('shoot'); for(let i=-2;i<=2;i++) spawnProjectile(s.projectiles, enemy.x, enemy.y, -9, i*3, 'enemy', 'normal'); enemy.attackTimer=0; enemy.actionTimer=ATTACK_POSE; enemy.bossState=0; enemy.aiTimer=0; }
+                 else if(enemy.bossState===4 && enemy.attackTimer>0.5) {
+                    audio.playBossAttack('shoot');
+                    /**
+                     * Abanico de cinco **hacia el jugador**.
+                     *
+                     * Pedía `(-9, i*3)`: siempre a la izquierda, estuviera el jugador donde
+                     * estuviera, y con el `dx` sin normalizar salían a 81 px por paso —diez
+                     * frames para cruzar la pantalla, o sea inesquivable e invisible—. Y el
+                     * `i*3` se descartaba, así que las cinco iban una encima de otra.
+                     */
+                    const toward = Math.sign(p.x - enemy.x) || -1;
+                    for(let i=-2;i<=2;i++) spawnProjectile(s.projectiles, enemy.x, enemy.y, toward*3, i, 'enemy', 'normal');
+                    enemy.attackTimer=0; enemy.actionTimer=ATTACK_POSE; enemy.bossState=0; enemy.aiTimer=0;
+                 }
                  else if(enemy.bossState===2) { enemy.vy=-8; if(enemy.y<50) { enemy.bossState=3; enemy.vx=(p.x-enemy.x)*0.1; } }
                  else if(enemy.bossState===3) enemy.vy+=2;
                  else if(enemy.bossState===1 && enemy.aiTimer>1) { audio.playBossAttack('summon'); s.enemies.push({id:Math.random().toString(),x:enemy.x,y:enemy.y+20,w:20,h:20,vx:-5,vy:-5,hp:10,maxHp:10,type:'enemy',subType:'sugar_rusher',color:COLORS.enemyRusher,facing:-1,isGrounded:false,aiTimer:0,attackTimer:0,frameTimer:0,state:0,bossState:0,animTimer:0,hitTimer:0,actionTimer:0}); enemy.bossState=0; enemy.aiTimer=0; }

@@ -101,7 +101,7 @@ describe('arte de los jefes', () => {
 
   it('el estado cambia el dibujo de quien lo usa', () => {
     // El tanque levanta el cañón y el rey abre la boca.
-    expect(bossSprite('tank', 1, 1).rows.join()).not.toBe(bossSprite('tank', 0, 1).rows.join());
+    expect(bossSprite('calculus', 1, 1).rows.join()).not.toBe(bossSprite('calculus', 0, 1).rows.join());
     expect(bossSprite('king', 4, 1).rows.join()).not.toBe(bossSprite('king', 0, 1).rows.join());
     expect(bossSprite('deity', 0, 2).rows.join()).not.toBe(bossSprite('deity', 0, 1).rows.join());
   });

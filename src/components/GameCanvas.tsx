@@ -38,7 +38,7 @@ import { advanceProjectiles } from '../game/projectiles';
 import { PROJECTILES } from '../game/data/projectiles';
 import { getRandomPerks, applyPerk } from '../game/perks';
 import { getDifficulty } from '../game/data/difficulty';
-import { contactDamageFor, waveInterval, HIDDEN_BOSS, ENEMY_CULL_MARGIN } from '../game/data/enemies';
+import { contactDamageFor, deathBurstFor, waveInterval, HIDDEN_BOSS, ENEMY_CULL_MARGIN } from '../game/data/enemies';
 import { getFireCooldown, MAX_LEVEL } from '../game/data/weapons';
 import { createTriggerState, advanceTriggers, isBossSpeedkill } from '../game/triggers';
 import { claimScoreMilestone, claimKillMilestone } from '../game/progression';
@@ -690,7 +690,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                          s.projectiles.push({ id: Math.random().toString(), x: enemy.x+enemy.w, y: enemy.y+enemy.h-20, w: 40, h: 20, vx: 8, vy: 0, hp: 1, maxHp: 1, type: 'projectile', projectileType: 'wave', damage: 25, owner: 'enemy', lifeTime: 3, hitIds: [], color: COLORS.projectileWave, facing: 1, isGrounded: false, frameTimer: 0, state: 0 });
                          enemy.bossState = 0; enemy.aiTimer = 0;
                      }
-                 } else if (enemy.bossVariant === 'tank') {
+                 } else if (enemy.bossVariant === 'calculus') {
                      if (enemy.y + enemy.h > floorY) { enemy.y = floorY - enemy.h; enemy.vy = 0; }
                  }
             } else {
@@ -761,7 +761,25 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                         const limitType = loadout === 'all' ? undefined : loadout;
                         spawnPowerUp(s.powerups, enemy.x, enemy.y, dropRate, limitType);
 
-                        for(let i=0; i<8; i++) spawnParticle(enemy.x+enemy.w/2, enemy.y+enemy.h/2, enemy.color, 10);
+                        /**
+                         * Se deshace como lo que es, y no todo desde el mismo punto.
+                         *
+                         * Eran ochenta motas del color plano del enemigo, las ochenta desde su
+                         * centro geométrico exacto: una bacteria de 32×32 y un jefe de 160×140
+                         * morían con el mismo efecto. El color y la cantidad salen ahora de
+                         * `deathBurstFor`, y `spread` las reparte por el cuerpo, que es lo que
+                         * hace que una mole grande se descascarille en vez de estallar desde un
+                         * punto.
+                         */
+                        const burst = deathBurstFor(enemy);
+                        const burstTone = tone(burst.color);
+                        for (let i = 0; i < burst.count; i++) {
+                            // Reparto barato y determinista: dos módulos primos distintos dan
+                            // una dispersión que no se lee como retícula ni como fila.
+                            const ox = (((i * 37) % 101) / 101 - 0.5) * enemy.w * burst.spread;
+                            const oy = (((i * 61) % 97) / 97 - 0.5) * enemy.h * burst.spread;
+                            spawnParticle(enemy.x + enemy.w / 2 + ox, enemy.y + enemy.h / 2 + oy, burstTone, 1);
+                        }
 
                         // Lo que deja al morir: el absceso se abre en bacterias.
                         // La regla vive en `game/enemies.ts`.
