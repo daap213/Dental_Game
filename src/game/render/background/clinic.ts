@@ -158,6 +158,104 @@ const drawDentist = (ctx: CanvasRenderingContext2D, cx: number, cy: number) => {
   }
 };
 
+/**
+ * El quirófano, para la fase que ocurre **fuera** de la boca.
+ *
+ * Ahí la clínica deja de ser lo que se ve por un hueco y pasa a ser el escenario, y
+ * con una pared de azulejo y un foco no basta: lo que identifica una consulta dental
+ * es el mobiliario. Van todos en silueta y desaturados —es fondo—, pero cada uno se
+ * reconoce por su forma, que es lo que hace que la fase deje de ser "la boca en gris".
+ */
+const drawTheatre = (ctx: CanvasRenderingContext2D, floor: number) => {
+  // --- El sillón, que es la pieza que más dice ---
+  const chairX = Math.round(CANVAS_WIDTH * 0.37);
+
+  // Columna y base.
+  px(ctx, chairX - 10, floor - 54, 20, 54, 'clinic.shade');
+  px(ctx, chairX - 34, floor - 8, 68, 8, 'clinic.dark');
+  px(ctx, chairX - 34, floor - 8, 68, 2, 'clinic.mid');
+
+  // Asiento y respaldo reclinado: el respaldo sube en diagonal hacia la izquierda,
+  // que es la postura en la que se atiende a un paciente.
+  px(ctx, chairX - 46, floor - 66, 92, 14, 'clinic.mid');
+  px(ctx, chairX - 46, floor - 66, 92, 3, 'clinic.light');
+  for (let i = 0; i < 58; i++) {
+    const t = i / 57;
+    const x = chairX - 46 - Math.round(t * 52);
+    const y = floor - 66 - i;
+    px(ctx, x, y, Math.round(30 + t * 10), 2, 'clinic.mid');
+    px(ctx, x, y, 3, 2, 'clinic.light');
+  }
+  // Cabecero.
+  px(ctx, chairX - 112, floor - 132, 34, 20, 'clinic.dark');
+  px(ctx, chairX - 112, floor - 132, 34, 3, 'clinic.mid');
+
+  // --- La lámpara de brazo articulado, colgando del techo ---
+  const lampArmX = Math.round(CANVAS_WIDTH * 0.64);
+  px(ctx, lampArmX - 3, 0, 6, 74, 'clinic.dark');
+  px(ctx, lampArmX - 3, 0, 2, 74, 'clinic.mid');
+  px(ctx, lampArmX - 6, 74, 12, 10, 'clinic.shade');
+  // Tramo inclinado hasta la cabeza.
+  for (let i = 0; i < 52; i++) {
+    px(ctx, lampArmX - 4 - i, 82 + Math.round(i * 0.62), 5, 5, 'clinic.dark');
+  }
+  // Reflector troncocónico con su cristal encendido.
+  const headX = lampArmX - 56;
+  const headY = 116;
+  for (let i = 0; i < 20; i++) {
+    const half = Math.round(16 + i * 1.9);
+    px(ctx, headX - half, headY + i, half * 2, 1, i < 4 ? 'clinic.mid' : 'clinic.shade');
+    px(ctx, headX - half, headY + i, 2, 1, 'clinic.light');
+  }
+  const glass = 16 + 20 * 1.9;
+  px(ctx, headX - Math.round(glass) + 3, headY + 20, Math.round(glass) * 2 - 6, 5, 'glare.hi');
+  px(ctx, headX - Math.round(glass) + 6, headY + 25, Math.round(glass) * 2 - 12, 2, 'glare.light');
+
+  // --- La escupidera, sobre su brazo ---
+  const spitX = Math.round(CANVAS_WIDTH * 0.46);
+  px(ctx, spitX - 3, floor - 96, 6, 54, 'clinic.dark');
+  for (let i = 0; i < 14; i++) {
+    const half = Math.round(22 - i * 1.4);
+    px(ctx, spitX - half, floor - 96 - 14 + i, half * 2, 1, i < 3 ? 'clinic.light' : 'clinic.mid');
+  }
+  px(ctx, spitX - 20, floor - 108, 40, 2, 'clinic.hi');
+
+  // --- La bandeja de instrumental, con el instrumental tumbado ---
+  const trayX = Math.round(CANVAS_WIDTH * 0.78);
+  const trayY = floor - 78;
+  px(ctx, trayX, trayY, 116, 5, 'clinic.mid');
+  px(ctx, trayX, trayY, 116, 1, 'clinic.light');
+  px(ctx, trayX + 4, trayY + 5, 4, 24, 'clinic.shade');
+  px(ctx, trayX + 108, trayY + 5, 4, 24, 'clinic.shade');
+  const tools: readonly [number, number, number][] = [
+    [8, 3, 46],
+    [12, 9, 34],
+    [10, 15, 52],
+  ];
+  for (const [ox, oy, len] of tools) {
+    const y = trayY - 3 - oy;
+    px(ctx, trayX + ox, y, len, 2, 'metal.mid');
+    px(ctx, trayX + ox, y, len, 1, 'metal.light');
+    // Mango más gordo que la punta, y la punta con su destello.
+    px(ctx, trayX + ox, y - 1, 16, 4, 'metal.dark');
+    px(ctx, trayX + ox + len - 3, y - 1, 3, 3, 'metal.hi');
+  }
+
+  // --- El visor de radiografías, en la pared ---
+  const viewX = Math.round(CANVAS_WIDTH * 0.08);
+  px(ctx, viewX, 96, 96, 74, 'clinic.out');
+  px(ctx, viewX + 3, 99, 90, 68, 'glare.light');
+  px(ctx, viewX + 3, 99, 90, 68, 'glare.light');
+  // Dos radiografías clavadas: siluetas oscuras de muelas a contraluz.
+  for (const ox of [10, 52]) {
+    px(ctx, viewX + ox, 106, 32, 54, 'clinic.shade');
+    for (let i = 0; i < 3; i++) {
+      px(ctx, viewX + ox + 4 + i * 10, 116, 7, 22, 'clinic.out');
+      px(ctx, viewX + ox + 6 + i * 10, 138, 3, 14, 'clinic.out');
+    }
+  }
+};
+
 export const clinicLayer = registerLayer({
   id: 'clinic',
   // Muy lejos: apenas se desplaza. Pero se desplaza, y eso es lo que cuenta que la
@@ -175,7 +273,19 @@ export const clinicLayer = registerLayer({
 
       // 1. La habitación. En el resquicio del fondo de la boca casi no se ve, así que
       //    no se gasta en dibujarla.
-      if (through !== 'gap') {
+      if (scene.zone === 'clinic') {
+        // Fuera de la boca: la clínica **es** el escenario, así que se dibuja entera y
+        // el suelo llega abajo del todo, no a la altura del canto de una abertura que
+        // aquí no existe.
+        const room = CANVAS_HEIGHT - 60;
+        drawTiles(ctx, 0, room);
+        ditherFill(ctx, 0, room, CANVAS_WIDTH, CANVAS_HEIGHT - room, 'clinic.out', 'clinic.shade', 8);
+        // Zócalo: separa la pared del suelo, que si no se funden en una sola masa.
+        px(ctx, 0, room - 5, CANVAS_WIDTH, 5, 'clinic.shade');
+        px(ctx, 0, room - 5, CANVAS_WIDTH, 1, 'clinic.mid');
+        drawFurniture(ctx, room - 5);
+        drawTheatre(ctx, room - 5);
+      } else if (through !== 'gap') {
         drawTiles(ctx, 0, floor);
         ditherFill(ctx, 0, floor, CANVAS_WIDTH, CANVAS_HEIGHT - floor, 'clinic.out', 'clinic.shade', 7);
         drawFurniture(ctx, floor);

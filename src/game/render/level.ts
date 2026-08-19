@@ -1,6 +1,7 @@
 import type { Platform } from '../../types';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../data/physics';
 import type { PaletteKey } from '../data/palette';
+import { getStageScene } from '../data/stages';
 import { px, blit, bake } from './pixel';
 import { ditherFill, ditherOver } from './dither';
 import { hash, hashInt, spread } from './noise';
@@ -29,6 +30,8 @@ const TILE = 32;
 /** Cuántas baldosas distintas se hornean de cada cosa. */
 const TONGUE_VARIANTS = 4;
 const BRACES_VARIANTS = 3;
+/** A qué altura de la baldosa corre el surco medio de la lengua. */
+const SULCUS = 15;
 
 /**
  * Baldosa de lengua: la superficie del suelo.
@@ -52,6 +55,21 @@ const tongueTile = (variant: number) =>
     ditherFill(ctx, 0, 3, TILE, 10, 'tongue.mid', 'tongue.light', 6);
     ditherFill(ctx, 0, 13, TILE, 26, 'tongue.mid', 'tongue.dark', 8);
     ditherFill(ctx, 0, 39, TILE, 25, 'tongue.dark', 'tongue.out', 10);
+
+    /**
+     * El surco medio de la lengua.
+     *
+     * Va **horizontal**, o sea a lo largo del dorso, porque desde donde mira el
+     * personaje la lengua se extiende de lado a lado: el surco corre con ella. Un
+     * surco vertical se repetiría cada 32 píxeles y saldría una reja.
+     *
+     * Con su valle oscuro y las dos caras iluminadas a los lados, que es lo único que
+     * separa un surco de una raya pintada.
+     */
+    px(ctx, 0, SULCUS - 1, TILE, 1, 'tongue.light');
+    px(ctx, 0, SULCUS, TILE, 3, 'tongue.out');
+    px(ctx, 0, SULCUS + 3, TILE, 1, 'tongue.dark');
+    px(ctx, 0, SULCUS + 4, TILE, 1, 'tongue.light');
 
     // Papilas: repartidas, no en rejilla. Más densas y marcadas arriba, donde da
     // la luz.
@@ -90,6 +108,33 @@ const tongueTile = (variant: number) =>
         ditherOver(ctx, 0, 4, TILE, 22, 'tongue.dark', 5);
         break;
     }
+  });
+
+/**
+ * Baldosa de suelo de clínica.
+ *
+ * La fase del quirófano ocurre **fuera** de la boca, y hasta ahora andaba sobre una
+ * lengua: el fondo era una consulta y el suelo, carne. Aquí es gres frío con su junta
+ * y su reflejo.
+ */
+const clinicFloorTile = (variant: number) =>
+  bake(`platform:clinicFloor:${variant}`, TILE, 64, (ctx) => {
+    px(ctx, 0, 0, TILE, 64, 'clinic.dark');
+
+    // Canto superior: la arista por la que el jugador juzga dónde pisa.
+    px(ctx, 0, 0, TILE, 2, 'clinic.light');
+    px(ctx, 0, 2, TILE, 1, 'clinic.hi');
+    ditherFill(ctx, 0, 3, TILE, 20, 'clinic.dark', 'clinic.mid', 7);
+    ditherFill(ctx, 0, 23, TILE, 41, 'clinic.shade', 'clinic.dark', 8);
+
+    // Junta: una vertical por baldosa y una horizontal en perspectiva.
+    px(ctx, variant % 2 === 0 ? 0 : TILE - 1, 3, 1, 61, 'clinic.out');
+    px(ctx, 0, 22, TILE, 1, 'clinic.out');
+    px(ctx, 0, 23, TILE, 1, 'clinic.shade');
+
+    // Reflejo: el gres pulido devuelve la luz del techo en una banda difusa.
+    ditherOver(ctx, 0, 5, TILE, 12, 'clinic.hi', variant === 1 ? 5 : 3);
+    if (variant === 3) ditherOver(ctx, 0, 26, TILE, 10, 'clinic.light', 3);
   });
 
 /** Color de la goma del aparato. Cambia por fase, como en una ortodoncia real. */
@@ -138,6 +183,8 @@ export const drawPlatforms = (
   platforms: Platform[],
   stage = 1
 ) => {
+  const inClinic = getStageScene(stage).zone === 'clinic';
+
   platforms.forEach((p) => {
     for (let x = 0; x < p.w; x += TILE) {
       const w = Math.min(TILE, p.w - x);
@@ -146,7 +193,9 @@ export const drawPlatforms = (
       const index = Math.floor((p.x + x) / TILE);
 
       if (p.isGround) {
-        const tile = tongueTile(hashInt(TONGUE_VARIANTS, index, 91));
+        const variant = hashInt(TONGUE_VARIANTS, index, 91);
+        // Fuera de la boca se pisa gres, no lengua.
+        const tile = inClinic ? clinicFloorTile(variant) : tongueTile(variant);
         // Se recorta la baldosa al ancho que queda, para no pasarse del borde.
         ctx.drawImage(tile, 0, 0, w, 64, Math.round(p.x + x), Math.round(p.y), w, 64);
       } else {

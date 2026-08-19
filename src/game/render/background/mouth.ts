@@ -243,6 +243,172 @@ const drawGum = (buf: PixelBuffer, scene: StageScene) => {
   }
 };
 
+/**
+ * El paladar: la bóveda que hay **por encima** de la arcada superior.
+ *
+ * Esa franja era carne lisa con un degradado, y es la segunda superficie más grande
+ * de la pantalla. El paladar tiene tres cosas que lo hacen reconocible, y las tres se
+ * dibujan aquí: el **rafe** —la costura que lo recorre por el medio—, las **rugas**
+ * —los pliegues transversales, en pares a los lados del rafe— y el punteado glandular
+ * del fondo.
+ *
+ * Las rugas van **cortas y en pares**, no como arcos de lado a lado: a setecientos
+ * píxeles de largo por seis de grueso, un pliegue se lee como un cable tendido. Y se
+ * juntan y se acortan hacia arriba, que es la perspectiva de la bóveda yéndose al
+ * fondo.
+ */
+const drawPalate = (buf: PixelBuffer, scene: StageScene) => {
+  const gum = scene.gumRamp;
+  const pale = scene.cheekRamp;
+  const cx = Math.round(CANVAS_WIDTH / 2);
+
+  /** Hasta dónde llega la bóveda: el canto de encía en el centro de la pantalla. */
+  const centre = openingAt(scene.opening, cx);
+  const gumLine = Math.round(centre.top - toothSizeAt(centre.depth).h);
+  if (gumLine < 40) return;
+
+  // 1. El paladar es más pálido y menos rojo que la encía —está queratinizado—, y eso
+  //    separa las dos superficies sin necesidad de una línea.
+  for (let y = 0; y < gumLine; y++) {
+    const up = 1 - y / gumLine;
+    const level = 13 * up ** 1.2;
+    for (let x = 0; x < CANVAS_WIDTH; x++) {
+      if (BAYER_4[y & 3][x & 3] < level) buf.set(x, y, `${pale}.dark`);
+    }
+  }
+
+  // 2. Pliegues anchos y muy suaves que cruzan toda la franja.
+  //
+  // Van primero y llenan los lados, que con solo las rugas del centro se quedaban
+  // vacíos. Son de contraste bajísimo a propósito: aquí lo que se busca es que la
+  // carne no sea un plano, no dibujar nada que se mire.
+  for (let f = 0; f < 5; f++) {
+    const base = Math.round((gumLine * (f + 0.5)) / 5);
+    for (let x = 0; x < CANVAS_WIDTH; x++) {
+      const wave = Math.round(Math.sin(x / 90 + f * 1.7) * 9 + Math.sin(x / 31 + f) * 3);
+      for (let k = 0; k < 7; k++) {
+        const y = base + wave + k;
+        if (y < 0 || y >= gumLine) continue;
+        if (BAYER_4[y & 3][x & 3] < 5 - k) buf.set(x, y, `${pale}.shade`);
+      }
+    }
+  }
+
+  /**
+   * 3. El rafe: un surco **corto y con cuerpo**, solo en el tramo cercano.
+   *
+   * De arriba abajo de la bóveda y a dos píxeles era una línea fina y larga, o sea un
+   * arañazo —el mismo error que ya costó las rugas, los hilos de saliva y los pliegues
+   * de mejilla—. Aquí se queda en el tercio bajo, donde el paladar está cerca y un
+   * surco se vería de verdad, y lleva sus dos caras: valle en sombra y un labio
+   * iluminado a un lado.
+   */
+  const rapheFrom = Math.round(gumLine * 0.52);
+  const rapheTo = Math.round(gumLine * 0.9);
+  for (let y = rapheFrom; y < rapheTo; y++) {
+    // Se ensancha al acercarse: la perspectiva del propio surco.
+    const t = (y - rapheFrom) / Math.max(1, rapheTo - rapheFrom);
+    const half = 1 + Math.round(t * 2);
+    for (let d = -half; d <= half; d++) buf.set(cx + d, y, `${pale}.shade`);
+    buf.set(cx + half + 1, y, `${gum}.mid`);
+  }
+
+  // 4. Las rugas: **muchas, cortas y de poco contraste**, para que se lean como una
+  //    superficie corrugada. Nueve pares en vez de seis, la mitad de largas y sin
+  //    brillo: lo que las convertía en costillas era la proporción, no el número.
+  const ridges = 9;
+  for (let i = 0; i < ridges; i++) {
+    const t = i / (ridges - 1);
+    // Apretadas arriba —al fondo de la bóveda— y separadas junto a los dientes.
+    const y = Math.round(12 + t * t * (gumLine - 28));
+    const span = Math.round(30 + t * 30);
+    const thick = 2 + Math.round(t * 2);
+
+    for (const side of [-1, 1] as const) {
+      for (let d = 0; d < span; d++) {
+        const u = d / (span - 1);
+        const x = cx + side * (7 + d);
+        if (x < 0 || x >= CANVAS_WIDTH) continue;
+        const rise = Math.round(u * u * (4 + t * 6));
+        const taper = Math.max(1, Math.round(thick * (1 - u * u * 0.8)));
+        const top = y - rise;
+        for (let k = 0; k < taper; k++) buf.set(x, top + k, `${gum}.dark`);
+        buf.set(x, top + taper, `${pale}.shade`);
+      }
+    }
+  }
+
+  // 5. Punteado glandular, más denso hacia el fondo de la bóveda.
+  for (let i = 0; i < 120; i++) {
+    const x = Math.round(spread(120, i, 31) * CANVAS_WIDTH);
+    const y = Math.round(hash(i, 33) ** 2 * gumLine);
+    if (Math.abs(x - cx) < 4) continue;
+    buf.set(x, y, `${pale}.shade`);
+  }
+};
+
+/**
+ * El suelo de la boca: la franja entre la arcada inferior y la lengua.
+ *
+ * Lo que se ve desde ahí de pie es la carne sublingual, y tiene dos rasgos claros: los
+ * **pliegues sublinguales**, que salen del centro hacia los lados, y el **frenillo**,
+ * la brida corta que ata la lengua al suelo. Más el charco de saliva del canto, que es
+ * lo que cuenta que todo aquello está mojado.
+ */
+const drawFloorOfMouth = (buf: PixelBuffer, scene: StageScene) => {
+  const gum = scene.gumRamp;
+  const cx = Math.round(CANVAS_WIDTH / 2);
+
+  const centre = openingAt(scene.opening, cx);
+  const from = Math.round(centre.bottom + toothSizeAt(centre.depth).h);
+  if (from >= TONGUE_TOP - 8) return;
+  const band = TONGUE_TOP - from;
+
+  // 1. Pliegues sublinguales: dos crestas que se abren del centro hacia los lados,
+  //    bajando. Con sus dos caras, que es lo único que se lee como relieve.
+  for (const side of [-1, 1] as const) {
+    const span = Math.round(CANVAS_WIDTH * 0.34);
+    for (let d = 0; d < span; d++) {
+      const u = d / (span - 1);
+      const x = cx + side * (14 + d);
+      if (x < 0 || x >= CANVAS_WIDTH) continue;
+      const y = Math.round(from + 6 + u * u * (band * 0.55));
+      const thick = Math.max(1, Math.round(4 * (1 - u * u)));
+      buf.set(x, y, `${gum}.light`);
+      for (let k = 1; k <= thick; k++) buf.set(x, y + k, `${gum}.mid`);
+      buf.set(x, y + thick + 1, `${gum}.shade`);
+    }
+  }
+
+  // 2. El frenillo: corto, vertical y centrado, del suelo a la lengua.
+  const frenTo = Math.min(TONGUE_TOP, from + Math.round(band * 0.8));
+  for (let y = from + 4; y < frenTo; y++) {
+    buf.set(cx - 2, y, `${gum}.shade`);
+    buf.set(cx - 1, y, `${gum}.light`);
+    buf.set(cx, y, `${gum}.mid`);
+    buf.set(cx + 1, y, `${gum}.shade`);
+  }
+
+  // 3. El charco del canto: la saliva que se acumula donde el suelo toca la lengua.
+  for (let i = 0; i < 10; i++) {
+    const y = TONGUE_TOP - 1 - i;
+    if (y <= from) break;
+    const level = Math.round(9 * (1 - i / 10) ** 0.6);
+    for (let x = 0; x < CANVAS_WIDTH; x++) {
+      if (BAYER_4[y & 3][x & 3] < level) buf.set(x, y, `${gum}.hi`);
+    }
+  }
+
+  // Y unos destellos sueltos en el charco.
+  for (let i = 0; i < 26; i++) {
+    const x = Math.round(spread(26, i, 37) * CANVAS_WIDTH);
+    const y = TONGUE_TOP - 2 - Math.round(hash(i, 39) * 7);
+    if (y <= from) continue;
+    buf.set(x, y, 'enamel.hi');
+    buf.set(x + 1, y, `${gum}.hi`);
+  }
+};
+
 /** El festón: el arco de encía del que nace cada pieza. */
 const drawScallop = (ctx: CanvasRenderingContext2D, scene: StageScene, slots: ToothSlot[]) => {
   const gum = scene.gumRamp;
@@ -308,6 +474,10 @@ export const mouthLayer = registerLayer({
       // costaba medio segundo de tirón al entrar en la fase.
       const flesh = pixelBuffer(ctx, CANVAS_WIDTH, CANVAS_HEIGHT);
       drawGum(flesh, scene);
+      // Y las dos bóvedas, en el mismo búfer: van por debajo de los dientes, así que
+      // tienen que estar volcadas antes de estamparlos.
+      drawPalate(flesh, scene);
+      drawFloorOfMouth(flesh, scene);
       flesh.commit();
       drawScallop(ctx, scene, slots);
 
