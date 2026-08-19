@@ -153,6 +153,56 @@ export const ditherFill = (
 };
 
 /**
+ * Tramado **sin fondo**: pinta solo los píxeles del patrón y deja el resto como
+ * estaba.
+ *
+ * `dither` y `ditherFill` rellenan primero con `base`, así que siempre tapan.
+ * Para una capa que va *encima* de otras —la viñeta de las mejillas, el vaho, las
+ * manchas de sarro— eso no sirve: haría falta saber qué hay debajo. Aquí el nivel
+ * hace de opacidad, y como la retícula es la misma de 4×4 anclada a coordenadas
+ * absolutas, dos rectángulos contiguos siguen encajando.
+ */
+export const ditherOver = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  over: PaletteKey,
+  level: number
+) => {
+  const rx = Math.round(x);
+  const ry = Math.round(y);
+  const rw = Math.round(w);
+  const rh = Math.round(h);
+  if (rw <= 0 || rh <= 0) return;
+
+  const coverage = bayerCoverage(level);
+  if (coverage === 0) return;
+  if (coverage === 16) {
+    px(ctx, rx, ry, rw, rh, over);
+    return;
+  }
+
+  const pattern = ditherPattern(ctx, over, level);
+  if (pattern) {
+    ctx.save();
+    ctx.fillStyle = pattern;
+    ctx.fillRect(rx, ry, rw, rh);
+    ctx.restore();
+    return;
+  }
+
+  // Sin `createPattern` (entorno de test): píxel a píxel con la misma retícula.
+  const mask = bayerMask(level);
+  for (let py = ry; py < ry + rh; py++) {
+    for (let pxx = rx; pxx < rx + rw; pxx++) {
+      if (mask[((py % 4) + 4) % 4][((pxx % 4) + 4) % 4]) px(ctx, pxx, py, 1, 1, over);
+    }
+  }
+};
+
+/**
  * Banda degradada de `base` a `over` en `steps` tramos tramados.
  *
  * Es el recurso principal de los fondos: sustituye a `createRadialGradient` y a

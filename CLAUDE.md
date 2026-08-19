@@ -71,9 +71,29 @@ The exceptions that *do* return a new value are the filters: `cullEnemies(enemie
 
 ### Rendering
 
-All drawing lives in `src/game/render/` and nothing outside it draws. There are no image assets — every sprite, enemy, background and transition is Canvas 2D code. `render/scene.ts` composes a frame (fixed background → camera-translated world → screen-space transition); the rest are leaf modules per subject. These are pure `ctx` calls with no state, which is exactly what lets the Phaser port re-run them **once** into baked textures instead of every frame.
+All drawing lives in `src/game/render/` and nothing outside it draws. There are no image assets — every sprite, enemy, background and transition is Canvas 2D code. `render/scene.ts` composes a frame (background → camera-translated world → screen-space transition); the rest are leaf modules per subject. These are pure `ctx` calls with no state, which is exactly what lets the Phaser port re-run them **once** into baked textures instead of every frame.
 
-Adding an enemy means touching five places: the `subType` union in `src/types.ts`, the table in `data/enemies.ts` (including its `contactDamage`), a draw function in `render/enemies.ts`, a case in `updateEnemyAI`, and locale entries.
+**The background is a declared stack** (`render/background/`), not a function with four `blit` calls and its parallax factors written inline. Each layer declares its depth and how it bakes itself from the stage's scene, so adding a layer is adding an entry. Three rules the stack keeps, each with a test in `background/stack.test.ts`:
+
+- **Draw order comes from the stack, never from the data.** `scene.layers` says *which* layers take part; the order is always `LAYERS`. A mistyped list would otherwise put the throat in front of the gums, and that mistake is invisible in review.
+- **Tiling layers are indexed by world column, not screen position.** That is what keeps column 37 the same tooth as the camera passes; a screen index would make the arcade boil.
+- `anchor: 'screen'` marks a layer that *frames* the scene instead of living in it (the foreground gums). Those have parallax 0 even though they draw in front of everything, so they sit outside the depth ordering.
+
+Variation comes from `render/noise.ts` — a deterministic hash, never `Math.random()`. Baked art with a random seed is frozen with whatever it rolled that session, so two runs of the same stage would not share a scenery. That shipped once in the credits scene.
+
+Two traps worth knowing before drawing anything new:
+
+- **A rectangle one pixel wide is useless for dithering.** The 4×4 matrix is anchored to absolute coordinates, so a narrow strip only touches one of its four phases: at low levels some columns come out dotted and their neighbours empty. A horizontal gradient built from 1px columns reads as a grid of vertical stripes. Step in fours, or evaluate the threshold per pixel (`background/cheeks.ts` does the latter).
+- **A thin, long detail does not read as relief — it reads as a scratch.** It needs thickness with two faces (light above, shadow below) and short runs. `ditherOver` is the primitive for anything that goes *on top* of another layer: unlike `dither`/`ditherFill` it does not paint the base tone, so it dirties without covering.
+
+Adding an enemy means touching five places: the `subType` union in `src/types.ts`, the table in `data/enemies.ts` (including its `contactDamage`), the silhouette in `render/sprites/masks/enemies.ts` plus its `MATERIALS` entry, a case in `updateEnemyAI`, and locale entries in both `i18n/en.ts` and `i18n/es.ts`. The typed dictionary and `render/preview.test.ts` make the last one a **compile error and a test failure** rather than a blank label, so you cannot forget it.
+
+There are twelve common enemies. Four of them need a rule that the collision loop can't express on its own, and those rules live in `game/enemies.ts` (or `data/enemies.ts` when both the simulation and the renderer need them) so `GameCanvas` stays on the replace-not-repair list:
+
+- `applyEnemyDamage(enemy, amount, fromX)` — the `calculus_shell`'s armour only protects the side it faces, so damage goes through here instead of `enemy.hp -= …`.
+- `spawnDeathSpawn(enemy, enemies, stage)` — what an enemy leaves behind. Today only the `abscess_bloater`, which bursts into three bacteria.
+- `collidesWithPlatforms(enemy, horizontal)` — replaces the old chain of `!==` in the loop, and is **state-dependent**: the burrowed `enamel_borer` passes through the floor.
+- `isBurrowed(enemy)` lives in `data/enemies.ts` because both layers need it: the simulation to skip collisions, the renderer to draw the tell-tale mound instead of the sprite.
 
 ### Hidden boss
 
@@ -92,7 +112,7 @@ All tuning numbers live in `src/game/data/` — nothing should be re-hardcoded a
 - `data/difficulty.ts` — drop rate, damage dealt/taken, hp and milestone multipliers. Read it through `getDifficulty()`, which falls back to `normal`.
 - `data/weapons.ts` — per-weapon level 1–5 damage/speed/size, fire-rate cooldowns (`getFireCooldown`), the enemy bullet, and `HOMING_DAMAGE_THRESHOLD` (enemy bullets above it curve toward the player — that is how the hidden boss homes).
 - `data/enemies.ts` — enemy spawn thresholds with per-stage HP scaling and per-enemy `contactDamage` (read it through `contactDamageFor`), boss stats (`getStageBoss`, `HIDDEN_BOSS`, `findBoss`), the wave cadence (`waveInterval`), the cull margin and `HIDDEN_BOSS_TRIGGERS`.
-- `data/stages.ts` — the per-stage colour palette the background reads.
+- `data/stages.ts` — the per-stage **scene**, not just its palette: which zone of the mouth it is, the tooth measurements and arch curve, which background layers take part, five separate decay values (plaque, tartar, cavities, stain, inflammation), how many teeth are missing, the dentist's instrument, saliva and steam. It used to be three ramp names, which is exactly why the five stages were the same picture in different colours. `stages.test.ts` pins that every stage is a distinct zone with its own instrument and that **decay never goes backwards** from one stage to the next.
 - `data/physics.ts` and `data/palette.ts` — the former `constants.ts`, split into simulation constants and colours. Beyond movement, `physics.ts` also holds the timestep (`FIXED_STEP`, `MAX_STEPS_PER_FRAME`), invulnerability windows, knockback, pit-fall damage, the stage-clear delay and the score awards — all of which used to be literals inside `update()`. The palette sits in `data/` rather than `render/` on purpose: entities carry `color` as a field, so the domain would otherwise have to import the presentation layer.
 - `data/characters.ts` — the four tooth classes. Before this the menu's class choice only picked a sprite.
 - `src/game/perks.ts` — `PERK_DEFINITIONS` weights and the `applyPerk` effects. `getRandomPerks` takes the player so it can drop perks that would do nothing (a full heal at full health).

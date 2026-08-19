@@ -25,8 +25,22 @@ export interface EnemySpawnEntry {
  * la última (umbral 0) es el caso por defecto.
  */
 export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
+  /**
+   * Absceso: el más raro y el más duro. Camina lentísimo y **al morir se abre en
+   * tres bacterias**, así que matarlo de lejos no resuelve el problema.
+   */
   {
-    threshold: 0.95,
+    threshold: 0.96,
+    subType: 'abscess_bloater',
+    w: 52,
+    h: 44,
+    color: COLORS.enemyBloater,
+    baseHp: 110,
+    hpPerStage: 15,
+    contactDamage: 26,
+  },
+  {
+    threshold: 0.91,
     subType: 'plaque_monster',
     w: 48,
     h: 36,
@@ -35,8 +49,22 @@ export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
     hpPerStage: 10,
     contactDamage: 25,
   },
+  /**
+   * Coraza de sarro: **solo recibe daño por detrás**. Es el único enemigo que
+   * obliga a moverse en lugar de a disparar de frente.
+   */
   {
-    threshold: 0.9,
+    threshold: 0.86,
+    subType: 'calculus_shell',
+    w: 40,
+    h: 40,
+    color: COLORS.enemyShell,
+    baseHp: 90,
+    hpPerStage: 12,
+    contactDamage: 22,
+  },
+  {
+    threshold: 0.78,
     subType: 'gingivitis_grunt',
     w: 40,
     h: 48,
@@ -46,7 +74,7 @@ export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
     contactDamage: 24,
   },
   {
-    threshold: 0.8,
+    threshold: 0.7,
     subType: 'tartar_turret',
     w: 32,
     h: 48,
@@ -55,8 +83,22 @@ export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
     hpPerStage: 0,
     contactDamage: 18,
   },
+  /**
+   * Barrena de esmalte: **se entierra y emerge junto al jugador**. Es el único que
+   * no se puede esperar de frente.
+   */
   {
-    threshold: 0.7,
+    threshold: 0.64,
+    subType: 'enamel_borer',
+    w: 30,
+    h: 26,
+    color: COLORS.enemyBorer,
+    baseHp: 55,
+    hpPerStage: 8,
+    contactDamage: 24,
+  },
+  {
+    threshold: 0.56,
     subType: 'acid_spitter',
     w: 36,
     h: 36,
@@ -65,8 +107,22 @@ export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
     hpPerStage: 0,
     contactDamage: 18,
   },
+  /**
+   * Biopelícula: **recorre el techo y se deja caer**. Antes nada atacaba desde
+   * arriba, así que mirar al suelo bastaba.
+   */
   {
-    threshold: 0.6,
+    threshold: 0.5,
+    subType: 'biofilm_crawler',
+    w: 36,
+    h: 20,
+    color: COLORS.enemyCrawler,
+    baseHp: 45,
+    hpPerStage: 6,
+    contactDamage: 20,
+  },
+  {
+    threshold: 0.42,
     subType: 'candy_bomber',
     w: 40,
     h: 24,
@@ -76,7 +132,7 @@ export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
     contactDamage: 16,
   },
   {
-    threshold: 0.5,
+    threshold: 0.34,
     subType: 'sugar_fiend',
     w: 28,
     h: 28,
@@ -86,7 +142,7 @@ export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
     contactDamage: 16,
   },
   {
-    threshold: 0.4,
+    threshold: 0.24,
     subType: 'sugar_rusher',
     w: 24,
     h: 24,
@@ -106,6 +162,17 @@ export const ENEMY_SPAWN_TABLE: readonly EnemySpawnEntry[] = [
     contactDamage: 12,
   },
 ];
+
+/**
+ * ¿Está la barrena bajo tierra?
+ *
+ * Vive en `data/` porque la necesitan las dos capas de arriba y ninguna debe
+ * depender de la otra: la simulación, para dejarla atravesar el suelo, y el
+ * dibujado, para pintar el montículo en lugar del sprite. Escrita dos veces se
+ * desincronizaría a la primera.
+ */
+export const isBurrowed = (enemy: Enemy): boolean =>
+  enemy.subType === 'enamel_borer' && enemy.bossState !== 2;
 
 /** Daño por contacto usado cuando un enemigo no está en la tabla. */
 export const DEFAULT_CONTACT_DAMAGE = 20;

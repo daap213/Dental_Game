@@ -23,7 +23,16 @@ import { planSteps } from '../game/loop';
 import { fallIntoPit, type RunConfig } from '../game/player';
 import { renderScene } from '../game/render/scene';
 import { setupPixelContext } from '../game/render/pixel';
-import { spawnBoss, spawnEnemy, updateEnemyAI, spawnHiddenBoss, cullEnemies } from '../game/enemies';
+import {
+  spawnBoss,
+  spawnEnemy,
+  updateEnemyAI,
+  spawnHiddenBoss,
+  cullEnemies,
+  applyEnemyDamage,
+  spawnDeathSpawn,
+  collidesWithPlatforms,
+} from '../game/enemies';
 import { spawnProjectile, spawnPowerUp, cullPowerUps } from '../game/weapons';
 import { getRandomPerks, applyPerk } from '../game/perks';
 import { getDifficulty } from '../game/data/difficulty';
@@ -657,7 +666,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             updateEnemyAI(enemy, p, s, audioManager.current);
             
             enemy.x += enemy.vx;
-            if (enemy.subType !== 'candy_bomber' && enemy.subType !== 'acid_spitter' && enemy.subType !== 'boss') checkPlatformCollisions(enemy, s.platforms, true);
+            if (collidesWithPlatforms(enemy, true)) checkPlatformCollisions(enemy, s.platforms, true);
             
             if (enemy.subType === 'boss') {
                  if (enemy.bossVariant !== 'wisdom_warden') {
@@ -681,7 +690,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                  }
             } else {
                  enemy.y += enemy.vy; enemy.isGrounded = false;
-                 if (enemy.subType !== 'candy_bomber') checkPlatformCollisions(enemy, s.platforms, false);
+                 if (collidesWithPlatforms(enemy, false)) checkPlatformCollisions(enemy, s.platforms, false);
             }
         }
     });
@@ -695,11 +704,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                 if (pierces && proj.hitIds.includes(enemy.id)) return;
 
                 if (checkRectCollide(proj, enemy)) {
-                    enemy.hp -= proj.damage;
+                    // El daño pasa por `applyEnemyDamage` porque la coraza del
+                    // sarro solo protege por delante: la regla vive en `game/`.
+                    const dealt = applyEnemyDamage(enemy, proj.damage, proj.x);
+                    const blocked = dealt < proj.damage;
                     enemy.hitTimer = HIT_FLASH;
                     if (pierces) proj.hitIds.push(enemy.id);
                     else proj.lifeTime = 0;
-                    spawnParticle(proj.x, proj.y, tone('enamel.hi'), 3);
+                    // Chispa metálica cuando rebota en la coraza, para que se vea
+                    // que ahí no entra y hay que rodearlo.
+                    spawnParticle(proj.x, proj.y, tone(blocked ? 'metal.hi' : 'enamel.hi'), 3);
                     if (enemy.hp <= 0 && !enemy.dead) {
                         enemy.dead = true;
                         const isHiddenBoss = enemy.bossVariant === HIDDEN_BOSS.variant;
@@ -716,6 +730,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
                         spawnPowerUp(s.powerups, enemy.x, enemy.y, dropRate, limitType);
 
                         for(let i=0; i<8; i++) spawnParticle(enemy.x+enemy.w/2, enemy.y+enemy.h/2, enemy.color, 10);
+
+                        // Lo que deja al morir: el absceso se abre en bacterias.
+                        // La regla vive en `game/enemies.ts`.
+                        spawnDeathSpawn(enemy, s.enemies, s.level.stage);
 
                         if (enemy.subType === 'boss') {
                             // Que la barra desaparezca con él: se quedaba pegada

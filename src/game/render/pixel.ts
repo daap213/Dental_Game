@@ -175,3 +175,62 @@ export const dropBakes = (prefix: string) => {
 
 /** Cuántos sprites hay horneados ahora mismo. Para depurar. */
 export const bakedCount = () => cache.size;
+
+/**
+ * Un búfer de píxeles para los degradados que se evalúan **píxel a píxel**.
+ *
+ * `px` es un `fillRect`, y este navegador hace unos 1.500 por milisegundo. Para un
+ * sprite eso da igual, pero el marco de la boca necesita un umbral por píxel sobre
+ * casi toda la pantalla —la encía, la viñeta de las comisuras, el resplandor del
+ * foco—: medido, unos ochocientos mil `fillRect`, o sea **medio segundo de tirón** la
+ * primera vez que se hornea cada fase.
+ *
+ * Escribiendo en el `ImageData` y volcándolo de una vez, lo mismo cuesta unos pocos
+ * milisegundos. Se **lee** la región antes de empezar, así que lo que ya estuviera
+ * dibujado se conserva y estos degradados pueden ir encima de otras capas, que es
+ * justo lo que hacen la viñeta y el resplandor.
+ */
+export interface PixelBuffer {
+  /** Pinta un píxel, opaco, en coordenadas del lienzo. */
+  set: (x: number, y: number, key: PaletteKey) => void;
+  /** Vuelca lo escrito. Hasta que no se llama, el lienzo no cambia. */
+  commit: () => void;
+}
+
+/** Componentes de un color de la paleta, memorizados: `tone()` parsea una cadena. */
+const rgbaCache = new Map<PaletteKey, [number, number, number]>();
+
+const rgba = (key: PaletteKey): [number, number, number] => {
+  const hit = rgbaCache.get(key);
+  if (hit) return hit;
+  const hex = tone(key);
+  const parsed: [number, number, number] = [
+    parseInt(hex.slice(1, 3), 16),
+    parseInt(hex.slice(3, 5), 16),
+    parseInt(hex.slice(5, 7), 16),
+  ];
+  rgbaCache.set(key, parsed);
+  return parsed;
+};
+
+export const pixelBuffer = (
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number
+): PixelBuffer => {
+  const image = ctx.getImageData(0, 0, w, h);
+  const data = image.data;
+
+  return {
+    set: (x, y, key) => {
+      if (x < 0 || y < 0 || x >= w || y >= h) return;
+      const i = ((y | 0) * w + (x | 0)) * 4;
+      const [r, g, b] = rgba(key);
+      data[i] = r;
+      data[i + 1] = g;
+      data[i + 2] = b;
+      data[i + 3] = 255;
+    },
+    commit: () => ctx.putImageData(image, 0, 0),
+  };
+};

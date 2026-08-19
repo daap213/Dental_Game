@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { px, hline, vline, outline, block, type PixelTarget } from './pixel';
-import { bayerMask, bayerCoverage, dither, ditherBand, DITHER_LEVELS } from './dither';
+import { bayerMask, bayerCoverage, dither, ditherBand, ditherOver, DITHER_LEVELS } from './dither';
 import { tone, RAMPS, isPaletteKey, MISSING_COLOR, type PaletteKey } from '../data/palette';
 
 interface Call {
@@ -125,6 +125,68 @@ describe('primitivas de píxel', () => {
     block(ctx, 0, 0, 6, 6, 'bacteria.mid');
     expect(calls[0]).toMatchObject({ color: RAMPS.bacteria.mid, w: 6, h: 6 });
     expect(calls.slice(1).every((c) => c.color === RAMPS.bacteria.out)).toBe(true);
+  });
+});
+
+describe('tramado que no tapa', () => {
+  /**
+   * `ditherOver` es la primitiva de las capas que van *encima* de otras: la viñeta
+   * de las mejillas, el vaho, las manchas de deterioro. Lo que la distingue de
+   * `dither` y `ditherFill` es justo que **no rellena el fondo**: si lo hiciera,
+   * taparía la escena en lugar de ensuciarla.
+   */
+  it('no pinta el tono base: solo añade encima', () => {
+    const { ctx, calls } = recorder();
+    ditherOver(ctx as unknown as CanvasRenderingContext2D, 0, 0, 8, 8, 'gum.light', 8);
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) {
+      expect(call.color).toBe(RAMPS.gum.light);
+    }
+  });
+
+  it('a nivel 0 no pinta nada, y al máximo cubre el rectángulo entero', () => {
+    const vacio = recorder();
+    ditherOver(vacio.ctx as unknown as CanvasRenderingContext2D, 0, 0, 8, 8, 'gum.light', 0);
+    expect(vacio.calls).toHaveLength(0);
+
+    const lleno = recorder();
+    ditherOver(
+      lleno.ctx as unknown as CanvasRenderingContext2D,
+      3,
+      5,
+      8,
+      8,
+      'gum.light',
+      DITHER_LEVELS - 1
+    );
+    expect(lleno.calls).toEqual([{ color: RAMPS.gum.light, x: 3, y: 5, w: 8, h: 8 }]);
+  });
+
+  it('cubre aproximadamente la fracción que dice el nivel', () => {
+    for (const level of [4, 8, 12]) {
+      const { ctx, calls } = recorder();
+      ditherOver(ctx as unknown as CanvasRenderingContext2D, 0, 0, 16, 16, 'gum.light', level);
+      const pintados = calls.reduce((sum, c) => sum + c.w * c.h, 0);
+      expect(pintados, `nivel ${level}`).toBe((256 * bayerCoverage(level)) / 16);
+    }
+  });
+
+  it('la retícula está anclada a coordenadas absolutas, así que dos trozos encajan', () => {
+    // Es lo que permite pintar una superficie grande a trozos. Y también la
+    // trampa que costó un fondo con rayas verticales: un rectángulo de un píxel de
+    // ancho solo toca una de las cuatro fases, así que a niveles bajos unas
+    // columnas salen punteadas y las de al lado vacías. Por eso las capas que
+    // hacen degradados horizontales avanzan de cuatro en cuatro o van píxel a
+    // píxel.
+    const entero = recorder();
+    ditherOver(entero.ctx as unknown as CanvasRenderingContext2D, 0, 0, 8, 4, 'gum.light', 6);
+    const izquierda = recorder();
+    ditherOver(izquierda.ctx as unknown as CanvasRenderingContext2D, 0, 0, 4, 4, 'gum.light', 6);
+    const derecha = recorder();
+    ditherOver(derecha.ctx as unknown as CanvasRenderingContext2D, 4, 0, 4, 4, 'gum.light', 6);
+
+    const area = (calls: Call[]) => calls.reduce((sum, c) => sum + c.w * c.h, 0);
+    expect(area(izquierda.calls) + area(derecha.calls)).toBe(area(entero.calls));
   });
 });
 

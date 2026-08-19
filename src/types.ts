@@ -110,7 +110,22 @@ export interface Player extends Entity, Animated {
 
 export interface Enemy extends Entity, Animated {
   type: 'enemy';
-  subType: 'bacteria' | 'plaque_monster' | 'candy_bomber' | 'tartar_turret' | 'sugar_rusher' | 'boss' | 'sugar_fiend' | 'acid_spitter' | 'gingivitis_grunt';
+  subType:
+    | 'bacteria'
+    | 'plaque_monster'
+    | 'candy_bomber'
+    | 'tartar_turret'
+    | 'sugar_rusher'
+    | 'boss'
+    | 'sugar_fiend'
+    | 'acid_spitter'
+    | 'gingivitis_grunt'
+    // Los cuatro que cubren huecos de juego que no existían: atacar desde
+    // arriba, obligar a colocarse, dividirse al morir y tender emboscadas.
+    | 'biofilm_crawler'
+    | 'calculus_shell'
+    | 'abscess_bloater'
+    | 'enamel_borer';
   aiTimer: number;
   attackTimer: number;
   /**
@@ -121,6 +136,14 @@ export interface Enemy extends Entity, Animated {
   bossState: number; // 0: Idle, 1: Chase, 2: Charge, 3: Slam, 4: Shoot
   bossVariant?: 'king' | 'phantom' | 'tank' | 'general' | 'deity' | 'wisdom_warden';
   phase?: number;
+  /**
+   * Cota a la que la barrena se enterró.
+   *
+   * Bajo tierra el sprite no se dibuja —estaría por debajo del suelo— y en su
+   * lugar se pinta un montículo a esta altura, que es lo que avisa de por dónde
+   * viene. Sin el aviso, emerger al lado del jugador sería una emboscada injusta.
+   */
+  burrowY?: number;
 }
 
 export interface Projectile extends Entity {

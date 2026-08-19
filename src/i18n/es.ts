@@ -156,6 +156,10 @@ export const es: Dictionary = {
     fiend: 'Demonio de Azúcar',
     spitter: 'Escupidor de Ácido',
     grunt: 'Soldado Gingivitis',
+    crawler: 'Reptador de Biofilm',
+    shell: 'Coraza de Sarro',
+    bloater: 'Absceso Hinchado',
+    borer: 'Barrena de Esmalte',
   },
   enemy_desc: {
     bacteria: 'Gérmenes verdes. Saltan.',
@@ -166,5 +170,9 @@ export const es: Dictionary = {
     fiend: 'Deja rastros pegajosos.',
     spitter: 'Lanza globos corrosivos.',
     grunt: 'Blindado. Te embiste.',
+    crawler: 'Va por el techo y se te cae encima.',
+    shell: 'Blindado de frente. Dale por detrás.',
+    bloater: 'Lento. Revienta en tres bacterias.',
+    borer: 'Se entierra y sale a tu lado.',
   },
 };

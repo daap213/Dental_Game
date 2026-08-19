@@ -158,6 +158,10 @@ export const en = {
     fiend: 'Sugar Fiend',
     spitter: 'Acid Spitter',
     grunt: 'Gingivitis Grunt',
+    crawler: 'Biofilm Crawler',
+    shell: 'Calculus Shell',
+    bloater: 'Abscess Bloater',
+    borer: 'Enamel Borer',
   },
   enemy_desc: {
     bacteria: 'Green germs. They jump.',
@@ -168,6 +172,10 @@ export const en = {
     fiend: 'Leaves sticky slowing trails.',
     spitter: 'Lobs corrosive blobs.',
     grunt: 'Armored. Charges at you.',
+    crawler: 'Rides the ceiling, then drops on you.',
+    shell: 'Shielded in front. Hit it from behind.',
+    bloater: 'Slow. Bursts into three bacteria.',
+    borer: 'Burrows, then erupts beside you.',
   },
 };
 

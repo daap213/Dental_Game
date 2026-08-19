@@ -80,16 +80,54 @@ describe('tabla de enemigos', () => {
     expect(thresholds[thresholds.length - 1]).toBe(0);
   });
 
-  it('reproduce la cadena de if/else original', () => {
-    expect(pickEnemySpawn(0.99).subType).toBe('plaque_monster');
-    expect(pickEnemySpawn(0.93).subType).toBe('gingivitis_grunt');
-    expect(pickEnemySpawn(0.85).subType).toBe('tartar_turret');
-    expect(pickEnemySpawn(0.75).subType).toBe('acid_spitter');
-    expect(pickEnemySpawn(0.65).subType).toBe('candy_bomber');
-    expect(pickEnemySpawn(0.55).subType).toBe('sugar_fiend');
-    expect(pickEnemySpawn(0.45).subType).toBe('sugar_rusher');
-    expect(pickEnemySpawn(0.2).subType).toBe('bacteria');
+  /**
+   * La tirada cae en el enemigo que toca.
+   *
+   * Esto fijaba la cadena de if/else original de ocho enemigos. Al entrar los
+   * cuatro nuevos —biopelícula, coraza, absceso y barrena— hubo que redistribuir
+   * los umbrales, así que **el reparto cambió a propósito** y estas cifras son las
+   * nuevas. Es lo que este fichero existe para hacer notar.
+   */
+  it('la tirada cae en el enemigo que le toca', () => {
+    expect(pickEnemySpawn(0.99).subType).toBe('abscess_bloater');
+    expect(pickEnemySpawn(0.93).subType).toBe('plaque_monster');
+    expect(pickEnemySpawn(0.88).subType).toBe('calculus_shell');
+    expect(pickEnemySpawn(0.8).subType).toBe('gingivitis_grunt');
+    expect(pickEnemySpawn(0.72).subType).toBe('tartar_turret');
+    expect(pickEnemySpawn(0.66).subType).toBe('enamel_borer');
+    expect(pickEnemySpawn(0.58).subType).toBe('acid_spitter');
+    expect(pickEnemySpawn(0.52).subType).toBe('biofilm_crawler');
+    expect(pickEnemySpawn(0.44).subType).toBe('candy_bomber');
+    expect(pickEnemySpawn(0.36).subType).toBe('sugar_fiend');
+    expect(pickEnemySpawn(0.28).subType).toBe('sugar_rusher');
+    expect(pickEnemySpawn(0.1).subType).toBe('bacteria');
     expect(pickEnemySpawn(0).subType).toBe('bacteria');
+  });
+
+  it('todos los enemigos de la tabla pueden salir de verdad', () => {
+    // Un umbral mal puesto deja a un enemigo con una franja de ancho cero: sigue
+    // en la tabla, tiene arte y textos, y nunca aparece en una partida.
+    const reachable = new Set<string>();
+    for (let roll = 0; roll < 1; roll += 0.001) {
+      reachable.add(pickEnemySpawn(roll).subType);
+    }
+    for (const entry of ENEMY_SPAWN_TABLE) {
+      expect(reachable, `${entry.subType} nunca sale`).toContain(entry.subType);
+    }
+  });
+
+  it('los enemigos duros son más raros que los básicos', () => {
+    // La franja de cada uno es la distancia a la entrada anterior.
+    const share = (subType: string) => {
+      const i = ENEMY_SPAWN_TABLE.findIndex((e) => e.subType === subType);
+      const upper = i === 0 ? 1 : ENEMY_SPAWN_TABLE[i - 1].threshold;
+      return upper - ENEMY_SPAWN_TABLE[i].threshold;
+    };
+    expect(share('abscess_bloater')).toBeLessThan(share('bacteria'));
+    expect(share('calculus_shell')).toBeLessThan(share('sugar_rusher'));
+    // Y las franjas suman la unidad: si no, hay un hueco o un solape.
+    const total = ENEMY_SPAWN_TABLE.reduce((sum, e) => sum + share(e.subType), 0);
+    expect(total).toBeCloseTo(1, 6);
   });
 
   it('la vida escala por stage solo en los enemigos que lo definen', () => {

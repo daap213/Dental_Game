@@ -505,6 +505,187 @@ export const PLAQUE_WITH_HOLE = subtract(
  * y eso se busca a ojo durante mucho rato. Aquí se rellenan y se recortan de una
  * vez, en el único sitio por el que pasan todas.
  */
+// ---------------------------------------------------------------------------
+// Reptador de biofilm: 36×20. Una placa baja y alargada, con ventosas.
+// Ancho y plano porque va pegado al techo: la silueta tiene que leerse de canto.
+// ---------------------------------------------------------------------------
+
+const CRAWLER: EnemyArt = {
+  w: 36,
+  h: 20,
+  mask: merge(
+    ellipse(36, 20, 18, 8, 17, 8),
+    // Ventosas: tres pies que asoman por debajo.
+    rect(36, 20, 6, 14, 5, 5, 1),
+    rect(36, 20, 16, 15, 5, 5, 1),
+    rect(36, 20, 26, 14, 5, 5, 1)
+  ),
+  detail: [
+    '....................................',
+    '.........HHHHH......................',
+    '.......HH.....HH....................',
+    '....EEE...........EEE...............',
+    '....EPE...........EPE...............',
+    '....EEE...........EEE...............',
+    '.........MMMMMM.....................',
+    '.........MTMTMM.....................',
+    '.........MMMMMM.....................',
+    '.....SS........SS...................',
+    ...blank(36, 10),
+  ],
+  attack: [
+    ...blank(36, 3),
+    '....EEE...........EEE...............',
+    '....ERE...........ERE...............',
+    '....EEE...........EEE...............',
+    '........MMMMMMMM....................',
+    '........MTTMTTMM....................',
+    '........MMMMMMMM....................',
+    ...blank(36, 11),
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Coraza de sarro: 40×40. Un caparazón de costra por delante y carne detrás.
+// La coraza va **a la izquierda del lienzo**, que es el lado al que mira con
+// `facing: -1`; al espejarlo, protege el otro lado. Es lo que hace legible que
+// haya que rodearlo.
+// ---------------------------------------------------------------------------
+
+const SHELL: EnemyArt = {
+  w: 40,
+  h: 40,
+  mask: merge(
+    // Cuerpo.
+    ellipse(40, 40, 24, 22, 15, 16),
+    // Placa frontal, más alta que el cuerpo: sobresale.
+    rect(40, 40, 3, 6, 12, 30, 3),
+    // Patas.
+    rect(40, 40, 16, 34, 5, 6),
+    rect(40, 40, 28, 34, 5, 6)
+  ),
+  detail: [
+    ...blank(40, 5),
+    '...WWWWWWWWWW...........................',
+    '...WSSSSSSSSW...........................',
+    '...WSWWWWWWSW...........................',
+    '...WSW....WSW.....EEE...................',
+    '...WSW....WSW.....EPE...................',
+    '...WSW....WSW.....EEE...................',
+    '...WSWWWWWWSW...........................',
+    '...WSSSSSSSSW......MMMM.................',
+    '...WSWWWWWWSW......MTTM.................',
+    '...WSW....WSW......MMMM.................',
+    '...WSW....WSW...........................',
+    '...WSW....WSW...........................',
+    '...WSWWWWWWSW...........................',
+    '...WSSSSSSSSW...........................',
+    '...WWWWWWWWWW...........................',
+    ...blank(40, 20),
+  ],
+  hurt: [
+    ...blank(40, 9),
+    '...WWWWWWWWWW.....EEE...................',
+    '...WSSSSSSSSW.....ERE...................',
+    '...WSWWWWWWSW.....EEE...................',
+    ...blank(40, 28),
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Absceso hinchado: 52×44. Un saco tenso a punto de reventar, con tres lóbulos
+// que ya anuncian en qué se va a partir.
+// ---------------------------------------------------------------------------
+
+const BLOATER: EnemyArt = {
+  w: 52,
+  h: 44,
+  mask: merge(
+    ellipse(52, 44, 26, 24, 25, 20),
+    // Los tres bultos de arriba: las crías empujando desde dentro.
+    ellipse(52, 44, 13, 10, 9, 8),
+    ellipse(52, 44, 26, 7, 9, 8),
+    ellipse(52, 44, 39, 10, 9, 8),
+    rect(52, 44, 14, 38, 8, 6),
+    rect(52, 44, 30, 38, 8, 6)
+  ),
+  detail: [
+    ...blank(52, 4),
+    '.........NNN.......NNN.......NNN....................',
+    '........NNNNN.....NNNNN.....NNNNN...................',
+    '.........NNN.......NNN.......NNN....................',
+    '....................................................',
+    '.............HHHH...................................',
+    '...........HH.......................................',
+    '..........EEEE...........EEEE.......................',
+    '..........EPPE...........EPPE.......................',
+    '..........EEEE...........EEEE.......................',
+    '....................................................',
+    '..............MMMMMMMMMMMMM.........................',
+    '..............MTMMTMMTMMTMM.........................',
+    '..............MMMMMMMMMMMMM.........................',
+    '....................................................',
+    '.......SS...................SS......................',
+    '......SS.....................SS.....................',
+    ...blank(52, 23),
+  ],
+  attack: [
+    ...blank(52, 11),
+    '..........EEEE...........EEEE.......................',
+    '..........ERRE...........ERRE.......................',
+    '..........EEEE...........EEEE.......................',
+    '....................................................',
+    '............MMMMMMMMMMMMMMMMM.......................',
+    '............MTTMMTTMMTTMMTTMM.......................',
+    '............MMMMMMMMMMMMMMMMM.......................',
+    ...blank(52, 26),
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Barrena de esmalte: 30×26. Un gusano con la cabeza en punta de taladro.
+// La punta va a la izquierda, como la coraza, para que el espejado la oriente.
+// ---------------------------------------------------------------------------
+
+const BORER: EnemyArt = {
+  w: 30,
+  h: 26,
+  mask: merge(
+    // Cuerpo segmentado.
+    ellipse(30, 26, 19, 14, 11, 10),
+    rect(30, 26, 8, 8, 14, 12, 2),
+    // La broca: un cono hacia delante.
+    spike(30, 26, 0, 14, 22, 7)
+  ),
+  detail: [
+    ...blank(30, 6),
+    '..WW..........................',
+    '.WWWW.........................',
+    'WWWWWW........EEE.......EEE...',
+    '.WWWW.........EPE.......EPE...',
+    '..WW..........EEE.......EEE...',
+    '..............................',
+    '...........SS......SS.........',
+    '..........MMMMMMMMMM..........',
+    '..........MTMTMTMTMM..........',
+    '..........MMMMMMMMMM..........',
+    ...blank(30, 10),
+  ],
+  attack: [
+    ...blank(30, 5),
+    '..WWWW........................',
+    '.WWWWWW.......................',
+    'WWWWWWWW......ERE.......ERE...',
+    '.WWWWWW.......EEE.......EEE...',
+    '..WWWW........................',
+    '..............................',
+    '.........MMMMMMMMMMM..........',
+    '.........MTTMTTMTTMM..........',
+    '.........MMMMMMMMMMM..........',
+    ...blank(30, 12),
+  ],
+};
+
 const normalize = (art: EnemyArt): EnemyArt => ({
   ...art,
   mask: fit(art.mask, art.w, art.h),
@@ -522,4 +703,8 @@ export const ENEMY_ART = {
   sugar_fiend: normalize(FIEND),
   acid_spitter: normalize(SPITTER),
   gingivitis_grunt: normalize(GRUNT),
+  biofilm_crawler: normalize(CRAWLER),
+  calculus_shell: normalize(SHELL),
+  abscess_bloater: normalize(BLOATER),
+  enamel_borer: normalize(BORER),
 } as const;

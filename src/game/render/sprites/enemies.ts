@@ -34,6 +34,10 @@ const MATERIALS: Record<EnemySubType, Material> = {
   sugar_fiend: 'fiend',
   acid_spitter: 'acid',
   gingivitis_grunt: 'grunt',
+  biofilm_crawler: 'bacteria',
+  calculus_shell: 'tartarCrust',
+  abscess_bloater: 'fiend',
+  enamel_borer: 'enamelStained',
 };
 
 /**

@@ -1,7 +1,8 @@
 import type { World } from '../world';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../data/physics';
 import { tone } from '../data/palette';
-import { drawBackground, drawPlatforms, drawTransition } from './level';
+import { drawBackground } from './background';
+import { drawPlatforms, drawTransition } from './level';
 import { drawEnemies } from './enemies';
 import { drawProjectiles, drawPowerUp, type AimInput } from './weapons';
 import { drawParticles } from './particles';
@@ -15,7 +16,9 @@ import { drawPlayer } from './player';
 export const renderScene = (ctx: CanvasRenderingContext2D, world: World, aim: AimInput) => {
   ctx.fillStyle = tone('void.out');
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-  drawBackground(ctx, world.camera.x, world.level.stage);
+  // El reloj es tiempo de simulación, no de pared: lo poco que se mueve en el
+  // fondo se congela con la pausa, igual que el bamboleo de los objetos.
+  drawBackground(ctx, world.camera.x, world.level.stage, world.triggers.levelTime);
 
   ctx.save();
   // Cámara en enteros: con desplazamiento fraccionario todo el mundo se dibuja
@@ -23,7 +26,7 @@ export const renderScene = (ctx: CanvasRenderingContext2D, world: World, aim: Ai
   // escalonado, que es el precio correcto en este estilo.
   ctx.translate(-Math.round(world.camera.x), -Math.round(world.camera.y));
 
-  drawPlatforms(ctx, world.platforms);
+  drawPlatforms(ctx, world.platforms, world.level.stage);
   world.powerups.forEach((pu) => drawPowerUp(ctx, pu, world.triggers.levelTime));
   drawEnemies(ctx, world.enemies);
   drawProjectiles(ctx, world.projectiles);

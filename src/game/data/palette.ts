@@ -89,6 +89,102 @@ export const RAMPS = {
     light: '#4ac4b4',
     hi: '#a5e8dd',
   },
+  /**
+   * Mucosa: la cara interna de la mejilla, que enmarca la escena por los lados.
+   * Más malva y más apagada que la encía: está en sombra y no recibe la lámpara
+   * de frente.
+   */
+  mucosa: {
+    out: '#24081a',
+    shade: '#4a1638',
+    dark: '#75264f',
+    mid: '#9c3a68',
+    light: '#c26a91',
+    hi: '#e8b0c4',
+  },
+  /**
+   * Encía inflamada. La misma carne pero enfadada: más saturada y más roja, con
+   * el brillo subido porque el tejido hinchado es tirante y refleja más.
+   */
+  gumSick: {
+    out: '#33020c',
+    shade: '#6b0518',
+    dark: '#a30a24',
+    mid: '#d81636',
+    light: '#f04a63',
+    hi: '#ffa0a8',
+  },
+  /**
+   * Esmalte manchado: el marfil virado a amarillo de tabaco y café. Se usa junto
+   * al `enamel` limpio, así que la diferencia tiene que verse a un diente de
+   * distancia.
+   */
+  enamelStained: {
+    out: '#1f1509',
+    shade: '#5c4620',
+    dark: '#93763a',
+    mid: '#c0a765',
+    light: '#ddc994',
+    hi: '#f4ead0',
+  },
+  /**
+   * Sarro calcificado. Deliberadamente **gris verdoso** y no amarillo, para que
+   * no se confunda con `enamelStained`: el sarro es una costra de yeso, no una
+   * mancha.
+   */
+  tartarCrust: {
+    out: '#17140d',
+    shade: '#403c28',
+    dark: '#6e6848',
+    mid: '#9a9270',
+    light: '#c2bb9c',
+    hi: '#e4dfc8',
+  },
+  /**
+   * La clínica que se ve por la abertura de la boca: azulejo, mobiliario, la silla.
+   *
+   * Es la única rampa **fría** del escenario, y existe porque sin ella no hay
+   * contraste posible. Lo que sostiene las referencias es boca roja y oscura contra
+   * clínica azulada y reventada de luz; con la paleta anterior —toda cálida salvo el
+   * acero y el teal de la bata— el fondo entero era del mismo color y la abertura no
+   * se leía como una salida.
+   */
+  clinic: {
+    out: '#0d1620',
+    shade: '#24384a',
+    dark: '#456277',
+    mid: '#6e91a6',
+    light: '#a3c0cf',
+    hi: '#e2eef4',
+  },
+  /**
+   * El foco del dentista, reventado. Del gris cálido al blanco puro.
+   *
+   * Va aparte de `warden` —el dorado de los jefes— porque esto no es un color, es
+   * una sobreexposición: tiene que llegar al blanco absoluto para que la abertura
+   * parezca luz y no pintura amarilla.
+   */
+  glare: {
+    out: '#3d3528',
+    shade: '#6b5f45',
+    dark: '#9c8e66',
+    mid: '#cbc094',
+    light: '#eae4c8',
+    hi: '#ffffff',
+  },
+  /**
+   * Caries: el agujero. Casi negro en el fondo y ocre enfermizo en el borde de
+   * la lesión, que es lo que le da los seis tonos y el recorrido de luminancia
+   * que el sombreado automático necesita.
+   */
+  cavity: {
+    out: '#0a0503',
+    shade: '#1d0f07',
+    dark: '#35200f',
+    mid: '#52351a',
+    light: '#7a5228',
+    hi: '#a87b45',
+  },
 
   // --- Enemigos comunes ---
   bacteria: {
@@ -294,6 +390,10 @@ export const COLORS = {
   enemySugarFiend: RAMPS.fiend.mid,
   enemyAcidSpitter: RAMPS.acid.mid,
   enemyGrunt: RAMPS.grunt.mid,
+  enemyCrawler: RAMPS.bacteria.dark,
+  enemyShell: RAMPS.tartarCrust.mid,
+  enemyBloater: RAMPS.fiend.dark,
+  enemyBorer: RAMPS.enamelStained.mid,
   /** Jefe oculto (dorado). */
   enemyWarden: RAMPS.warden.mid,
 

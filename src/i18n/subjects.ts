@@ -24,6 +24,10 @@ export const ENEMY_TEXT_KEY: Record<CommonEnemy, keyof (typeof TEXT)['en']['enem
   sugar_fiend: 'fiend',
   acid_spitter: 'spitter',
   gingivitis_grunt: 'grunt',
+  biofilm_crawler: 'crawler',
+  calculus_shell: 'shell',
+  abscess_bloater: 'bloater',
+  enamel_borer: 'borer',
 };
 
 export const enemyText = (lang: Language, subType: CommonEnemy) => {

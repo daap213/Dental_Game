@@ -13,7 +13,8 @@ import { playerSprite, playerSpriteId } from './sprites/player';
 import { enemySprite, enemySpriteId, hasEnemySprite } from './sprites/enemies';
 import { bossSprite, bossSpriteId } from './bosses';
 import { drawProjectiles, drawHeldWeapon, drawPowerUp } from './weapons';
-import { drawBackground, drawPlatforms } from './level';
+import { drawBackground } from './background';
+import { drawPlatforms } from './level';
 import { drawParticles } from './particles';
 import { drawCreditsScene, CREDITS_W, CREDITS_H } from './credits';
 import type { EnemyPose } from './pose';
@@ -250,30 +251,26 @@ const terrainItems = (): PreviewItem[] => [
 
 // --- Fondos ----------------------------------------------------------------
 
-const STAGE_PREVIEW_W = 200;
-const STAGE_PREVIEW_H = 112;
 
 /**
- * Recorte 1:1 del fondo real de cada fase.
+ * El fondo real de cada fase, entero y a 1:1.
  *
- * Se recorta en lugar de escalar: reducir pixel art a la mitad se come las líneas
- * de un píxel —justo los contornos— y deja de parecerse a lo que se ve jugando.
+ * Antes era un recorte de 200×112 centrado en la abertura, y por eso solo se veía
+ * el óvalo de luz: ni la arcada, ni el dentista, ni las encías. Como el contenido
+ * ocupa todo el alto de la pantalla, cualquier recorte se lleva por delante justo
+ * lo que distingue una fase de otra.
+ *
+ * Y a 1:1 en lugar de reducido, porque reducir pixel art se come las líneas de un
+ * píxel —los contornos— y deja de parecerse a lo que se ve jugando. Es el mismo
+ * criterio que la escena de créditos, que también se enseña a tamaño completo.
  */
 const stageItems = (): PreviewItem[] =>
   STAGE_PALETTES.map((palette, index) => ({
     id: `stage:${index + 1}`,
     key: palette.id,
-    w: STAGE_PREVIEW_W,
-    h: STAGE_PREVIEW_H,
-    draw: (ctx) => {
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, 0, STAGE_PREVIEW_W, STAGE_PREVIEW_H);
-      ctx.clip();
-      ctx.translate(-(CANVAS_WIDTH - STAGE_PREVIEW_W) / 2, -(CANVAS_HEIGHT - STAGE_PREVIEW_H) / 2 - 30);
-      drawBackground(ctx, 0, index + 1);
-      ctx.restore();
-    },
+    w: CANVAS_WIDTH,
+    h: CANVAS_HEIGHT,
+    draw: (ctx, t) => drawBackground(ctx, 0, index + 1, t),
   }));
 
 // --- Efectos ---------------------------------------------------------------
