@@ -3,9 +3,12 @@ import type { PaletteKey } from '../data/palette';
 import { px } from './pixel';
 import { drawSprite, type SpriteDef } from './sprites/format';
 import { shadeMask, withDetails } from './sprites/shade';
-import { rotate90 } from './sprites/masks/shapes';
+import { rotateMask } from './sprites/masks/shapes';
+import { PROJECTILES } from '../data/projectiles';
+import { aimStepFrom, bakeStep, stepAngle, type AimInput } from '../data/aim';
 import {
   projectileArt,
+  orientedProjectileArt,
   powerupDetail,
   HELD_WEAPONS,
   POWERUP_BODY,
@@ -13,6 +16,14 @@ import {
   POWERUP_H,
   POWERUP_EMBLEMS,
 } from './sprites/masks/weapons';
+
+/**
+ * De dónde apunta el jugador se re-exporta desde `data/aim`, donde vive ahora.
+ *
+ * Tuvo que bajar a `data/` porque la **simulación** también lo necesita: de la inclinación sale
+ * la caja de golpe, y `game/` y `render/` son hermanos que solo pueden depender hacia abajo.
+ */
+export type { AimInput };
 
 /**
  * Dibujado de proyectiles, arma en mano y objetos.
@@ -27,24 +38,6 @@ import {
  * en múltiplos de 90°, que es exacto, en lugar de rotar el lienzo.
  */
 
-type Dir = 'right' | 'left' | 'up' | 'down';
-
-/** Hacia dónde va, quedándose con el eje dominante. */
-const directionOf = (vx: number, vy: number): Dir => {
-  if (Math.abs(vx) >= Math.abs(vy)) return vx >= 0 ? 'right' : 'left';
-  return vy >= 0 ? 'down' : 'up';
-};
-
-const rot180 = (mask: readonly string[]) => rotate90(rotate90(mask));
-
-/** Gira una máscara cuadrada al cuadrante pedido. */
-const orientSquare = (mask: readonly string[], dir: Dir): readonly string[] => {
-  if (dir === 'right') return mask;
-  if (dir === 'down') return rotate90(mask);
-  if (dir === 'left') return rot180(mask);
-  return rotate90(rot180(mask));
-};
-
 const cache = new Map<string, SpriteDef>();
 
 const memo = (id: string, build: () => SpriteDef): SpriteDef => {
@@ -56,120 +49,180 @@ const memo = (id: string, build: () => SpriteDef): SpriteDef => {
 };
 
 /**
- * Sprite de un proyectil.
+ * El sprite de un proyectil **y el identificador con el que se hornea**.
  *
- * `sword` es cuadrado y su arco apunta a un lado, así que se gira al cuadrante del
- * movimiento. `floss` ya viene con el ancho y el alto cambiados cuando se apunta en
- * vertical, así que solo necesita media vuelta para apuntar al otro lado.
+ * Los dos van juntos a propósito, y no es un detalle de estilo: `bake` cachea por identificador
+ * y por nada más (`pixel.ts`), así que el identificador tiene que distinguir todo lo que cambia
+ * el dibujo. Esto estaba partido en dos —la memoria interna sí llevaba la orientación, el
+ * identificador de horneado no— y el resultado era que **las cuatro orientaciones del cepillo
+ * compartían un solo lienzo**: la primera dirección en la que golpeabas era el dibujo que veías
+ * para las cuatro. Las rotaciones se calculaban y se tiraban, y ningún test podía verlo porque
+ * todos miraban lo que devolvía la memoria interna, que sí distinguía.
+ *
+ * El espejado **no** entra en el identificador: lo hace `blit` al pintar, así que meterlo
+ * duplicaría los horneados para nada.
  */
-const projectileSprite = (proj: Projectile): { def: SpriteDef; flip: boolean } => {
+export interface ProjectileVisual {
+  bakeId: string;
+  def: SpriteDef;
+  flip: boolean;
+}
+
+const detailOver = (
+  shaded: SpriteDef,
+  art: { material: string; detail?: readonly string[] },
+  w: number,
+  h: number
+): SpriteDef =>
+  art.detail
+    ? withDetails(shaded, {
+        w,
+        h,
+        rows: art.detail,
+        map: { C: `${art.material}.hi` as PaletteKey },
+      })
+    : shaded;
+
+/**
+ * Lo que no se orienta: se dibuja igual mire donde mire.
+ *
+ * Son los radiales —un orbe, un charco, un reventón, una bala redonda— y **todo lo del enemigo**,
+ * que sigue exactamente como estaba. Un jefe que dispara un patrón de dieciséis balas no gana
+ * nada inclinándolas, y dejarlo fuera mantiene intacta la mitad del juego que este cambio no
+ * tiene por qué tocar.
+ */
+const flatVisual = (proj: Projectile): ProjectileVisual => {
   const w = Math.max(1, Math.round(proj.w));
   const h = Math.max(1, Math.round(proj.h));
-  const dir = directionOf(proj.vx, proj.vy);
   const type = proj.projectileType;
-
-  const spin = type === 'sword' ? dir : type === 'floss' && (dir === 'left' || dir === 'up') ? 'half' : 'none';
-  const flip = spin === 'none' && dir === 'left' && (type === 'wave' || type === 'bullet' || type === 'laser');
-
-  const id = `proj:${type}:${proj.owner}:${w}x${h}:${spin}`;
+  const id = `proj:${type}:${proj.owner}:${w}x${h}`;
 
   const def = memo(id, () => {
     const art = projectileArt(type, w, h, proj.owner);
-    const mask =
-      spin === 'half' ? rot180(art.mask) : spin === 'none' ? art.mask : orientSquare(art.mask, spin);
-
-    const shaded = shadeMask(mask, art.material);
-    if (!art.detail) return shaded;
-
-    const detailRows =
-      spin === 'half' ? rot180(art.detail) : spin === 'none' ? art.detail : orientSquare(art.detail, spin);
-
-    return withDetails(shaded, {
-      w: mask[0]?.length ?? w,
-      h: mask.length,
-      rows: detailRows,
-      map: { C: `${art.material}.hi` as PaletteKey },
-    });
+    return detailOver(shadeMask(art.mask, art.material), art, w, h);
   });
 
-  return { def, flip };
+  // La bala mirando a la izquierda se pinta al revés, como hacía antes.
+  return { bakeId: id, def, flip: proj.vx < 0 && type === 'bullet' };
+};
+
+export const projectileVisual = (proj: Projectile): ProjectileVisual => {
+  const type = proj.projectileType;
+  const frame = PROJECTILES[type].blade;
+  const blade = proj.blade;
+
+  if (!frame || !blade || proj.aimStep === undefined) return flatVisual(proj);
+
+  // Solo se hornea la mitad derecha; el resto sale espejado, que es gratis.
+  const { step, flip } = bakeStep(proj.aimStep, proj.facing);
+  const id = `proj:${type}:${proj.owner}:${blade.long}x${blade.thick}:${step}`;
+
+  const def = memo(id, () => {
+    const art = orientedProjectileArt(type, proj.owner, blade, step, frame);
+    return detailOver(shadeMask(art.mask, art.material), art, art.w, art.h);
+  });
+
+  return { bakeId: id, def, flip };
 };
 
 export const drawProjectiles = (ctx: CanvasRenderingContext2D, projectiles: Projectile[]) => {
   projectiles.forEach((proj) => {
-    const { def, flip } = projectileSprite(proj);
-    drawSprite(ctx, `${proj.projectileType}:${def.w}x${def.h}:${proj.owner}`, def, proj.x, proj.y, flip);
+    const { bakeId, def, flip } = projectileVisual(proj);
+    drawSprite(ctx, bakeId, def, proj.x, proj.y, flip);
   });
 };
 
 // --- Arma en mano ----------------------------------------------------------
 
-/** Hacia dónde apunta el jugador, para orientar el arma en mano. */
-export interface AimInput {
-  usingMouse: boolean;
-  aimUp: boolean;
-  mouseX: number;
-  mouseY: number;
-  cameraX: number;
-  cameraY: number;
+/** El arma en mano en una inclinación concreta, con el mango ya localizado. */
+export interface HeldVisual {
+  bakeId: string;
+  def: SpriteDef;
+  /** Dónde cayó el mango dentro del dibujo: es el punto que va en el puño. */
+  px: number;
+  py: number;
+  flip: boolean;
 }
 
-export const heldSprite = (weapon: WeaponType, up: boolean): SpriteDef =>
-  memo(`held:${weapon}:${up ? 'up' : 'side'}`, () => {
-    const art = HELD_WEAPONS[weapon] ?? HELD_WEAPONS.normal;
-    const mask = up ? rotate90(art.mask) : art.mask;
-    const shaded = shadeMask(mask, art.material);
-    if (!art.detail) return shaded;
-
-    return withDetails(shaded, {
-      w: mask[0]?.length ?? art.w,
-      h: mask.length,
-      rows: up ? rotate90(art.detail) : art.detail,
-      /**
-       * La leyenda del detalle, ampliada para el lenguaje de las referencias.
-       *
-       * Con un solo material por arma no se puede tener acero y madera en la misma pieza,
-       * y las siete referencias comparten justo eso: **astil de madera, virola dorada y un
-       * acento de energía**. En vez de componer materiales —que obligaría a tocar el
-       * sombreado— cada uno entra como una letra del detalle, que se pinta encima.
-       */
-      map: {
-        C: `${art.material}.hi` as PaletteKey,
-        G: 'metal.shade',
-        B: 'laser.light',
-        /** Madera del astil, y su sombra. */
-        W: 'wood.mid',
-        w: 'wood.shade',
-        /** Virola o anilla de latón. */
-        O: 'warden.mid',
-        /** Energía o líquido: el núcleo del bláster, el enjuague, el látigo. */
-        E: 'wave.light',
-      },
-    });
-  });
+const heldCache = new Map<string, { def: SpriteDef; px: number; py: number }>();
 
 /**
- * Arma en mano, con dos orientaciones.
+ * El arma en mano, inclinada al paso al que se apunta.
  *
- * No hay rotación libre a propósito: girar un sprite de 22×12 un ángulo cualquiera
- * lo llena de dientes de sierra. Se dibuja de lado y, cuando se apunta claramente
- * hacia arriba, se usa la misma máscara girada 90°, que es exacto.
- */
-/**
- * Si se está apuntando claramente hacia arriba.
+ * Tenía **dos** orientaciones: de lado, y de lado girada noventa grados para apuntar arriba. Y la
+ * de arriba estaba mal, porque `rotate90` gira en sentido horario y llevaba la punta al suelo;
+ * luego se colocaba encima del puño, y quedaba el mango arriba y el filo en la mano. El test que
+ * había solo comprobaba que el ancho y el alto se intercambiaran, lo cual se cumple girando en
+ * cualquiera de los dos sentidos.
  *
- * Se exporta porque la decisión la necesitan **dos** sitios: el arma, para girarse, y el
- * brazo, para alzarse. Calculada dos veces se podrían desincronizar y quedaría un brazo
- * bajado con el arma apuntando al cielo.
+ * Ahora hay un solo camino: se gira alrededor del **mango** y se dibuja restando dónde acabó. Con
+ * eso desaparecen los dos casos escritos a mano, y en los cuatro ejes el resultado es el de
+ * siempre porque un giro de noventa grados no se remuestrea.
  */
-export const aimingUp = (p: Player, aim: AimInput): boolean => {
-  if (!aim.usingMouse) return aim.aimUp;
-  const dx = aim.mouseX + aim.cameraX - (p.x + p.w / 2);
-  const dy = aim.mouseY + aim.cameraY - (p.y + p.h / 2);
-  return Math.abs(dy) > Math.abs(dx) && dy < 0;
+export const heldVisual = (weapon: WeaponType, step: number, facing = 1): HeldVisual => {
+  const { step: baked, flip } = bakeStep(step, facing);
+  const bakeId = `held:${weapon}:${baked}`;
+
+  const hit = heldCache.get(bakeId);
+  if (hit) return { bakeId, ...hit, flip };
+
+  const art = HELD_WEAPONS[weapon] ?? HELD_WEAPONS.normal;
+  /** El mango: borde izquierdo y a media altura, que es donde lo dibujan las ocho máscaras. */
+  const grip = { x: 0, y: (art.mask.length || art.h) / 2 };
+  const angle = stepAngle(baked);
+
+  const turned = rotateMask(art.mask, angle, grip);
+  const w = turned.rows[0]?.length ?? art.w;
+  const h = turned.rows.length;
+  const shaded = shadeMask(turned.rows, art.material);
+
+  const def = art.detail
+    ? withDetails(shaded, {
+        w,
+        h,
+        // El detalle se gira con **el mismo** giro, así que sigue cuadrando con la silueta.
+        rows: rotateMask(art.detail, angle, grip).rows,
+        /**
+         * La leyenda del detalle, ampliada para el lenguaje de las referencias.
+         *
+         * Con un solo material por arma no se puede tener acero y madera en la misma pieza,
+         * y las siete referencias comparten justo eso: **astil de madera, virola dorada y un
+         * acento de energía**. En vez de componer materiales —que obligaría a tocar el
+         * sombreado— cada uno entra como una letra del detalle, que se pinta encima.
+         */
+        map: {
+          C: `${art.material}.hi` as PaletteKey,
+          G: 'metal.shade',
+          B: 'laser.light',
+          /** Madera del astil, y su sombra. */
+          W: 'wood.mid',
+          w: 'wood.shade',
+          /** Virola o anilla de latón. */
+          O: 'warden.mid',
+          /** Energía o líquido: el núcleo del bláster, el enjuague, el látigo. */
+          E: 'wave.light',
+        },
+      })
+    : shaded;
+
+  const built = { def, px: turned.px, py: turned.py };
+  heldCache.set(bakeId, built);
+  return { bakeId, ...built, flip };
 };
 
 /**
+ * A qué paso apunta el jugador.
+ *
+ * Se exporta porque la decisión la necesitan **dos** sitios: el arma, para inclinarse, y el
+ * brazo, para elegir pose. Calculada dos veces se podrían desincronizar y quedaría un brazo
+ * bajado con el arma apuntando al cielo.
+ */
+export const aimStepOf = (p: Player, aim: AimInput): number =>
+  aimStepFrom(aim, p.x + p.w / 2, p.y + p.h / 2, p.facing);
+
+/**
+ * @param step La inclinación a la que se apunta, de 0 a 15. Se la pasa `drawPlayer`, que la
+ *   calcula una sola vez y se la da también al brazo, para que los dos coincidan.
  * @param hand Dónde está el puño, en píxeles de mundo. Lo calcula `armPlacement` a partir
  *   del propio dibujo del brazo: antes eran dos números escritos aquí a mano —`p.x + 18`
  *   y `p.y + 19`— que no sabían nada del sprite, así que mover el puño dejaba el arma
@@ -178,21 +231,19 @@ export const aimingUp = (p: Player, aim: AimInput): boolean => {
 export const drawHeldWeapon = (
   ctx: CanvasRenderingContext2D,
   p: Player,
-  aim: AimInput,
+  step: number,
   hand: { x: number; y: number }
 ) => {
-  const handX = hand.x;
-  const handY = hand.y;
-  const up = aimingUp(p, aim);
+  const { bakeId, def, px, py, flip } = heldVisual(p.weapon, step, p.facing);
 
-  const def = heldSprite(p.weapon, up);
-
-  if (up) {
-    drawSprite(ctx, `held:${p.weapon}:up`, def, handX - def.w / 2, handY - def.h, p.facing === -1);
-  } else {
-    const x = p.facing === 1 ? handX : handX - def.w;
-    drawSprite(ctx, `held:${p.weapon}:side`, def, x, handY - def.h / 2, p.facing === -1);
-  }
+  /**
+   * El mango va en el puño, y con el dibujo espejado eso **no** es restar el pivote.
+   *
+   * `blit` espeja dentro del rectángulo de destino, así que el píxel local `x` acaba pintado en
+   * `w − 1 − x`. Restando el pivote sin más, el arma daba un salto al girarse el personaje.
+   */
+  const x = flip ? hand.x - (def.w - 1 - px) : hand.x - px;
+  drawSprite(ctx, bakeId, def, x, hand.y - py, flip);
 };
 
 // --- Objetos ---------------------------------------------------------------

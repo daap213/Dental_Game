@@ -1,5 +1,6 @@
 import type { Projectile, WeaponType } from '../../../../types';
 import type { Material } from '../../../data/palette';
+import { isCardinal, localAxes, orientedBox, type BladeFrame } from '../../../data/aim';
 import {
   blank,
   ellipse,
@@ -11,6 +12,7 @@ import {
   fit,
   spike,
   wedge,
+  resample,
   rotate90,
 } from './shapes';
 
@@ -100,30 +102,28 @@ const brushHead = (w: number, h: number): { mask: string[]; detail: string[] } =
  * látigo. Lo que hace que una cuerda se lea como látigo es la **curva**: gruesa donde
  * nace, fina donde acaba, y con la punta abierta en hebras.
  */
-const lash = (w: number, h: number): { mask: string[]; detail: string[] } => {
+const lash = (w: number, h: number, edge = 1): { mask: string[]; detail: string[] } => {
   const mask = grid(w, h);
   const detail = grid(w, h);
-  const vertical = h > w;
-  const along = vertical ? h : w;
-  const across = vertical ? w : h;
+  // El dibujo se hace **en el eje de la propia hebra**: a lo largo en la equis, a lo ancho en
+  // la ye. Tenía una rama para el caso vertical, con un cambio de signo, y solo cubría dos de
+  // los cuatro sentidos; inclinarlo es ahora cosa de `orientedProjectileArt`, no de la forma.
+  const along = w;
+  const across = h;
   const mid = across / 2;
+
+  const curveAt = (i: number) =>
+    Math.round(mid + Math.sin((i / Math.max(1, along - 1)) * Math.PI) * (mid - 1));
 
   for (let i = 0; i < along; i++) {
     const t = i / Math.max(1, along - 1);
-    // La curva: un solo lóbulo, que es un chasquido y no una onda.
-    const bend = Math.sin(t * Math.PI) * (mid - 1);
-    // Y el grosor, que se va a nada hacia la punta.
+    // El grosor se va a nada hacia la punta.
     const thick = Math.max(1, Math.round((1 - t) * (across * 0.22) + 1));
-    const centre = Math.round(mid + bend * (vertical ? -1 : 1));
+    const centre = curveAt(i);
 
-    for (let d = -thick; d <= thick; d++) {
-      const c = centre + d;
-      if (vertical) put(mask, c, i, '#');
-      else put(mask, i, c, '#');
-    }
+    for (let d = -thick; d <= thick; d++) put(mask, i, centre + d, '#');
     // El núcleo brillante recorre la hebra: es energía, no cuerda.
-    if (vertical) put(detail, centre, i, 'C');
-    else put(detail, i, centre, 'C');
+    for (let d = 0; d < edge; d++) put(detail, i, centre + d, 'C');
   }
 
   // El deshilachado de la punta: tres hebras abiertas en abanico.
@@ -131,16 +131,9 @@ const lash = (w: number, h: number): { mask: string[]; detail: string[] } => {
   for (const spread of [-1, 0, 1]) {
     for (let k = 0; k < Math.max(2, Math.round(across * 0.22)); k++) {
       const i = tip - k;
-      const t = i / Math.max(1, along - 1);
-      const centre = Math.round(mid + Math.sin(t * Math.PI) * (mid - 1) * (vertical ? -1 : 1));
-      const c = centre + spread * (k + 1);
-      if (vertical) {
-        put(mask, c, i, '#');
-        put(detail, c, i, 'C');
-      } else {
-        put(mask, i, c, '#');
-        put(detail, i, c, 'C');
-      }
+      const c = curveAt(i) + spread * (k + 1);
+      put(mask, i, c, '#');
+      put(detail, i, c, 'C');
     }
   }
   return { mask: done(mask), detail: done(detail) };
@@ -153,7 +146,7 @@ const lash = (w: number, h: number): { mask: string[]; detail: string[] } => {
  * un aro. Lo que la lee como guadaña es que **se estreche** de la base a la punta y que la
  * punta se cierre hacia dentro. El filo claro va por el canto interior, que es el que corta.
  */
-const reapBlade = (w: number, h: number): { mask: string[]; detail: string[] } => {
+const reapBlade = (w: number, h: number, edge = 1): { mask: string[]; detail: string[] } => {
   const mask = grid(w, h);
   const detail = grid(w, h);
 
@@ -167,17 +160,36 @@ const reapBlade = (w: number, h: number): { mask: string[]; detail: string[] } =
     const from = Math.round(Math.max(0, spine - thick));
 
     for (let x = from; x < Math.min(w, from + thick); x++) put(mask, x, y, '#');
-    // El filo, en el canto interior.
-    put(detail, from, y, 'C');
+    /**
+     * El filo, en el canto interior.
+     *
+     * Inclinada, una línea de **un** píxel se convierte en una escalera, y una escalera de un
+     * píxel leída como filo brillante parece una línea de puntos. Por eso el grosor entra como
+     * parámetro: uno en los ejes, para que lo que ya se veía no cambie, y dos en las
+     * inclinaciones, donde hace falta para que el filo se lea continuo.
+     */
+    for (let d = 0; d < edge; d++) put(detail, from + d, y, 'C');
   }
   return { mask: done(mask), detail: done(detail) };
 };
 
+/**
+ * El dibujo de un proyectil **en su propio eje**, sin inclinar.
+ *
+ * `w` y `h` son las medidas del dibujo local, no de la caja en pantalla: todas las formas se
+ * dibujan apuntando a la derecha —o, en los barridos, cruzando de arriba abajo con el canto
+ * útil hacia fuera— y de inclinarlas se encarga `orientedProjectileArt`. Antes cada forma tenía
+ * su propia rama para el caso vertical, y ninguna llegaba a cubrir los cuatro sentidos.
+ *
+ * `edge` es el grosor de los filos y núcleos brillantes de un píxel, que inclinados se leen como
+ * una línea de puntos y necesitan dos.
+ */
 export const projectileArt = (
   type: Projectile['projectileType'],
   w: number,
   h: number,
-  owner: Projectile['owner']
+  owner: Projectile['owner'],
+  edge = 1
 ): ProjectileArt => {
   const W = Math.max(1, Math.round(w));
   const H = Math.max(1, Math.round(h));
@@ -220,7 +232,7 @@ export const projectileArt = (
      * látigo; el huso simétrico que había antes parecía una hoja.
      */
     case 'floss': {
-      const art = lash(W, H);
+      const art = lash(W, H, edge);
       return { mask: art.mask, material: 'laser', detail: art.detail };
     }
 
@@ -244,7 +256,7 @@ export const projectileArt = (
      * que la ata a la cureta dental de la que sale: sin él es una hoz.
      */
     case 'reap': {
-      const art = reapBlade(W, H);
+      const art = reapBlade(W, H, edge);
       return { mask: art.mask, material: 'metal', detail: art.detail };
     }
 
@@ -256,22 +268,18 @@ export const projectileArt = (
      * va**, que es lo que importa en un proyectil que atraviesa la fila.
      */
     case 'arrow': {
-      const vertical = H > W;
-      const long = vertical ? H : W;
-      const thick = Math.max(2, Math.round((vertical ? W : H) * 0.5));
+      // Como el resto, se dibuja **en el eje del vuelo**: larga en la equis, con la punta a la
+      // derecha. La rama vertical que había aquí solo codificaba dos de los cuatro sentidos, así
+      // que una flecha disparada a la izquierda se dibujaba apuntando a la derecha.
+      const long = W;
+      const thick = Math.max(2, Math.round(H * 0.5));
       const headLen = Math.max(3, Math.round(long * 0.28));
 
-      const shaft = vertical
-        ? rect(W, H, Math.round((W - thick) / 2), headLen, thick, long - headLen)
-        : rect(W, H, 0, Math.round((H - thick) / 2), long - headLen, thick);
+      const shaft = rect(W, H, 0, Math.round((H - thick) / 2), long - headLen, thick);
       // La punta, en cuña hacia donde vuela.
-      const head = vertical
-        ? spike(W, H, Math.round(W / 2), 0, headLen, Math.round(W / 2))
-        : rotate90(spike(H, W, Math.round(H / 2), 0, headLen, Math.round(H / 2)));
+      const head = rotate90(spike(H, W, Math.round(H / 2), 0, headLen, Math.round(H / 2)));
       // Y las plumas, dos muescas en la cola.
-      const fletch = vertical
-        ? rect(W, H, 0, H - 3, W, 2)
-        : rect(W, H, 0, 0, 3, H);
+      const fletch = rect(W, H, 0, 0, 3, H);
       return {
         mask: merge(shaft, head, fletch),
         material: 'wood',
@@ -283,7 +291,15 @@ export const projectileArt = (
     case 'acid': {
       // Gota lanzada: cuerpo redondo con la cola hacia arriba.
       const body = ellipse(W, H, W / 2, H * 0.58, W / 2, H * 0.42);
-      const tail = rect(W, H, Math.round(W * 0.38), 0, Math.max(1, Math.round(W * 0.24)), Math.round(H * 0.4), 1);
+      const tail = rect(
+        W,
+        H,
+        Math.round(W * 0.38),
+        0,
+        Math.max(1, Math.round(W * 0.24)),
+        Math.round(H * 0.4),
+        1
+      );
       return { mask: merge(body, tail), material: type === 'acid' ? 'acid' : 'plaque' };
     }
 
@@ -315,18 +331,48 @@ export const projectileArt = (
      */
     case 'flask': {
       const body = ellipse(W, H, W / 2, H * 0.64, W * 0.46, H * 0.36);
-      const neck = rect(W, H, Math.round(W * 0.38), Math.round(H * 0.2), Math.round(W * 0.24), Math.round(H * 0.2));
-      const cap = rect(W, H, Math.round(W * 0.32), Math.round(H * 0.1), Math.round(W * 0.36), Math.max(2, Math.round(H * 0.12)));
+      const neck = rect(
+        W,
+        H,
+        Math.round(W * 0.38),
+        Math.round(H * 0.2),
+        Math.round(W * 0.24),
+        Math.round(H * 0.2)
+      );
+      const cap = rect(
+        W,
+        H,
+        Math.round(W * 0.32),
+        Math.round(H * 0.1),
+        Math.round(W * 0.36),
+        Math.max(2, Math.round(H * 0.12))
+      );
       // La mecha, saliendo del tapón hacia un lado: es lo que avisa de que va a estallar.
-      const fuse = rect(W, H, Math.round(W * 0.62), 0, Math.max(1, Math.round(W * 0.1)), Math.max(2, Math.round(H * 0.14)));
+      const fuse = rect(
+        W,
+        H,
+        Math.round(W * 0.62),
+        0,
+        Math.max(1, Math.round(W * 0.1)),
+        Math.max(2, Math.round(H * 0.14))
+      );
       /**
        * El detalle marca **la línea del líquido** y la chispa de la mecha.
        *
        * Con solo un núcleo centrado el frasco parecía una piedra clara. La línea horizontal
        * es lo que lo llena de algo, y la chispa lo que cuenta la mecánica.
        */
-      const liquid = rect(W, H, Math.round(W * 0.22), Math.round(H * 0.6), Math.round(W * 0.56), Math.max(1, Math.round(H * 0.08))).map((row) => row.replace(/#/g, 'C'));
-      const spark = rect(W, H, Math.round(W * 0.6), 0, Math.max(1, Math.round(W * 0.14)), 1).map((row) => row.replace(/#/g, 'C'));
+      const liquid = rect(
+        W,
+        H,
+        Math.round(W * 0.22),
+        Math.round(H * 0.6),
+        Math.round(W * 0.56),
+        Math.max(1, Math.round(H * 0.08))
+      ).map((row) => row.replace(/#/g, 'C'));
+      const spark = rect(W, H, Math.round(W * 0.6), 0, Math.max(1, Math.round(W * 0.14)), 1).map(
+        (row) => row.replace(/#/g, 'C')
+      );
       return {
         mask: merge(body, neck, cap, fuse),
         material: 'wave',
@@ -379,7 +425,15 @@ export const projectileArt = (
         rect(W, H, Math.round(W * 0.6), 0, Math.round(W * 0.4), H),
         merge(
           wedge(W, H, Math.round(W * 0.6), 0, Math.round(W * 0.4), Math.ceil(H / 2), 'tr'),
-          wedge(W, H, Math.round(W * 0.6), Math.floor(H / 2), Math.round(W * 0.4), Math.ceil(H / 2), 'br')
+          wedge(
+            W,
+            H,
+            Math.round(W * 0.6),
+            Math.floor(H / 2),
+            Math.round(W * 0.4),
+            Math.ceil(H / 2),
+            'br'
+          )
         )
       );
       // Estrías: columnas alternas marcadas, que a esta escala es todo lo que cabe de hélice.
@@ -401,9 +455,68 @@ export const projectileArt = (
   }
 };
 
+/**
+ * El dibujo de un proyectil ya **inclinado** al paso al que apunta.
+ *
+ * Se construye la forma en su propio eje —donde ya estaba dibujada— y se remuestrea sobre la
+ * caja que la envuelve. No se reescribe ninguna forma para que sepa dibujar en diagonal, que era
+ * la otra manera de hacerlo y costaba seis reescrituras con seis maneras nuevas de equivocarse.
+ *
+ * Lo que compra este orden: **en los cuatro ejes el resultado es idéntico al de siempre**. En el
+ * paso 0 los ejes locales son la identidad y el remuestreo no toca nada, así que las direcciones
+ * en las que ya se jugaba no pueden cambiar de aspecto. Solo aparecen píxeles nuevos donde antes
+ * no había nada que ver.
+ *
+ * El tamaño sale de `orientedBox`, **la misma función con la que la simulación calcula la caja
+ * de golpe**. Cuando cada uno lo calculaba por su lado, el cepillo apuntando en vertical se
+ * dibujaba girado noventa grados respecto a la caja con la que dañaba.
+ */
+export const orientedProjectileArt = (
+  type: Projectile['projectileType'],
+  owner: Projectile['owner'],
+  blade: { long: number; thick: number },
+  step: number,
+  frame: BladeFrame
+): ProjectileArt & { w: number; h: number } => {
+  const { long, thick } = blade;
+  // Los barridos llevan el largo en la ye de su rejilla y el resto en la equis, que es como
+  // están dibujados.
+  const localW = frame === 'along' ? long : thick;
+  const localH = frame === 'along' ? thick : long;
+
+  const box = orientedBox(long, thick, step, frame);
+  const art = projectileArt(type, localW, localH, owner, isCardinal(step) ? 1 : 2);
+
+  const { ax, ay, bx, by } = localAxes(step, frame);
+  const toLocal = (x: number, y: number) => {
+    // Del centro de la caja al centro de la rejilla local, pasando por los ejes de la hoja.
+    const dx = x - box.w / 2;
+    const dy = y - box.h / 2;
+    const alongOff = dx * ax + dy * ay;
+    const acrossOff = dx * bx + dy * by;
+    return frame === 'along'
+      ? { x: alongOff + localW / 2, y: acrossOff + localH / 2 }
+      : { x: acrossOff + localW / 2, y: alongOff + localH / 2 };
+  };
+
+  return {
+    /**
+     * Cualquier carácter que sobreviva al remuestreo se normaliza a `#`.
+     *
+     * Una letra colada en una silueta no da error: `shadeMask` la trata como vacío y la forma
+     * sale distinta en silencio. Ya pasó una vez, con un `sed` global. Aquí es imposible.
+     */
+    mask: resample(art.mask, box.w, box.h, toLocal).map((row) => row.replace(/[^.]/g, '#')),
+    material: art.material,
+    detail: art.detail && resample(art.detail, box.w, box.h, toLocal),
+    w: box.w,
+    h: box.h,
+  };
+};
+
 // ---------------------------------------------------------------------------
-// Arma en mano: 30×18, apuntando a la derecha. La versión hacia arriba sale de
-// girar esta 90°, que es exacto.
+// Arma en mano: 30×18, apuntando a la derecha. Las dieciséis inclinaciones salen
+// de girar esta alrededor del mango.
 // ---------------------------------------------------------------------------
 
 export interface HeldWeaponArt {

@@ -913,6 +913,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     renderScene(ctx, s, {
         usingMouse: inputMethod === 'mouse' && !isMobile && inputs.current.mouseSeen,
         aimUp: inputs.current.aimUp,
+        // Las dos laterales van porque con `aimUp` dan las diagonales del teclado, que el
+        // dibujado no podía ver: sin ellas, apuntando en diagonal con teclado el arma salía recta.
+        left: inputs.current.left,
+        right: inputs.current.right,
         mouseX: inputs.current.mouseX,
         mouseY: inputs.current.mouseY,
         cameraX: s.camera.x,

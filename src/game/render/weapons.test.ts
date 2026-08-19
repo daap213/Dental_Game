@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { WEAPONS } from '../data/weapons';
 import { POWERUP_EMBLEMS, HELD_WEAPONS } from './sprites/masks/weapons';
-import { heldSprite } from './weapons';
+import { heldVisual } from './weapons';
+import { BAKED_STEPS } from '../data/aim';
 import { validateSprite } from './sprites/format';
 
 /**
@@ -14,28 +15,23 @@ import { validateSprite } from './sprites/format';
  */
 
 describe('arte de las armas', () => {
-  it('las ocho armas en mano son sprites válidos, de lado y apuntando arriba', () => {
-    for (const weapon of WEAPONS) {
-      for (const up of [false, true]) {
-        const def = heldSprite(weapon, up);
-        expect(validateSprite(def), `${weapon}${up ? ' arriba' : ' de lado'}`).toEqual([]);
-      }
-    }
-  });
-
   /**
-   * Girar noventa grados intercambia ancho y alto, y nada más.
+   * Las ocho armas en **las nueve inclinaciones que se hornean**.
    *
-   * Es la razón de que el mango vaya siempre a la izquierda: la versión apuntando hacia
-   * arriba no es un dibujo aparte, es esta girada, y eso solo es exacto si la pieza no
-   * depende de nada más que su propia orientación.
+   * Comprobaba dos orientaciones, y era el sitio donde una letra de detalle sin color se cuela
+   * sin hacer ruido. Ahora que hay nueve dibujos por arma en vez de dos, la superficie donde eso
+   * puede pasar es cuatro veces mayor, y el giro además mueve las letras de sitio.
+   *
+   * Lo que era «la versión hacia arriba es la de lado girada» —que solo miraba las medidas, y por
+   * eso no vio que el giro iba al revés— está ahora en `orientation.test.ts`, que comprueba hacia
+   * dónde apunta.
    */
-  it('la versión hacia arriba es la de lado girada', () => {
+  it('las ocho armas en mano son sprites válidos en todas sus inclinaciones', () => {
     for (const weapon of WEAPONS) {
-      const side = heldSprite(weapon, false);
-      const up = heldSprite(weapon, true);
-      expect(up.w, weapon).toBe(side.h);
-      expect(up.h, weapon).toBe(side.w);
+      for (const step of BAKED_STEPS) {
+        const { def } = heldVisual(weapon, step);
+        expect(validateSprite(def), `${weapon} en el paso ${step}`).toEqual([]);
+      }
     }
   });
 

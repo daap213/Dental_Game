@@ -5,6 +5,7 @@ import { ENEMY_SPAWN_TABLE, STAGE_BOSSES, HIDDEN_BOSS } from '../data/enemies';
 import { STAGE_PALETTES } from '../data/stages';
 import { CHARACTER_PROFILES } from '../data/characters';
 import { MAX_LEVEL, WEAPONS } from '../data/weapons';
+import { AIM_STEPS, stepVector } from '../data/aim';
 import { createPlayer } from '../player';
 import { spawnProjectile } from '../weapons';
 import { px } from './pixel';
@@ -23,6 +24,7 @@ import { BODY_H, BODY_W } from './sprites/masks/player';
 import { enemySprite, enemySpriteId, hasEnemySprite } from './sprites/enemies';
 import { bossSprite, bossSpriteId } from './bosses';
 import { drawProjectiles, drawHeldWeapon, drawPowerUp } from './weapons';
+import { armPose } from './pose';
 import { drawBackground } from './background';
 import { drawPlatforms } from './level';
 import { drawParticles } from './particles';
@@ -73,7 +75,7 @@ const POSE_SECONDS = 0.9;
 
 const ENEMY_POSE_CYCLE: readonly EnemyPose[] = ['idle', 'walk', 'attack', 'hurt'];
 
-const cyclePose = <T,>(poses: readonly T[], t: number): T =>
+const cyclePose = <T>(poses: readonly T[], t: number): T =>
   poses[Math.floor(Math.max(0, t) / POSE_SECONDS) % poses.length];
 
 // --- Personajes ------------------------------------------------------------
@@ -106,7 +108,13 @@ const characterItems = (): PreviewItem[] =>
       // Y el brazo, que va aparte del cuerpo pero es parte del personaje: sin él la ficha
       // mostraría algo distinto de lo que se ve en partida.
       const arm = armPlacement(character, 'side');
-      drawSprite(ctx, armSpriteId('side'), armSprite('side'), arm.x - BODY_OFFSET_X, arm.y - BODY_OFFSET_Y);
+      drawSprite(
+        ctx,
+        armSpriteId('side'),
+        armSprite('side'),
+        arm.x - BODY_OFFSET_X,
+        arm.y - BODY_OFFSET_Y
+      );
     },
   }));
 
@@ -202,18 +210,27 @@ const weaponItems = (): PreviewItem[] =>
       player.y = 12;
       player.facing = 1;
 
+      /**
+       * La ficha **recorre las dieciséis inclinaciones** con el tiempo.
+       *
+       * Es la única forma de revisar de un vistazo que las ocho armas apuntan a donde tienen que
+       * apuntar en todos los ángulos: un mango donde debería haber una punta se ve al instante y
+       * no hay test que lo cace. Va más despacio que el cambio de nivel para poder seguirla.
+       */
+      const step = Math.floor(Math.max(0, t) / POSE_SECONDS) % AIM_STEPS;
+      const aim = stepVector(step);
+
       // El puño sale del propio dibujo del brazo, igual que en partida: así la ficha no
       // puede quedarse mostrando el arma en un sitio donde ya no está la mano.
-      const hand = armPlacement(player.character, 'side');
-      drawHeldWeapon(
-        ctx,
-        player,
-        { usingMouse: false, aimUp: false, mouseX: 0, mouseY: 0, cameraX: 0, cameraY: 0 },
-        { x: player.x + hand.handX, y: player.y + hand.handY }
-      );
+      const pose = armPose(player, step);
+      const hand = armPlacement(player.character, pose);
+      drawHeldWeapon(ctx, player, step, {
+        x: player.x + hand.handX,
+        y: player.y + hand.handY,
+      });
 
       const shots: Projectile[] = [];
-      spawnProjectile(shots, 48, WEAPON_PREVIEW_H / 2, 1, 0, 'player', weapon, player);
+      spawnProjectile(shots, 48, WEAPON_PREVIEW_H / 2, aim.x, aim.y, 'player', weapon, player);
       // El hilo y el cepillo se dibujan pegados al jugador, así que se recolocan
       // para que quepan en la ficha sin taparlo.
       shots.forEach((shot) => {
@@ -281,7 +298,6 @@ const terrainItems = (): PreviewItem[] => [
 ];
 
 // --- Fondos ----------------------------------------------------------------
-
 
 /**
  * El fondo real de cada fase, entero y a 1:1.

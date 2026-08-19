@@ -1,5 +1,6 @@
 import type { Particle, Platform, Player, Projectile } from '../types';
 import { CANVAS_HEIGHT, GRAVITY } from './data/physics';
+import { aimStep, orientedBox } from './data/aim';
 import { HOMING_DAMAGE_THRESHOLD } from './data/weapons';
 import { tone } from './data/palette';
 import { hitsAnyPlatform } from './physics';
@@ -35,7 +36,18 @@ const HOMING_PULL = 0.2;
  */
 const standOff = (anchor: Anchor, proj: Projectile): number => {
   if (anchor.kind === 'held') return anchor.gap;
-  if (anchor.kind === 'reach') return Math.max(proj.w, proj.h) / 2 + anchor.margin;
+  /**
+   * El alcance sale del **largo de la hoja**, no de la caja.
+   *
+   * Salía de `Math.max(w, h)`, que era lo mismo mientras la caja solo podía ser uno de dos
+   * rectángulos: el largo siempre era el lado mayor. Con la caja envolviendo una hoja inclinada
+   * deja de serlo —una hoja de 24×56 girada cuarenta y cinco grados ocupa 57×57— así que sacando
+   * el alcance de la caja el golpe se acercaría y se alejaría del jugador a lo largo del propio
+   * barrido. El largo, en cambio, no cambia nunca.
+   */
+  if (anchor.kind === 'reach') {
+    return (proj.blade?.long ?? Math.max(proj.w, proj.h)) / 2 + anchor.margin;
+  }
   return 0;
 };
 
@@ -44,8 +56,12 @@ const standOff = (anchor: Anchor, proj: Projectile): number => {
  *
  * `lifeTime` **decrece**, así que el barrido va del extremo positivo al negativo: el golpe
  * sale adelantado y termina recogido, que es el sentido natural de una estocada. Se
- * reutiliza la vida como fase igual que ya hacía el bamboleo de las ondas, así que no hace
- * falta ningún campo nuevo ni rotar mapas de bits.
+ * reutiliza la vida como fase igual que ya hacía el bamboleo de las ondas.
+ *
+ * Devuelve una dirección **local** y no escribe en `proj.vx`/`proj.vy`, que siguen siendo el
+ * apuntado original. Eso importa por dos motivos: el registro de impactos y el daño se razonan
+ * sobre el apuntado, y hay un test que fija que el cuerpo a cuerpo conserva un vector unitario.
+ * De inclinar el dibujo se encarga `proj.aimStep`, que sí se recalcula con esta dirección.
  */
 const swept = (proj: Projectile, sweep: ProjectileBehaviour['sweep']) => {
   if (!sweep || sweep.over <= 0) return { x: proj.vx, y: proj.vy };
@@ -152,6 +168,25 @@ export const advanceProjectiles = (
       if (anchor.kind !== 'static' && proj.owner === 'player') {
         const dir = swept(proj, behaviour.sweep);
         const gap = standOff(anchor, proj);
+
+        /**
+         * La herramienta **gira mientras barre**.
+         *
+         * El paso se saca de la dirección ya barrida y no de la de apuntado, así que el cepillo y
+         * la guadaña van girando a la vez que recorren el arco. Antes la caja orbitaba con el
+         * dibujo quieto: a mitad de golpe el arte estaba hasta cincuenta y cinco grados girado
+         * respecto a por donde iba, y el mandoble se leía como una caja que se desliza.
+         *
+         * La caja se recalcula aquí, justo antes de colocarla, porque la posición se calcula con
+         * `proj.w / 2`.
+         */
+        if (proj.blade && behaviour.blade) {
+          proj.aimStep = aimStep(dir.x, dir.y);
+          const box = orientedBox(proj.blade.long, proj.blade.thick, proj.aimStep, behaviour.blade);
+          proj.w = box.w;
+          proj.h = box.h;
+        }
+
         proj.x = player.x + player.w / 2 + dir.x * gap - proj.w / 2;
         proj.y = player.y + player.h / 2 + dir.y * gap - proj.h / 2;
       }

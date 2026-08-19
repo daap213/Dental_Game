@@ -1,11 +1,10 @@
-
 export enum GameState {
   MENU,
   PLAYING,
   GAME_OVER,
   VICTORY,
   PAUSED,
-  PERK_SELECTION
+  PERK_SELECTION,
 }
 
 export type InputMethod = 'mouse' | 'keyboard';
@@ -77,12 +76,12 @@ export interface Player extends Entity, Animated {
   character: CharacterType;
   invincibleTimer: number;
   slowTimer: number;
-  
+
   // Shield (Toothpaste Barrier)
   shield: number;
   maxShield: number;
   shieldRegenTimer: number;
-  
+
   // Lives
   lives: number;
 
@@ -91,7 +90,7 @@ export interface Player extends Entity, Animated {
   weaponLevels: { [key in WeaponType]: number };
   ammo: number;
   score: number;
-  
+
   // Abilities
   jumpCount: number;
   maxJumps: number;
@@ -101,20 +100,20 @@ export interface Player extends Entity, Animated {
 
   // RPG Stats / Multipliers
   stats: {
-      speedMultiplier: number;
-      damageMultiplier: number;
-      dashCooldownMultiplier: number;
-      maxDashes: number;
-      damageReduction: number; // 0 to 1 (e.g., 0.15 = 15% less damage)
-      damageTakenMultiplier: number; // Base multiplier from difficulty (e.g., 1.05 for Legend)
+    speedMultiplier: number;
+    damageMultiplier: number;
+    dashCooldownMultiplier: number;
+    maxDashes: number;
+    damageReduction: number; // 0 to 1 (e.g., 0.15 = 15% less damage)
+    damageTakenMultiplier: number; // Base multiplier from difficulty (e.g., 1.05 for Legend)
   };
 
   // Run Progress
   runStats: {
-      killCount: number;
-      nextScoreMilestone: number;
-      nextKillMilestone: number;
-      currentKillStep: number;
+    killCount: number;
+    nextScoreMilestone: number;
+    nextKillMilestone: number;
+    currentKillStep: number;
   };
 }
 
@@ -197,6 +196,26 @@ export interface Projectile extends Entity {
   lifeTime: number;
   projectileType: ProjectileType;
   hitIds: string[]; // Track which entities have been hit to prevent multi-tick damage on piercing
+  /**
+   * Las medidas de la hoja **en su propio eje**: de largo y de grueso.
+   *
+   * De aquí sale la caja envolvente cuando el proyectil apunta en diagonal, y también el alcance
+   * de un golpe. Tiene que ir aparte de `w` y `h` porque esos dos son ya la envolvente y cambian
+   * con la inclinación: sacando el alcance de ellos, el golpe se estiraba y se encogía a lo largo
+   * del barrido.
+   *
+   * Opcional porque solo lo llevan los proyectiles que se orientan: las veintitantas llamadas
+   * que crean balas de enemigo y patrones de jefe siguen igual.
+   */
+  blade?: { long: number; thick: number };
+  /**
+   * El paso de inclinación con el que se dibuja, de 0 a 15.
+   *
+   * Lo escribe la simulación —al nacer, y en cada paso mientras un golpe barre— y el dibujado
+   * solo lo lee. Es a propósito: el dibujo y la caja tienen que salir del **mismo** número, y
+   * cuando cada uno lo derivaba por su lado acabaron discrepando en noventa grados.
+   */
+  aimStep?: number;
 }
 
 export interface Particle extends Entity {
@@ -236,11 +255,11 @@ export interface LevelState {
 }
 
 export interface Perk {
-    id: string;
-    name: string;
-    description: string;
-    icon: string; // Lucide icon name or simple string key
-    rarity: 'common' | 'rare' | 'legendary';
-    color: string;
-    weight: number; // Probability weight (higher = more common)
+  id: string;
+  name: string;
+  description: string;
+  icon: string; // Lucide icon name or simple string key
+  rarity: 'common' | 'rare' | 'legendary';
+  color: string;
+  weight: number; // Probability weight (higher = more common)
 }

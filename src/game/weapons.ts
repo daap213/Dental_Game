@@ -1,6 +1,8 @@
 
-import { Projectile, Player, WeaponType, PowerUp } from '../types';
+import { Projectile, Player, WeaponType, PowerUp, ProjectileType } from '../types';
 import { COLORS, tone } from './data/palette';
+import { aimStep, orientedBox } from './data/aim';
+import { PROJECTILES } from './data/projectiles';
 import { NORMAL, SPREAD, LASER, MOUTHWASH, FLOSS, TOOTHBRUSH, BOW, SCYTHE, ENEMY_BULLET, HEALTH_DROP_SHARE, weaponFromRoll } from './data/weapons';
 
 export const spawnProjectile = (projectiles: Projectile[], x: number, y: number, dx: number, dy: number, owner: 'player' | 'enemy', type: WeaponType | 'normal', player?: Player) => {
@@ -31,6 +33,28 @@ export const spawnProjectile = (projectiles: Projectile[], x: number, y: number,
     const level = player.weaponLevel;
     const vx = dx; const vy = dy;
 
+    /** El paso de inclinación de este disparo, uno para toda la ráfaga. */
+    const step = aimStep(dx, dy);
+
+    /**
+     * La caja de una hoja inclinada, con las medidas locales que la generaron.
+     *
+     * Sustituye a los cuatro `Math.abs(dy) > Math.abs(dx)` que había repartidos por aquí, que
+     * solo sabían elegir entre dos rectángulos: en cualquier diagonal la caja podía quedar
+     * hasta cuarenta y cinco grados girada respecto a lo que se estaba apuntando.
+     *
+     * El marco sale de la **tabla de conductas**, la misma de la que lo lee el dibujado, así
+     * que no hay dos sitios que puedan discrepar. Y las medidas locales viajan con el
+     * proyectil porque `w` y `h` ya son la envolvente: el alcance de un golpe tiene que salir
+     * del largo de la hoja, que no cambia, y no de una envolvente que respira a lo largo del
+     * barrido.
+     */
+    const bladed = (long: number, thick: number, projectileType: ProjectileType) => {
+        const frame = PROJECTILES[projectileType].blade;
+        if (!frame) return { w: long, h: thick };
+        return { ...orientedBox(long, thick, step, frame), blade: { long, thick }, aimStep: step };
+    };
+
     /**
      * Daño final de un proyectil del jugador.
      *
@@ -57,7 +81,14 @@ export const spawnProjectile = (projectiles: Projectile[], x: number, y: number,
     } else if (type === 'laser') {
           const width = LASER.width(level);
           const dmg = scaled(LASER.damage(level));
-          projectiles.push({ ...base(), x, y, w: width, h: width, vx: vx * LASER.speed, vy: vy * LASER.speed, hp: 1, maxHp: 1, damage: dmg, lifeTime: LASER.lifeTime, projectileType: 'laser', color: COLORS.projectileLaser } as Projectile);
+          /**
+           * El rayo se dibuja en un cuadrado, así que inclinarlo le agranda la caja: un
+           * cuadrado girado cuarenta y cinco grados necesita un 41 % más de lado. En el rayo
+           * más gordo del juego eso son ocho píxeles sobre veinte, en un proyectil que ya
+           * perfora, así que se acepta la regla uniforme antes que abrir una excepción por
+           * tipo que pueda estar mal.
+           */
+          projectiles.push({ ...base(), x, y, ...bladed(width, width, 'laser'), vx: vx * LASER.speed, vy: vy * LASER.speed, hp: 1, maxHp: 1, damage: dmg, lifeTime: LASER.lifeTime, projectileType: 'laser', color: COLORS.projectileLaser } as Projectile);
     } else if (type === 'mouthwash') {
           const speed = MOUTHWASH.speed(level);
           const dmg = scaled(MOUTHWASH.damage(level));
@@ -80,38 +111,23 @@ export const spawnProjectile = (projectiles: Projectile[], x: number, y: number,
               projectiles.push({ ...base(), hitIds: group, x, y, w: size, h: size, vx: ax * speed, vy: ay * speed + MOUTHWASH.lift, hp: 1, maxHp: 1, damage: dmg, lifeTime: MOUTHWASH.lifeTime, projectileType: 'flask', color: COLORS.projectileWave } as Projectile);
           });
     } else if (type === 'floss') {
-          const range = FLOSS.range(level); const dmg = scaled(FLOSS.damage(level)); const thickness = FLOSS.thickness(level);
-          const isVertical = Math.abs(dy) > Math.abs(dx);
-          const w = isVertical ? thickness : range; const h = isVertical ? range : thickness;
-          projectiles.push({ ...base(), x, y, w, h, vx: dx, vy: dy, hp: 1, maxHp: 1, damage: dmg, lifeTime: FLOSS.lifeTime, projectileType: 'floss', color: '#fff' } as Projectile);
+          const dmg = scaled(FLOSS.damage(level));
+          projectiles.push({ ...base(), x, y, ...bladed(FLOSS.range(level), FLOSS.thickness(level), 'floss'), vx: dx, vy: dy, hp: 1, maxHp: 1, damage: dmg, lifeTime: FLOSS.lifeTime, projectileType: 'floss', color: '#fff' } as Projectile);
     } else if (type === 'toothbrush') {
           const dmg = scaled(TOOTHBRUSH.damage(level));
-          // El filo es estrecho a lo radial y largo a lo tangencial, y se orienta según se
-          // apunte: barriendo en horizontal lo largo es vertical, y al revés.
-          const radial = TOOTHBRUSH.radial(level);
-          const tangential = TOOTHBRUSH.tangential(level);
-          const vertical = Math.abs(dy) > Math.abs(dx);
-          const w = vertical ? tangential : radial;
-          const h = vertical ? radial : tangential;
-          projectiles.push({ ...base(), x, y, w, h, vx: dx, vy: dy, hp: 1, maxHp: 1, damage: dmg, lifeTime: TOOTHBRUSH.lifeTime, projectileType: 'sword', color: COLORS.projectileMelee } as Projectile);
+          // El filo es estrecho a lo radial y largo a lo tangencial: cruza por delante del
+          // jugador, no sale disparado. `bladed` lo inclina a donde se esté apuntando.
+          projectiles.push({ ...base(), x, y, ...bladed(TOOTHBRUSH.tangential(level), TOOTHBRUSH.radial(level), 'sword'), vx: dx, vy: dy, hp: 1, maxHp: 1, damage: dmg, lifeTime: TOOTHBRUSH.lifeTime, projectileType: 'sword', color: COLORS.projectileMelee } as Projectile);
     } else if (type === 'bow') {
           const dmg = scaled(BOW.damage(level));
           // Fina y larga en el sentido del vuelo: una flecha, no una bola.
-          const vertical = Math.abs(dy) > Math.abs(dx);
-          const w = vertical ? BOW.h : BOW.w;
-          const h = vertical ? BOW.w : BOW.h;
-          projectiles.push({ ...base(), x, y, w, h, vx: vx * BOW.speed, vy: vy * BOW.speed, hp: 1, maxHp: 1, damage: dmg, lifeTime: BOW.lifeTime, projectileType: 'arrow', color: COLORS.projectilePlayer } as Projectile);
+          projectiles.push({ ...base(), x, y, ...bladed(BOW.w, BOW.h, 'arrow'), vx: vx * BOW.speed, vy: vy * BOW.speed, hp: 1, maxHp: 1, damage: dmg, lifeTime: BOW.lifeTime, projectileType: 'arrow', color: COLORS.projectilePlayer } as Projectile);
     } else if (type === 'scythe') {
           const dmg = scaled(SCYTHE.damage(level));
-          const radial = SCYTHE.radial(level);
-          const tangential = SCYTHE.tangential(level);
-          const vertical = Math.abs(dy) > Math.abs(dx);
-          const w = vertical ? tangential : radial;
-          const h = vertical ? radial : tangential;
-          projectiles.push({ ...base(), x, y, w, h, vx: dx, vy: dy, hp: 1, maxHp: 1, damage: dmg, lifeTime: SCYTHE.lifeTime, projectileType: 'reap', color: COLORS.projectileMelee } as Projectile);
+          projectiles.push({ ...base(), x, y, ...bladed(SCYTHE.tangential(level), SCYTHE.radial(level), 'reap'), vx: dx, vy: dy, hp: 1, maxHp: 1, damage: dmg, lifeTime: SCYTHE.lifeTime, projectileType: 'reap', color: COLORS.projectileMelee } as Projectile);
     } else if (type === 'normal') {
         const speed = NORMAL.speed;
-        const bullet = { w: NORMAL.w, h: NORMAL.h, hp: 1, maxHp: 1, damage: scaled(NORMAL.damage(level)), lifeTime: NORMAL.lifeTime, projectileType: 'drill' as const, color: COLORS.projectilePlayer, vx: vx * speed, vy: vy * speed };
+        const bullet = { ...bladed(NORMAL.w, NORMAL.h, 'drill'), hp: 1, maxHp: 1, damage: scaled(NORMAL.damage(level)), lifeTime: NORMAL.lifeTime, projectileType: 'drill' as const, color: COLORS.projectilePlayer, vx: vx * speed, vy: vy * speed };
         // Abanico: una bala por cada desplazamiento perpendicular de la tabla.
         const perpX = -dy; const perpY = dx;
         NORMAL.offsets(level).forEach(offset => {

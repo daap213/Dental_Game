@@ -1,5 +1,5 @@
 import type { Player } from '../../types';
-import { aimingUp, drawHeldWeapon, type AimInput } from './weapons';
+import { aimStepOf, drawHeldWeapon, type AimInput } from './weapons';
 import { px } from './pixel';
 import { drawSprite } from './sprites/format';
 import {
@@ -33,7 +33,13 @@ export const drawPlayer = (ctx: CanvasRenderingContext2D, p: Player, aim: AimInp
 
   const pose = playerPose(p);
   const flip = p.facing === -1;
-  const arm = armPose(p, aimingUp(p, aim));
+  /**
+   * La inclinación se calcula **una sola vez** y la usan los dos: el brazo para elegir banda y el
+   * arma para girarse. Antes cada uno llamaba por su cuenta a `aimingUp`, que era la puerta
+   * abierta a que se desincronizaran.
+   */
+  const step = aimStepOf(p, aim);
+  const arm = armPose(p, step);
   const place = armPlacement(p.character, arm);
   const armDef = armSprite(arm);
 
@@ -44,7 +50,14 @@ export const drawPlayer = (ctx: CanvasRenderingContext2D, p: Player, aim: AimInp
 
   if (p.shield > 0) drawShield(ctx, p);
 
-  drawSprite(ctx, playerSpriteId(p.character, pose), playerSprite(p.character, pose), p.x, p.y, flip);
+  drawSprite(
+    ctx,
+    playerSpriteId(p.character, pose),
+    playerSprite(p.character, pose),
+    p.x,
+    p.y,
+    flip
+  );
 
   // El brazo y el puño se espejan **sobre el centro de la caja**, que es exactamente el
   // centro del dibujo porque la diferencia de anchos es par. Un ancho impar dejaría el eje
@@ -53,7 +66,7 @@ export const drawPlayer = (ctx: CanvasRenderingContext2D, p: Player, aim: AimInp
   const handX = flip ? PLAYER_SIZE - 1 - place.handX : place.handX;
   drawSprite(ctx, armSpriteId(arm), armDef, p.x + armX, p.y + place.y, flip);
 
-  drawHeldWeapon(ctx, p, aim, { x: p.x + handX, y: p.y + place.handY });
+  drawHeldWeapon(ctx, p, step, { x: p.x + handX, y: p.y + place.handY });
 };
 
 /**

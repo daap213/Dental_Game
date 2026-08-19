@@ -1,5 +1,6 @@
 import type { ProjectileType } from '../../types';
 import type { PaletteKey } from './palette';
+import type { BladeFrame } from './aim';
 import { SCYTHE, TOOTHBRUSH } from './weapons';
 
 /**
@@ -84,6 +85,21 @@ export interface ProjectileBehaviour {
    * entra— y tiene que leerse igual con cualquier arma.
    */
   impact: { color: PaletteKey; count: number };
+  /**
+   * Cómo se apoya su dibujo sobre la dirección a la que apunta, o `null` si da igual.
+   *
+   * `null` es para los radiales —un orbe, un charco, un reventón—, que se ven iguales en
+   * cualquier ángulo y a los que pagarles dieciséis horneados sería tirar memoria.
+   *
+   * Va aquí y no en el renderizador porque la **simulación** también lo necesita: de esto sale
+   * la caja de golpe. Cuando el dibujado y la simulación decidían la orientación por separado,
+   * el cepillo apuntando en vertical se dibujaba girado noventa grados respecto a lo que
+   * golpeaba, y ningún test lo veía.
+   *
+   * No es opcional: obliga a decidirlo, aunque un tipo nuevo que se construya extendiendo una
+   * de las bases de aquí abajo heredará su valor en vez de tener que elegirlo.
+   */
+  blade: BladeFrame | null;
 }
 
 /** Frecuencia del bamboleo de las ondas, en radianes por segundo. */
@@ -99,15 +115,24 @@ const FLIES: ProjectileBehaviour = {
   contact: 'damage',
   impact: { color: 'enamel.hi', count: 3 },
   burst: null,
+  /**
+   * Por omisión **no se orienta**, que es como se comportaba todo hasta ahora.
+   *
+   * Es el valor conservador a propósito: orientar agranda la caja de golpe en las diagonales,
+   * así que un tipo nuevo al que se le olvide declararlo se comporta como siempre en vez de
+   * ganar alcance en silencio. Y hay formas que no ganan nada: la bala de dispersión es una
+   * elipse simétrica, e inclinarla no cambia un solo píxel.
+   */
+  blade: null,
 };
 
 export const PROJECTILES: Record<ProjectileType, ProjectileBehaviour> = {
   /** La bala común. La del jefe oculto persigue, y por eso lleva `homing`. */
   bullet: { ...FLIES, homing: true },
-  /** Rayo de menta: destello verde. */
-  laser: { ...FLIES, pierce: true, impact: { color: 'laser.hi', count: 5 } },
-  /** La onda del enjuague: perfora y va bamboleándose. */
-  wave: { ...FLIES, pierce: true, wobble: 5 },
+  /** Rayo de menta: destello verde, con la cola afilada hacia atrás. */
+  laser: { ...FLIES, pierce: true, impact: { color: 'laser.hi', count: 5 }, blade: 'along' },
+  /** La onda del enjuague: perfora, va bamboleándose y abre la media luna hacia delante. */
+  wave: { ...FLIES, pierce: true, wobble: 5, blade: 'along' },
   /**
    * El látigo de seda: acompaña al jugador y su distancia sale de su alcance.
    *
@@ -118,6 +143,8 @@ export const PROJECTILES: Record<ProjectileType, ProjectileBehaviour> = {
     pierce: true,
     anchor: { kind: 'reach', margin: 10 },
     impact: { color: 'laser.light', count: 4 },
+    // El latigazo sale **en la dirección** a la que se apunta, no cruzándose por delante.
+    blade: 'along',
   },
   /**
    * La espada de cerdas: acompaña al jugador **barriendo** en arco.
@@ -132,6 +159,11 @@ export const PROJECTILES: Record<ProjectileType, ProjectileBehaviour> = {
     sweep: { arc: TOOTHBRUSH.arc, over: TOOTHBRUSH.lifeTime },
     // Cerdas contra placa: una mota clara, no una chispa de acero.
     impact: { color: 'enamel.hi', count: 5 },
+    /**
+     * Un barrido cruza **por delante**, no sale disparado: el lado largo va en tangencial y el
+     * corto apunta hacia fuera. Con el marco del vuelo, el cepillo saldría de canto.
+     */
+    blade: 'across',
   },
   mortar: { ...FLIES, gravity: 0.5 },
   acid: { ...FLIES, gravity: 0.5 },
@@ -147,6 +179,8 @@ export const PROJECTILES: Record<ProjectileType, ProjectileBehaviour> = {
     gravity: 1,
     contact: 'trigger',
     burst: { of: 'burst', scale: 4.2, life: 0.1 },
+    // Un frasco dando vueltas por el aire no tiene un sentido que dibujar.
+    blade: null,
   },
   /**
    * El fogonazo. **Tiene que perforar**: sin perforar se gastaría en el primer enemigo y un
@@ -158,19 +192,21 @@ export const PROJECTILES: Record<ProjectileType, ProjectileBehaviour> = {
     anchor: { kind: 'static' },
     // Un reventón de líquido salpica mucho y en cian.
     impact: { color: 'wave.hi', count: 8 },
+    // Radial: se ve igual desde cualquier ángulo.
+    blade: null,
   },
   /**
    * La flecha: vuela recta, rápida y **atraviesa la fila**. Es su razón de ser.
    *
    * Su impacto es de punta de acero: pocas chispas y secas.
    */
-  arrow: { ...FLIES, pierce: true, impact: { color: 'metal.hi', count: 2 } },
+  arrow: { ...FLIES, pierce: true, impact: { color: 'metal.hi', count: 2 }, blade: 'along' },
   /**
    * La broca de la lanza: vuela recta como la bala, pero se dibuja como lo que es.
    *
    * Acero contra esmalte, y muchas chispas porque va a mucha cadencia.
    */
-  drill: { ...FLIES, impact: { color: 'metal.hi', count: 4 } },
+  drill: { ...FLIES, impact: { color: 'metal.hi', count: 4 }, blade: 'along' },
   /**
    * El barrido de la guadaña: como la espada, pero más ancho y más lento.
    *
@@ -182,5 +218,6 @@ export const PROJECTILES: Record<ProjectileType, ProjectileBehaviour> = {
     anchor: { kind: 'reach', margin: 2 },
     sweep: { arc: SCYTHE.arc, over: SCYTHE.lifeTime },
     impact: { color: 'metal.hi', count: 7 },
+    blade: 'across',
   },
 };

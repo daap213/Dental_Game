@@ -1,4 +1,6 @@
 import type { Enemy, Player } from '../../types';
+import { AIM_STEPS, bakeStep, wrapStep } from '../data/aim';
+import type { ArmPose } from './sprites/masks/player';
 
 /**
  * Qué pose toca dibujar.
@@ -21,15 +23,7 @@ export type EnemyPose = 'idle' | 'walk' | 'attack' | 'hurt';
  * era el `idle`: el paso no se leía porque la mitad del ciclo el personaje estaba quieto.
  * Y el salto se parte en subida y caída, que es lo que le da peso al salto doble.
  */
-export type PlayerPose =
-  | 'idle'
-  | 'walk1'
-  | 'walk2'
-  | 'walk3'
-  | 'walk4'
-  | 'rise'
-  | 'fall'
-  | 'hurt';
+export type PlayerPose = 'idle' | 'walk1' | 'walk2' | 'walk3' | 'walk4' | 'rise' | 'fall' | 'hurt';
 
 /** Fotogramas por segundo del ciclo de andar. */
 export const WALK_FPS = 8;
@@ -82,13 +76,28 @@ export const playerPose = (p: Player): PlayerPose => {
 };
 
 /**
- * Qué brazo toca.
+ * Qué brazo toca para la inclinación a la que se apunta.
+ *
+ * Recibía un booleano —«¿apunta hacia arriba?»— y con él solo podía elegir entre dos brazos, así
+ * que apuntando en diagonal el brazo salía tendido y el arma inclinada encima, como flotando. Y
+ * apuntando recto hacia abajo también salía tendido.
+ *
+ * El brazo se pinta espejado **con el cuerpo**, así que la banda se elige sobre la mitad a la que
+ * el cuerpo mira. Apuntando hacia atrás —que se puede, porque `facing` solo cambia al disparar—
+ * la inclinación se pliega hacia delante: con seis siluetas no hay manera de dibujar un brazo que
+ * apunte a la espalda, y antes tampoco se dibujaba.
  *
  * `frameTimer` es el enfriamiento del arma en pasos de simulación, y hasta ahora el
  * dibujado no lo usaba: disparar no se veía en el cuerpo. Recién disparado, el brazo
  * retrocede.
  */
-export const armPose = (p: Player, aimUp: boolean): 'side' | 'up' | 'recoil' => {
-  if (aimUp) return 'up';
+export const armPose = (p: Player, step: number): ArmPose => {
+  const facing = p.facing < 0 ? wrapStep(AIM_STEPS / 2 - step) : wrapStep(step);
+  const band = bakeStep(facing).step;
+
+  if (band === 3 || band === 4) return 'down';
+  if (band === 2) return 'diagDown';
+  if (band === 12 || band === 13) return 'up';
+  if (band === 14) return 'diagUp';
   return p.frameTimer > 0 ? 'recoil' : 'side';
 };

@@ -313,7 +313,18 @@ export const detail = (mood: EyeMood): string[] => {
  * por las cuatro clases. Que se dibuje encima con su propio contorno es correcto en
  * pixel art: un miembro que se solapa con el torso se lee mejor con el borde marcado.
  */
-export type ArmPose = 'side' | 'up' | 'recoil';
+/**
+ * Las poses del brazo: una por banda de inclinación.
+ *
+ * Son **ocho** contando el espejado, y están dibujadas a mano en lugar de girar una sola. Girar
+ * este brazo no es una opción: su muñeca es **una muesca de un solo píxel**, y es lo único que
+ * lo separa de leerse como un morro. Cualquier remuestreo la borra o la embarra, y a 22,5° no
+ * hay manera de que sobreviva. Dibujar dos siluetas más cuesta menos que perder la articulación.
+ *
+ * Con el arma a dieciséis pasos y el brazo a ocho bandas, el desajuste máximo entre los dos es de
+ * 22,5° en el puño, que se lee como el ángulo de la muñeca y no como un error.
+ */
+export type ArmPose = 'side' | 'up' | 'down' | 'diagUp' | 'diagDown' | 'recoil';
 
 /**
  * Brazo tendido hacia delante: antebrazo, **muñeca** y puño.
@@ -349,6 +360,40 @@ const ARM_UP: readonly string[] = [
   '.......',
 ];
 
+/**
+ * Brazo hacia abajo: el alzado, media vuelta.
+ *
+ * `ARM_UP` es simétrico respecto a su columna central, así que media vuelta es **exacta** y no
+ * hace falta dibujar nada. Apuntando recto hacia abajo se dibujaba el brazo *de lado*, que era un
+ * fallo que nadie había reportado porque solo se ve con ratón.
+ */
+const ARM_DOWN: readonly string[] = [...ARM_UP].reverse();
+
+/**
+ * Brazo en diagonal hacia arriba: hombro abajo a la izquierda, puño arriba a la derecha.
+ *
+ * El hueco entre el antebrazo y el puño es la muñeca, igual que en el brazo tendido: aquí es un
+ * hueco **en diagonal**, y es lo que hace que se lea como un miembro con codo y no como una
+ * cuña de carne.
+ */
+const ARM_DIAG_UP: readonly string[] = [
+  '.........##.',
+  '........####',
+  '........####',
+  '.........##.',
+  '......##....',
+  '.....###....',
+  '....###.....',
+  '...###......',
+  '..###.......',
+  '.###........',
+  '.##.........',
+  '............',
+];
+
+/** Y en diagonal hacia abajo: el mismo, con las filas del revés. */
+const ARM_DIAG_DOWN: readonly string[] = [...ARM_DIAG_UP].reverse();
+
 /** Retroceso: el mismo brazo con el antebrazo recogido, justo después de disparar. */
 const ARM_RECOIL: readonly string[] = [
   '......###.',
@@ -363,6 +408,9 @@ const ARM_RECOIL: readonly string[] = [
 export const ARMS: Record<ArmPose, readonly string[]> = {
   side: ARM_SIDE,
   up: ARM_UP,
+  down: ARM_DOWN,
+  diagUp: ARM_DIAG_UP,
+  diagDown: ARM_DIAG_DOWN,
   recoil: ARM_RECOIL,
 };
 
@@ -377,6 +425,10 @@ export const ARMS: Record<ArmPose, readonly string[]> = {
 export const ARM_HAND: Record<ArmPose, { x: number; y: number }> = {
   side: { x: 10, y: 2 },
   up: { x: 3, y: 2 },
+  // El brazo hacia abajo es el alzado del revés, así que su puño baja con él.
+  down: { x: 3, y: ARM_UP.length - 1 - 2 },
+  diagUp: { x: 9, y: 1 },
+  diagDown: { x: 9, y: ARM_DIAG_UP.length - 1 - 1 },
   recoil: { x: 7, y: 2 },
 };
 
@@ -406,6 +458,12 @@ const ARM_INSET = 8;
  */
 export const armAt = (body: number, pose: ArmPose): { x: number; y: number } => {
   const edge = (BODY_W + body) / 2;
-  if (pose === 'up') return { x: edge - ARM_INSET, y: SHOULDER_Y - 6 };
-  return { x: edge - ARM_INSET, y: SHOULDER_Y };
+  const x = edge - ARM_INSET;
+
+  // Los que se estiran hacia arriba salen del hombro, así que su lienzo empieza más alto: es el
+  // hombro el que tiene que quedar quieto, no el borde del dibujo.
+  if (pose === 'up') return { x, y: SHOULDER_Y - 6 };
+  if (pose === 'diagUp') return { x, y: SHOULDER_Y - 5 };
+  // Y los que caen tienen el hombro arriba del lienzo, donde ya estaba.
+  return { x, y: SHOULDER_Y };
 };
