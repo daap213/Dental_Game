@@ -11,9 +11,16 @@ import {
   WAVE_INTERVAL,
   HIDDEN_BOSS_TRIGGERS,
 } from './enemies';
-import { getWeaponStats, getFireCooldown, MAX_LEVEL } from './weapons';
+import {
+  getWeaponStats,
+  getFireCooldown,
+  MAX_LEVEL,
+  HEALTH_DROP_SHARE,
+  weaponFromRoll,
+  WEAPONS as ALL_WEAPONS,
+} from './weapons';
 import { CHARACTER_PROFILES, getCharacter, characterSummary } from './characters';
-import type { CharacterType, Difficulty, WeaponType } from '../../types';
+import type { CharacterType, Difficulty } from '../../types';
 
 /**
  * Estos tests fijan el balance actual del juego. NO son tests de implementación:
@@ -227,7 +234,9 @@ describe('clases de diente', () => {
 });
 
 describe('armas', () => {
-  const WEAPONS: WeaponType[] = ['normal', 'spread', 'laser', 'mouthwash', 'floss', 'toothbrush'];
+  // La lista sale de `data/weapons.ts`: escrita a mano, un arma nueva se quedaba sin
+  // comprobar y el equilibrio no la fijaba.
+  const WEAPONS = ALL_WEAPONS;
 
   it('el daño nunca baja al subir de nivel', () => {
     for (const weapon of WEAPONS) {
@@ -263,6 +272,12 @@ describe('armas', () => {
     expect(getWeaponStats('floss', 5).damage).toBe(85);
     expect(getWeaponStats('toothbrush', 1).damage).toBe(35);
     expect(getWeaponStats('toothbrush', 5).damage).toBe(115);
+    // Las dos nuevas. El arco es el golpe único más alto de lo que se dispara a
+    // distancia; la guadaña, el más alto de todo, a cambio de la cadencia más lenta.
+    expect(getWeaponStats('bow', 1).damage).toBe(26);
+    expect(getWeaponStats('bow', 5).damage).toBe(90);
+    expect(getWeaponStats('scythe', 1).damage).toBe(50);
+    expect(getWeaponStats('scythe', 5).damage).toBe(170);
   });
 
   it('número de proyectiles por nivel', () => {
@@ -290,6 +305,25 @@ describe('armas', () => {
     expect(getFireCooldown('floss', 3)).toBe(18);
     expect(getFireCooldown('toothbrush', 1)).toBe(20);
     expect(getFireCooldown('toothbrush', 2)).toBe(15);
+    expect(getFireCooldown('bow', 1)).toBe(30);
+    expect(getFireCooldown('bow', 4)).toBe(22);
+    expect(getFireCooldown('scythe', 1)).toBe(30);
+    expect(getFireCooldown('scythe', 5)).toBe(26);
+  });
+
+  /**
+   * La salud conserva su cuarta parte de los botes por muchas armas que se añadan.
+   *
+   * El reparto era una escalera de umbrales escritos a mano en la que la salud se quedaba lo
+   * que sobrara: con seis armas era el 25 %, y al añadir dos habría caído al 12,5 % —una
+   * merma de aguante en todo el juego que no habría movido ninguna otra cifra ni roto ningún
+   * test—.
+   */
+  it('la salud mantiene su parte del reparto de botes', () => {
+    expect(HEALTH_DROP_SHARE).toBe(0.25);
+    // Y el resto se divide por igual entre todas las armas, sin dejarse ninguna.
+    const rolls = Array.from({ length: 200 }, (_, i) => weaponFromRoll(i / 200));
+    expect(new Set(rolls).size).toBe(ALL_WEAPONS.length);
   });
 
   it('el nivel se recorta al rango válido', () => {

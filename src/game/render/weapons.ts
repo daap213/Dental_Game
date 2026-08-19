@@ -114,7 +114,7 @@ export interface AimInput {
   cameraY: number;
 }
 
-const heldSprite = (weapon: WeaponType, up: boolean): SpriteDef =>
+export const heldSprite = (weapon: WeaponType, up: boolean): SpriteDef =>
   memo(`held:${weapon}:${up ? 'up' : 'side'}`, () => {
     const art = HELD_WEAPONS[weapon] ?? HELD_WEAPONS.normal;
     const mask = up ? rotate90(art.mask) : art.mask;
@@ -125,10 +125,25 @@ const heldSprite = (weapon: WeaponType, up: boolean): SpriteDef =>
       w: mask[0]?.length ?? art.w,
       h: mask.length,
       rows: up ? rotate90(art.detail) : art.detail,
+      /**
+       * La leyenda del detalle, ampliada para el lenguaje de las referencias.
+       *
+       * Con un solo material por arma no se puede tener acero y madera en la misma pieza,
+       * y las siete referencias comparten justo eso: **astil de madera, virola dorada y un
+       * acento de energía**. En vez de componer materiales —que obligaría a tocar el
+       * sombreado— cada uno entra como una letra del detalle, que se pinta encima.
+       */
       map: {
         C: `${art.material}.hi` as PaletteKey,
         G: 'metal.shade',
         B: 'laser.light',
+        /** Madera del astil, y su sombra. */
+        W: 'wood.mid',
+        w: 'wood.shade',
+        /** Virola o anilla de latón. */
+        O: 'warden.mid',
+        /** Energía o líquido: el núcleo del bláster, el enjuague, el látigo. */
+        E: 'wave.light',
       },
     });
   });
@@ -205,6 +220,8 @@ const EMBLEM_COLORS: Record<PowerUpEmblem, PaletteKey> = {
   mouthwash: 'wave.light',
   floss: 'bacteria.light',
   toothbrush: 'plaque.light',
+  bow: 'laser.hi',
+  scythe: 'metal.light',
 };
 
 /**

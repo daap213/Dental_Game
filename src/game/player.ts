@@ -51,7 +51,7 @@ export const createPlayer = ({ loadout, difficulty, character }: RunConfig): Pla
     lives: 0,
     weapon: startingWeapon,
     weaponLevel: 1,
-    weaponLevels: { normal: 1, spread: 1, laser: 1, mouthwash: 1, floss: 1, toothbrush: 1 },
+    weaponLevels: { normal: 1, spread: 1, laser: 1, mouthwash: 1, floss: 1, toothbrush: 1, bow: 1, scythe: 1 },
     ammo: -1,
     score: 0,
     frameTimer: 0,

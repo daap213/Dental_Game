@@ -203,6 +203,35 @@ export class AudioManager {
         gain.gain.linearRampToValueAtTime(0, t + 0.15);
         osc.start(t); osc.stop(t + 0.15);
         break;
+      // Arco: un chasquido corto y seco de cuerda soltándose.
+      case 'bow':
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(900, t);
+        osc.frequency.exponentialRampToValueAtTime(200, t + 0.08);
+        gain.gain.setValueAtTime(0.07, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+        osc.start(t); osc.stop(t + 0.08);
+        break;
+      // Guadaña: un siseo grave y largo, el peso del barrido.
+      case 'scythe':
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(220, t);
+        osc.frequency.linearRampToValueAtTime(90, t + 0.25);
+        gain.gain.setValueAtTime(0, t);
+        gain.gain.linearRampToValueAtTime(0.07, t + 0.06);
+        gain.gain.linearRampToValueAtTime(0, t + 0.25);
+        osc.start(t); osc.stop(t + 0.25);
+        break;
+      default: {
+        /**
+         * Un arma sin sonido sale **muda**, y eso no se nota revisando código: se nota
+         * jugando, y para entonces ya está. Con `never`, olvidarse de un arma es un error
+         * de compilación en vez de un silencio.
+         */
+        const unhandled: never = type;
+        void unhandled;
+        break;
+      }
     }
   }
 

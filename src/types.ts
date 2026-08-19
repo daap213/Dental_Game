@@ -60,7 +60,17 @@ export interface Animated {
   hitTimer: number;
 }
 
-export type WeaponType = 'normal' | 'spread' | 'laser' | 'mouthwash' | 'floss' | 'toothbrush';
+export type WeaponType =
+  | 'normal'
+  | 'spread'
+  | 'laser'
+  | 'mouthwash'
+  | 'floss'
+  | 'toothbrush'
+  /** Arco de seda dental: flecha rápida que atraviesa la fila. */
+  | 'bow'
+  /** Guadaña de raspador: barrido ancho y lento, el golpe más contundente. */
+  | 'scythe';
 
 export interface Player extends Entity, Animated {
   type: 'player';
@@ -146,12 +156,46 @@ export interface Enemy extends Entity, Animated {
   burrowY?: number;
 }
 
+/**
+ * Qué clase de proyectil es, que es lo que decide cómo se mueve.
+ *
+ * Tiene nombre propio —antes era un union escrito dentro de `Projectile`— porque la tabla
+ * de conductas de `game/data/projectiles.ts` es un `Record` sobre él: así, añadir una clase
+ * sin decir cómo se comporta es un error de compilación.
+ */
+export type ProjectileType =
+  | 'bullet'
+  | 'laser'
+  | 'wave'
+  | 'floss'
+  | 'sword'
+  | 'mortar'
+  | 'acid'
+  | 'sludge'
+  | 'judgment_orb'
+  /** El frasco de enjuague lanzado: cae y se rompe. */
+  | 'flask'
+  /** El fogonazo del frasco al romperse, que es donde está su daño. */
+  | 'burst'
+  /** La flecha del arco: rápida, fina y perforante. */
+  | 'arrow'
+  /** El barrido de la guadaña. */
+  | 'reap'
+  /**
+   * La broca que escupe la lanza de torno.
+   *
+   * Tiene clase propia y no reutiliza `bullet` porque es el proyectil que más se ve en toda
+   * la partida —`normal` es el arma con la que siempre se cuenta— y como bala genérica era
+   * indistinguible del disparo de cualquier enemigo.
+   */
+  | 'drill';
+
 export interface Projectile extends Entity {
   type: 'projectile';
   damage: number;
   owner: 'player' | 'enemy';
   lifeTime: number;
-  projectileType: 'bullet' | 'laser' | 'wave' | 'floss' | 'sword' | 'mortar' | 'acid' | 'sludge' | 'judgment_orb';
+  projectileType: ProjectileType;
   hitIds: string[]; // Track which entities have been hit to prevent multi-tick damage on piercing
 }
 

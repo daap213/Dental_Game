@@ -4,7 +4,7 @@ import { RAMPS, tone, type Material, type Tone } from '../data/palette';
 import { ENEMY_SPAWN_TABLE, STAGE_BOSSES, HIDDEN_BOSS } from '../data/enemies';
 import { STAGE_PALETTES } from '../data/stages';
 import { CHARACTER_PROFILES } from '../data/characters';
-import { MAX_LEVEL } from '../data/weapons';
+import { MAX_LEVEL, WEAPONS } from '../data/weapons';
 import { createPlayer } from '../player';
 import { spawnProjectile } from '../weapons';
 import { px } from './pixel';
@@ -168,14 +168,14 @@ const bossItems = (): PreviewItem[] =>
 
 // --- Armas -----------------------------------------------------------------
 
-export const WEAPON_TYPES: readonly WeaponType[] = [
-  'normal',
-  'spread',
-  'laser',
-  'mouthwash',
-  'floss',
-  'toothbrush',
-];
+/**
+ * Las armas de la galería salen de `data/weapons.ts`, no de una lista escrita aquí.
+ *
+ * Estaba escrita a mano, y omitir un arma la hacía desaparecer de la ficha y de la galería
+ * **sin fallar nada**: el test comparaba esta lista consigo misma, así que era imposible
+ * que la cazara.
+ */
+export const WEAPON_TYPES: readonly WeaponType[] = WEAPONS;
 
 const WEAPON_PREVIEW_W = 140;
 const WEAPON_PREVIEW_H = 56;

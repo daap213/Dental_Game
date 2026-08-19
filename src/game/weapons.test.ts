@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { spawnProjectile } from './weapons';
-import { getWeaponStats, ENEMY_BULLET } from './data/weapons';
+import { getWeaponStats, ENEMY_BULLET, WEAPONS as ALL_WEAPONS } from './data/weapons';
 import type { Projectile, Player, WeaponType } from '../types';
 
 const makePlayer = (weapon: WeaponType, weaponLevel: number): Player =>
@@ -31,7 +31,7 @@ const makePlayer = (weapon: WeaponType, weaponLevel: number): Player =>
     lives: 0,
     weapon,
     weaponLevel,
-    weaponLevels: { normal: 1, spread: 1, laser: 1, mouthwash: 1, floss: 1, toothbrush: 1 },
+    weaponLevels: { normal: 1, spread: 1, laser: 1, mouthwash: 1, floss: 1, toothbrush: 1, bow: 1, scythe: 1 },
     ammo: -1,
     score: 0,
     jumpCount: 0,
@@ -62,7 +62,16 @@ const shoot = (weapon: WeaponType, level: number, dx = 1, dy = 0): Projectile[] 
   return out;
 };
 
-const WEAPONS: WeaponType[] = ['normal', 'spread', 'laser', 'mouthwash', 'floss', 'toothbrush'];
+// La lista sale de `data/weapons.ts`, no escrita a mano: así ningún arma se queda fuera.
+const WEAPONS = ALL_WEAPONS;
+
+/**
+ * Armas cuyo disparo comparte **a propósito** un registro de impactos.
+ *
+ * El enjuague lanza un racimo que tiene que pegar una sola vez por enemigo, o sus tres
+ * reventones solapados triplicarían el daño que la tabla de equilibrio le atribuye.
+ */
+const SHARED_REGISTRY: readonly WeaponType[] = ['mouthwash'];
 
 describe('spawnProjectile — coherencia con la tabla de balance', () => {
   it('el número de proyectiles coincide con getWeaponStats en todos los niveles', () => {
@@ -97,6 +106,55 @@ describe('spawnProjectile — coherencia con la tabla de balance', () => {
       }
     }
   });
+
+  /**
+   * Cada proyectil de una ráfaga lleva **su propio** registro de impactos.
+   *
+   * Esto es lo que fallaba, y el test de arriba no lo veía porque solo mira que el
+   * registro esté vacío al nacer. Lo común a la ráfaga se construía una vez y cada
+   * proyectil hacía `{...base}`, lo que copia la *referencia* del array: los tres
+   * compartían un mismo «a quién ya he golpeado». Las balas no lo notan porque no
+   * perforan, pero las ondas del enjuague sí, y en cuanto una tocaba a un enemigo las
+   * otras dos no podían dañarlo nunca.
+   */
+  it('cada proyectil de una ráfaga lleva su propio registro de impactos', () => {
+    for (const weapon of WEAPONS) {
+      if (SHARED_REGISTRY.includes(weapon)) continue;
+      const volley = shoot(weapon, 5);
+      if (volley.length < 2) continue;
+
+      // Anotar un impacto en el primero no debe aparecer en los demás.
+      volley[0].hitIds.push('enemigo-1');
+      for (const other of volley.slice(1)) {
+        expect(other.hitIds, `${weapon}: comparten el array de impactos`).toEqual([]);
+      }
+
+      // Y el registro no es el mismo objeto.
+      const arrays = new Set(volley.map((p) => p.hitIds));
+      expect(arrays.size, `${weapon}: arrays de impactos compartidos`).toBe(volley.length);
+    }
+  });
+
+  it('ninguna ráfaga repite identidades', () => {
+    for (const weapon of WEAPONS) {
+      const ids = new Set(shoot(weapon, 5).map((p) => p.id));
+      expect(ids.size, `${weapon}: identidades repetidas`).toBe(shoot(weapon, 5).length);
+    }
+  });
+
+  /**
+   * El racimo del enjuague **sí** comparte registro, y a propósito.
+   *
+   * Tres frascos con registros propios dan tres reventones solapados que triplican el daño
+   * sobre el mismo enemigo, y la tabla de equilibrio dice que el arma pega una vez. Es la
+   * excepción deliberada: el fallo que se arregló era compartirlo **sin querer**.
+   */
+  it('el racimo del enjuague comparte registro para pegar una sola vez', () => {
+    const racimo = shoot('mouthwash', 5);
+    expect(racimo.length).toBeGreaterThan(1);
+    racimo[0].hitIds.push('enemigo-1');
+    for (const flask of racimo) expect(flask.hitIds).toContain('enemigo-1');
+  });
 });
 
 describe('spawnProjectile — geometría por arma', () => {
@@ -123,13 +181,34 @@ describe('spawnProjectile — geometría por arma', () => {
     expect(new Set(spread).size).toBe(11);
   });
 
-  it('el enjuague añade ondas laterales desplazadas en 3 y en 5', () => {
+  /**
+   * El enjuague lanza un **racimo de frascos en abanico**, no ondas rectas desplazadas.
+   *
+   * El test anterior exigía tres alturas distintas, que era la forma vieja: las ondas nacían
+   * separadas en perpendicular. Ahora los tres frascos salen del mismo punto con ángulos
+   * distintos, así que lo que hay que comprobar es que sus **velocidades** difieren, no sus
+   * posiciones. El recuento por nivel —1, 1, 2, 2, 3— no se mueve.
+   */
+  it('el enjuague lanza un racimo de frascos en abanico', () => {
     expect(shoot('mouthwash', 2)).toHaveLength(1);
     const l5 = shoot('mouthwash', 5);
     expect(l5).toHaveLength(3);
-    // Disparando en horizontal, las laterales se separan en Y respecto a la central.
-    expect(new Set(l5.map((p) => p.y)).size).toBe(3);
-    for (const wave of l5) expect(wave.projectileType).toBe('wave');
+    expect(new Set(l5.map((p) => p.vy)).size).toBe(3);
+    for (const flask of l5) expect(flask.projectileType).toBe('flask');
+  });
+
+  /**
+   * El frasco sale **hacia arriba** aunque se apunte en horizontal.
+   *
+   * Sin ese impulso no hay parábola: el frasco nace a dos píxeles del suelo cuando el
+   * jugador está de pie, así que lanzado recto tocaba tierra al segundo paso.
+   */
+  it('el frasco sale con impulso hacia arriba', () => {
+    for (let level = 1; level <= 5; level++) {
+      const central = shoot('mouthwash', level)[0];
+      expect(central.vy, `nivel ${level}`).toBeLessThan(0);
+      expect(central.vx, `nivel ${level}`).toBeGreaterThan(0);
+    }
   });
 
   it('el arma normal abre el abanico a partir del nivel 3', () => {

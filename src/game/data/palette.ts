@@ -271,6 +271,22 @@ export const RAMPS = {
     light: '#eec53f',
     hi: '#fff2a8',
   },
+  /**
+   * Madera de astil: los mangos de la guadaña, del arco y de la espada.
+   *
+   * No había ninguna. Estaban `warden` (oro), `plaque` (ámbar) y `enamelStained` (marfil
+   * atabacado), y ninguna de las tres es madera: el oro brilla, el ámbar es enfermedad y el
+   * marfil atabacado es un diente sucio. Un astil de madera al lado de una hoja de acero es
+   * lo que hace que el arma se lea como herramienta y no como pieza de plástico.
+   */
+  wood: {
+    out: '#231309',
+    shade: '#3d2211',
+    dark: '#5c351b',
+    mid: '#82502a',
+    light: '#a8703f',
+    hi: '#c99a67',
+  },
   /** La deidad de la caries y el fondo profundo. */
   void: {
     out: '#04040c',

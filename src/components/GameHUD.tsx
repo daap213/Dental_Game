@@ -7,6 +7,8 @@ import {
   Waves,
   Wind,
   Sword,
+  Target,
+  Scissors,
   Snail,
   ArrowUp,
   ArrowDown,
@@ -17,7 +19,7 @@ import {
   TrendingUp,
   Timer,
 } from 'lucide-react';
-import { Language } from '../types';
+import { Language, type WeaponType } from '../types';
 import { TEXT } from '../i18n';
 import type { HudSnapshot } from '../game/world';
 
@@ -177,12 +179,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({ hud, isMobile, handleTouch, la
               </div>
             </div>
             <div className="text-cyan-400">
-              {hud.weapon === 'normal' && <Rocket className="w-5 h-5 md:w-6 md:h-6" />}
-              {hud.weapon === 'spread' && <Crosshair className="w-5 h-5 md:w-6 md:h-6" />}
-              {hud.weapon === 'laser' && <Zap className="w-5 h-5 md:w-6 md:h-6" />}
-              {hud.weapon === 'mouthwash' && <Waves className="w-5 h-5 md:w-6 md:h-6" />}
-              {hud.weapon === 'floss' && <Wind className="w-5 h-5 md:w-6 md:h-6" />}
-              {hud.weapon === 'toothbrush' && <Sword className="w-5 h-5 md:w-6 md:h-6" />}
+              <WeaponIcon weapon={hud.weapon} />
             </div>
           </div>
         </div>
@@ -352,6 +349,28 @@ export const GameHUD: React.FC<GameHUDProps> = ({ hud, isMobile, handleTouch, la
 };
 
 // Helper Components for Stats
+/**
+ * El icono del arma que se lleva.
+ *
+ * Es un `Record` sobre el union y no una cadena de comparaciones escrita a mano: así, un
+ * arma nueva es un error de compilación y no un hueco vacío en el HUD.
+ */
+const WEAPON_ICONS: Record<WeaponType, React.ComponentType<{ className?: string }>> = {
+  normal: Rocket,
+  spread: Crosshair,
+  laser: Zap,
+  mouthwash: Waves,
+  floss: Wind,
+  toothbrush: Sword,
+  bow: Target,
+  scythe: Scissors,
+};
+
+const WeaponIcon = ({ weapon }: { weapon: WeaponType }) => {
+  const Icon = WEAPON_ICONS[weapon];
+  return <Icon className="w-5 h-5 md:w-6 md:h-6" />;
+};
+
 const StatPill = ({ icon, val }: { icon: React.ReactNode; val: string }) => (
   <div className="pixel-inset flex items-center gap-1 bg-slate-900 px-1.5 py-0.5 border-slate-800">
     {icon}

@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useState } from 'react';
-import { GameState, Entity, Platform, Projectile, WeaponType, InputMethod, Perk, LoadoutType, Language, Difficulty, CharacterType } from '../types';
+import { GameState, Entity, Platform, Projectile, WeaponType, InputMethod, Perk, LoadoutType, Language, Difficulty, CharacterType, type Player, type Rect } from '../types';
 import {
     CANVAS_WIDTH, CANVAS_HEIGHT, GRAVITY, PLAYER_SPEED, PLAYER_JUMP, FRICTION, TERMINAL_VELOCITY,
     PLAYER_DASH_SPEED, PLAYER_DASH_DURATION, PLAYER_DASH_COOLDOWN,
@@ -34,21 +34,49 @@ import {
   collidesWithPlatforms,
 } from '../game/enemies';
 import { spawnProjectile, spawnPowerUp, cullPowerUps } from '../game/weapons';
+import { advanceProjectiles } from '../game/projectiles';
+import { PROJECTILES } from '../game/data/projectiles';
 import { getRandomPerks, applyPerk } from '../game/perks';
 import { getDifficulty } from '../game/data/difficulty';
 import { contactDamageFor, waveInterval, HIDDEN_BOSS, ENEMY_CULL_MARGIN } from '../game/data/enemies';
-import { getFireCooldown, HOMING_DAMAGE_THRESHOLD, MAX_LEVEL } from '../game/data/weapons';
+import { getFireCooldown, MAX_LEVEL } from '../game/data/weapons';
 import { createTriggerState, advanceTriggers, isBossSpeedkill } from '../game/triggers';
 import { claimScoreMilestone, claimKillMilestone } from '../game/progression';
 import { TEXT } from '../i18n';
 import { GameHUD } from './GameHUD';
 
 /**
- * Proyectiles que atraviesan: siguen vivos tras impactar y anotan a quién ya han
- * golpeado en `hitIds`. Está aquí arriba y como Set porque el bucle de colisiones
- * lo consulta una vez por cada par proyectil-enemigo de cada frame.
+ * Si un proyectil atraviesa: sigue vivo tras impactar y anota a quién ya golpeó en
+ * `hitIds`.
+ *
+ * Era un `Set` escrito aquí, separado del resto de la conducta del proyectil y sin
+ * relación de tipos con ella. Ahora sale de la tabla de `game/data/projectiles.ts`, que es
+ * un `Record` sobre las clases de proyectil: una clase nueva a la que se le olvide decir si
+ * atraviesa ya no compila.
  */
-const PIERCING_TYPES = new Set<Projectile['projectileType']>(['laser', 'floss', 'sword', 'wave']);
+const pierces = (proj: Projectile) => PROJECTILES[proj.projectileType].pierce;
+
+/**
+ * Desde dónde llega el golpe, que es lo que decide si la coraza del sarro lo para.
+ *
+ * `applyEnemyDamage` recibía la `x` del proyectil, o sea el **canto izquierdo de su caja**,
+ * y eso está mal en cuanto la caja es grande: el cepillo apuntando a la derecha tiene su
+ * canto izquierdo ochenta píxeles a la *izquierda* del jugador, así que golpear por la
+ * espalda a una coraza que mira a la izquierda se leía como un golpe por su frente y se
+ * bloqueaba. Al rayo de suelo de la deidad, que ocupa el nivel entero, le pasaba con todas.
+ *
+ * Un disparo llega de donde está; un golpe llega de quien lo da.
+ */
+const attackOrigin = (proj: Projectile, player: Player): number =>
+  PROJECTILES[proj.projectileType].anchor.kind === 'free'
+    ? proj.x + proj.w / 2
+    : player.x + player.w / 2;
+
+/** El centro de lo que se solapa, para poner la chispa donde de verdad ha tocado. */
+const overlapCentre = (a: Rect, b: Rect) => ({
+  x: (Math.max(a.x, b.x) + Math.min(a.x + a.w, b.x + b.w)) / 2,
+  y: (Math.max(a.y, b.y) + Math.min(a.y + a.h, b.y + b.h)) / 2,
+});
 
 interface GameCanvasProps {
   onGameOver: (score: number, message: string) => void;
@@ -631,30 +659,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         s.waveTimer = 0;
     }
 
-    s.projectiles.forEach(proj => {
-        if (proj.projectileType === 'sword' || proj.projectileType === 'floss') {
-             if (proj.owner === 'player') {
-                const centerX = p.x + p.w/2; const centerY = p.y + p.h/2;
-                if (proj.projectileType === 'sword') { proj.x = centerX + (proj.vx * 20) - proj.w/2; proj.y = centerY + (proj.vy * 20) - proj.h/2; } 
-                else { const d = Math.max(proj.w, proj.h)/2 + 10; proj.x = centerX + (proj.vx * d) - proj.w/2; proj.y = centerY + (proj.vy * d) - proj.h/2; }
-            }
-        } else if (proj.projectileType !== 'sludge') {
-            proj.x += proj.vx; proj.y += proj.vy;
-            if (proj.projectileType === 'mortar' || proj.projectileType === 'acid') proj.vy += GRAVITY * 0.5;
-            
-            // Curve logic for high damage bullets (Hidden Boss uses this)
-            if (proj.projectileType === 'bullet' && proj.owner === 'enemy' && proj.damage > HOMING_DAMAGE_THRESHOLD) {
-                 const dx = p.x - proj.x; const dy = p.y - proj.y; const dist = Math.sqrt(dx*dx + dy*dy);
-                 if (dist > 0 && dist < 400) { proj.vx += (dx/dist)*0.2; proj.vy += (dy/dist)*0.2; }
-            }
-        }
-        proj.lifeTime -= dt;
-        // Ondulación de las ondas. Se calcula con la vida del propio proyectil y
-        // no con el reloj del sistema: es simulación, y así dos partidas iguales
-        // se comportan igual (misma frecuencia que antes, 20 rad/s).
-        if (proj.projectileType === 'wave') proj.y += Math.sin(proj.lifeTime * 20) * 5;
-    });
-    s.projectiles = s.projectiles.filter(p => p.lifeTime > 0);
+    s.projectiles = advanceProjectiles(s.projectiles, s, dt);
 
     s.enemies.forEach(enemy => {
         enemy.aiTimer += dt; enemy.attackTimer += dt; enemy.frameTimer += dt;
@@ -700,20 +705,47 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         if (proj.owner === 'player') {
             s.enemies.forEach(enemy => {
                 if (enemy.bossVariant === 'phantom' && enemy.bossState === 5) return;
-                const pierces = PIERCING_TYPES.has(proj.projectileType);
-                if (pierces && proj.hitIds.includes(enemy.id)) return;
+                // Un proyectil que ya ha muerto en este mismo frame no sigue golpeando.
+                // Sin esta salida, una bala sin perforación dañaba a **todos** los enemigos
+                // que solapara en el frame en que impactaba: con balas de diez píxeles casi
+                // no se daba, pero con un reventón en medio de un grupo es la norma.
+                if (proj.lifeTime <= 0) return;
+                const pierce = pierces(proj);
+                if (pierce && proj.hitIds.includes(enemy.id)) return;
 
                 if (checkRectCollide(proj, enemy)) {
+                    // Lo que estalla no daña al tocar: se rompe y deja que su reventón lo
+                    // haga. Sin esta salida el frasco cobraría dos veces, y con un frasco de
+                    // daño cero fallaría el test que exige que todo proyectil salga con el
+                    // daño que dice la tabla.
+                    if (PROJECTILES[proj.projectileType].contact === 'trigger') {
+                        proj.lifeTime = 0;
+                        return;
+                    }
                     // El daño pasa por `applyEnemyDamage` porque la coraza del
                     // sarro solo protege por delante: la regla vive en `game/`.
-                    const dealt = applyEnemyDamage(enemy, proj.damage, proj.x);
+                    const dealt = applyEnemyDamage(enemy, proj.damage, attackOrigin(proj, p));
                     const blocked = dealt < proj.damage;
                     enemy.hitTimer = HIT_FLASH;
-                    if (pierces) proj.hitIds.push(enemy.id);
+                    if (pierce) proj.hitIds.push(enemy.id);
                     else proj.lifeTime = 0;
                     // Chispa metálica cuando rebota en la coraza, para que se vea
-                    // que ahí no entra y hay que rodearlo.
-                    spawnParticle(proj.x, proj.y, tone(blocked ? 'metal.hi' : 'enamel.hi'), 3);
+                    // que ahí no entra y hay que rodearlo. En el centro del solape, no en
+                    // la esquina de la caja: en un golpe ancho la esquina queda a cien
+                    // píxeles de donde de verdad ha tocado.
+                    // Lo que salta dice **de qué te han dado**: acero echa chispas, el
+                    // enjuague salpica y las cerdas sueltan una mota clara. Antes eran tres
+                    // chispas del mismo color para las ocho armas.
+                    const spark = overlapCentre(proj, enemy);
+                    const hit = PROJECTILES[proj.projectileType].impact;
+                    spawnParticle(
+                        spark.x,
+                        spark.y,
+                        // El rechazo de la coraza manda sobre el arma: informa de otra cosa
+                        // —que por ahí no entra— y tiene que leerse igual con todas.
+                        tone(blocked ? 'metal.hi' : hit.color),
+                        blocked ? 3 : hit.count
+                    );
                     if (enemy.hp <= 0 && !enemy.dead) {
                         enemy.dead = true;
                         const isHiddenBoss = enemy.bossVariant === HIDDEN_BOSS.variant;
@@ -838,7 +870,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
             if (pu.subType === 'health') { p.hp = Math.min(p.hp + HEALTH_PICKUP, p.maxHp); }
             else {
                 const newWeapon = pu.subType as WeaponType;
-                if (!p.weaponLevels) p.weaponLevels = { normal: 1, spread: 1, laser: 1, mouthwash: 1, floss: 1, toothbrush: 1 };
+                if (!p.weaponLevels) p.weaponLevels = { normal: 1, spread: 1, laser: 1, mouthwash: 1, floss: 1, toothbrush: 1, bow: 1, scythe: 1 };
                 if (p.weapon === newWeapon) {
                     if (p.weaponLevels[newWeapon] < MAX_LEVEL) {
                         p.weaponLevels[newWeapon]++;

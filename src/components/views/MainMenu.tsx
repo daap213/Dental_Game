@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { InputMethod, LoadoutType, Language, Difficulty, CharacterType } from '../../types';
+import { InputMethod, LoadoutType, Language, Difficulty, CharacterType, type WeaponType } from '../../types';
 import {
   Crosshair,
   Globe,
@@ -9,6 +9,8 @@ import {
   MousePointer,
   Rocket,
   Sword,
+  Target,
+  Scissors,
   User,
   Waves,
   Wind,
@@ -18,8 +20,28 @@ import { Credits } from './Credits';
 import { IntelDatabase } from './IntelDatabase';
 import { TEXT } from '../../i18n';
 import { characterSummary } from '../../game/data/characters';
+import { WEAPONS } from '../../game/data/weapons';
 import { PixelPanel, PixelButton, PixelLabel, PixelKey } from '../ui/Pixel';
 import { useFitScale } from '../useFitScale';
+
+/**
+ * Cómo se presenta cada arma en el menú: su icono y su color.
+ *
+ * `Record` sobre el union, así que un arma nueva sin aspecto es un error de compilación.
+ */
+const WEAPON_LOOK: Record<
+  WeaponType,
+  { icon: React.ComponentType<{ className?: string; strokeWidth?: number }>; color: string }
+> = {
+  normal: { icon: Rocket, color: 'text-slate-300' },
+  spread: { icon: Crosshair, color: 'text-blue-400' },
+  laser: { icon: Zap, color: 'text-cyan-400' },
+  mouthwash: { icon: Waves, color: 'text-purple-400' },
+  floss: { icon: Wind, color: 'text-green-400' },
+  toothbrush: { icon: Sword, color: 'text-orange-400' },
+  bow: { icon: Target, color: 'text-amber-400' },
+  scythe: { icon: Scissors, color: 'text-rose-400' },
+};
 
 interface MainMenuProps {
   onStart: () => void;
@@ -65,6 +87,14 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   }
 
   const weapons = TEXT[lang].weapons;
+  /**
+   * Las opciones de equipamiento salen de la lista canónica de armas, no de una lista
+   * escrita a mano aquí.
+   *
+   * Estaban escritas una por una, así que un arma nueva quedaba **inseleccionable** sin que
+   * nada fallara: ni error de compilación, ni test. El aspecto de cada una sí sigue siendo
+   * un dato por arma, pero en un `Record` sobre el union, que sí exige la entrada nueva.
+   */
   const loadoutOptions: Array<{
     id: LoadoutType;
     icon: React.ReactNode;
@@ -77,42 +107,15 @@ export const MainMenu: React.FC<MainMenuProps> = ({
       label: 'ALL',
       color: 'text-white',
     },
-    {
-      id: 'normal',
-      icon: <Rocket className="h-5 w-5" strokeWidth={3} />,
-      label: weapons.normal.name.slice(0, 6),
-      color: 'text-slate-300',
-    },
-    {
-      id: 'spread',
-      icon: <Crosshair className="h-5 w-5" strokeWidth={3} />,
-      label: weapons.spread.name.slice(0, 6),
-      color: 'text-blue-400',
-    },
-    {
-      id: 'laser',
-      icon: <Zap className="h-5 w-5" strokeWidth={3} />,
-      label: weapons.laser.name.slice(0, 6),
-      color: 'text-cyan-400',
-    },
-    {
-      id: 'mouthwash',
-      icon: <Waves className="h-5 w-5" strokeWidth={3} />,
-      label: weapons.mouthwash.name.slice(0, 6),
-      color: 'text-purple-400',
-    },
-    {
-      id: 'floss',
-      icon: <Wind className="h-5 w-5" strokeWidth={3} />,
-      label: weapons.floss.name.slice(0, 6),
-      color: 'text-green-400',
-    },
-    {
-      id: 'toothbrush',
-      icon: <Sword className="h-5 w-5" strokeWidth={3} />,
-      label: weapons.toothbrush.name.slice(0, 6),
-      color: 'text-orange-400',
-    },
+    ...WEAPONS.map((weapon) => ({
+      id: weapon as LoadoutType,
+      icon: React.createElement(WEAPON_LOOK[weapon].icon, {
+        className: 'h-5 w-5',
+        strokeWidth: 3,
+      }),
+      label: weapons[weapon].name.slice(0, 6),
+      color: WEAPON_LOOK[weapon].color,
+    })),
   ];
 
   const difficulties: Array<{ id: Difficulty; label: string; active: string }> = [

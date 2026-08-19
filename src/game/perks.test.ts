@@ -29,7 +29,7 @@ const makePlayer = (overrides: Partial<Player> = {}): Player => ({
   lives: 0,
   weapon: 'normal',
   weaponLevel: 1,
-  weaponLevels: { normal: 1, spread: 1, laser: 1, mouthwash: 1, floss: 1, toothbrush: 1 },
+  weaponLevels: { normal: 1, spread: 1, laser: 1, mouthwash: 1, floss: 1, toothbrush: 1, bow: 1, scythe: 1 },
   ammo: -1,
   score: 0,
   jumpCount: 0,

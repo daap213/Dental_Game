@@ -117,9 +117,12 @@ export const en = {
     normal: { name: 'Normal', desc: 'Standard issue dental drill. Reliable.' },
     spread: { name: 'Spread', desc: 'Shotgun spray. Good for crowds.' },
     laser: { name: 'Laser', desc: 'High-tech curing light. Pierces enemies.' },
-    mouthwash: { name: 'Wave', desc: 'Wave launcher. Pierces walls & foes.' },
-    floss: { name: 'Floss', desc: 'Melee Whip. High damage, short range.' },
-    toothbrush: { name: 'Brush', desc: 'Heavy Sword. Huge arc, deflects.' },
+    mouthwash: { name: 'Flask', desc: 'Lobbed flask. Bursts where it lands.' },
+    floss: { name: 'Floss', desc: 'Glowing whip. Sweeps a wide arc.' },
+    // El «deflects» de antes era ficción: nada desvía nada.
+    toothbrush: { name: 'Brush', desc: 'Bristle sword. Fast sweeping cut.' },
+    bow: { name: 'Bow', desc: 'Floss bow. Fast arrow, pierces a line.' },
+    scythe: { name: 'Scythe', desc: 'Scaler scythe. Slow, wide, heavy.' },
   },
   perk_names: {
     enamel_shield: { name: 'Enamel Shield', desc: 'Grants +25 Max Shield (Toothpaste Barrier).' },
