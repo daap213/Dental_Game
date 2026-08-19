@@ -7,8 +7,15 @@ import { layersFor, type BackgroundLayer } from './stack';
 // el orden de dibujado: de la más lejana a la más cercana.
 import './throat';
 import './clinic';
-import './mouth';
+// El instrumental va **antes** del marco, y esto es lo que lo hace posible.
+//
+// Se dibujaba después, o sea por delante de la encía y de los dientes, y el resultado
+// era un instrumento incrustado en la carne: desde dentro de una boca eso no se puede
+// ver. Lo que hay entre el jugador y el exterior es tejido opaco, así que un
+// instrumento solo asoma **por la abertura**, y la arcada le corta la punta. Detrás del
+// marco, la oclusión sale gratis: no hay que recortar nada, tapa la carne.
 import './props';
+import './mouth';
 
 export { LAYERS, layerById, layersFor, worldLayers } from './stack';
 export type { BackgroundLayer, LayerLayout, TileVariant } from './stack';

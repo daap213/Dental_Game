@@ -1,9 +1,9 @@
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from '../../data/physics';
 import type { PaletteKey } from '../../data/palette';
-import { archSlots, openingAt, toothSizeAt, type ToothSlot } from '../../data/opening';
+import { archSlots, openingAt, toothSizeAt, type Opening, type ToothSlot } from '../../data/opening';
 import type { Decay, StageScene } from '../../data/stages';
 import { bake, blit, pixelBuffer, px, type PixelBuffer } from '../pixel';
-import { BAYER_4 } from '../dither';
+import { BAYER_4, ditherOver } from '../dither';
 import { chance, hash, jitter, spread } from '../noise';
 import { drawSprite } from '../sprites/format';
 import { shadeMask, withDetails } from '../sprites/shade';
@@ -457,6 +457,188 @@ const drawSaliva = (ctx: CanvasRenderingContext2D, scene: StageScene, slots: Too
   }
 };
 
+/**
+ * Lo que se acumula **entre** pieza y pieza.
+ *
+ * El deterioro estaba todo sobre la cara del diente —placa, sarro, manchas, caries— y
+ * ninguno en el hueco interdental, que es justo donde se acumula de verdad y donde un
+ * dentista mira primero. Son cuñas cortas y anchas, no rayas: un tramo largo y fino en
+ * la junta se lee como una grieta en el esmalte.
+ */
+const drawInterdental = (ctx: CanvasRenderingContext2D, scene: StageScene, slots: ToothSlot[]) => {
+  const load = Math.max(scene.decay.plaque, scene.decay.tartar);
+  if (load <= 0.05) return;
+
+  for (const slot of slots) {
+    if (!chance(load * 0.7, slot.cx, 91)) continue;
+    const edge = openingAt(scene.opening, slot.cx);
+    // En la junta con la pieza siguiente, no en su centro.
+    const x = slot.x + slot.size.w - 2;
+    const w = 3 + Math.round(hash(slot.cx, 93) * 3);
+
+    for (const upper of [true, false]) {
+      const from = upper ? Math.round(edge.top) : Math.round(edge.bottom);
+      const deep = 4 + Math.round(hash(slot.cx, upper ? 95 : 97) * 9 * load);
+      for (let i = 0; i < deep; i++) {
+        // Se estrecha al alejarse del canto: una cuña, que es como se deposita.
+        const half = Math.max(1, Math.round((w * (1 - i / deep)) / 2));
+        const y = upper ? from - 1 - i : from + i;
+        px(ctx, x - half, y, half * 2, 1, 'tartarCrust.mid');
+        px(ctx, x - half, y, 1, 1, 'tartarCrust.shade');
+      }
+    }
+  }
+};
+
+/**
+ * La línea de saliva que se queda en el canto de mordida de la arcada inferior.
+ *
+ * La arcada está clavada a la pantalla, así que el charco también: se hornea, y en vivo
+ * solo se le ponen los destellos y las burbujas. Ondula un poco de pieza a pieza —un
+ * nivel perfectamente recto sería un listón— y se rompe donde falta un diente.
+ */
+const drawPool = (ctx: CanvasRenderingContext2D, scene: StageScene) => {
+  if (scene.saliva <= 0) return;
+  const gum = scene.gumRamp;
+
+  for (let x = 0; x < CANVAS_WIDTH; x++) {
+    const edge = openingAt(scene.opening, x);
+    const wave = Math.round(Math.sin(x * 0.07) * 1.6 + Math.sin(x * 0.017) * 2.2);
+    const y = Math.round(edge.bottom) + wave;
+    const thick = 2 + Math.round(scene.saliva * 2);
+    px(ctx, x, y, 1, thick, `${gum}.light`);
+    px(ctx, x, y, 1, 1, `${gum}.hi`);
+  }
+};
+
+/**
+ * Hasta dónde llega el pulso de la respiración por arriba y por abajo.
+ *
+ * Se saca aparte para poder comprobarlo sin dibujar, porque es lo único de todo esto
+ * que puede hacer daño: el pulso apaga la carne, y si alcanzara la franja de juego
+ * (y=210..330) apagaría también al jugador dos veces por ciclo. Un fondo no puede
+ * robarle contraste a lo que se controla.
+ */
+export const breathBands = (opening: Opening) => {
+  const centre = openingAt(opening, CANVAS_WIDTH / 2);
+  const tooth = toothSizeAt(centre.depth).h;
+  return {
+    top: Math.round(centre.top - tooth) - 30,
+    bottom: Math.round(centre.bottom + tooth) + 30,
+  };
+};
+
+/**
+ * La respiración.
+ *
+ * Es lo que más le faltaba al marco, y no es un detalle más: una boca **respira**. La
+ * carne se aclara y se apaga con un ciclo lento, y las comisuras se cierran un poco al
+ * espirar. Sin esto el encuadre estaba correcto pero era una máscara de escayola.
+ *
+ * Solo en la carne, nunca en la abertura: un velo a pantalla completa apagaría al
+ * jugador dos veces por ciclo, y el fondo no puede robarle contraste a lo que se
+ * controla.
+ */
+const drawBreath = (ctx: CanvasRenderingContext2D, scene: StageScene, time: number) => {
+  // Cuatro segundos por ciclo: el ritmo de alguien tumbado con la boca abierta.
+  const cycle = Math.sin(time * 1.55);
+  const level = Math.round(2.5 + cycle * 2.5);
+  if (level <= 0) return;
+
+  const { top, bottom } = breathBands(scene.opening);
+
+  // Bandas anchas y un `ditherOver` por banda: lleva patrón, así que cuesta un relleno.
+  ditherOver(ctx, 0, 0, CANVAS_WIDTH, Math.max(0, top), `${scene.cheekRamp}.out`, level);
+  ditherOver(ctx, 0, bottom, CANVAS_WIDTH, CANVAS_HEIGHT - bottom, `${scene.gumRamp}.shade`, level);
+};
+
+/**
+ * El brillo húmedo que recorre las arcadas.
+ *
+ * Un diente mojado no tiene un brillo fijo: tiene un reflejo que se desplaza. Van en
+ * tramos **cortos y gruesos** repartidos por el canto de mordida, avanzando despacio; un
+ * reflejo largo y de un píxel sería otra vez un arañazo.
+ */
+const drawSheen = (ctx: CanvasRenderingContext2D, scene: StageScene, time: number) => {
+  const tooth = scene.toothRamp;
+
+  for (let i = 0; i < 10; i++) {
+    // Cada reflejo con su propia velocidad, para que no desfilen en formación.
+    const speed = 14 + hash(i, 101) * 18;
+    const x = Math.round((spread(10, i, 103) * CANVAS_WIDTH + time * speed) % CANVAS_WIDTH);
+    const edge = openingAt(scene.opening, x);
+    const upper = i % 2 === 0;
+    const size = toothSizeAt(edge.depth);
+    const y = upper
+      ? Math.round(edge.top - size.h * 0.45)
+      : Math.round(edge.bottom + size.h * 0.35);
+    const run = 5 + Math.round(hash(i, 105) * 5);
+
+    px(ctx, x, y, run, 2, `${tooth}.hi`);
+    px(ctx, x + 1, y + 2, run - 2, 1, `${tooth}.light`);
+  }
+};
+
+/**
+ * El charco vivo: destellos que corren por él y burbujas que crecen y se van.
+ *
+ * La línea del charco está horneada —la arcada está clavada a la pantalla, así que el
+ * charco también—; esto es lo único que se mueve, y es lo que hace que se lea como
+ * líquido en vez de como una franja pintada de claro.
+ */
+const drawPoolLife = (ctx: CanvasRenderingContext2D, scene: StageScene, time: number) => {
+  if (scene.saliva <= 0) return;
+  const gum = scene.gumRamp;
+
+  const surfaceAt = (x: number) => {
+    const edge = openingAt(scene.opening, x);
+    return Math.round(edge.bottom) + Math.round(Math.sin(x * 0.07) * 1.6 + Math.sin(x * 0.017) * 2.2);
+  };
+
+  // Destellos deslizándose por la superficie.
+  for (let i = 0; i < 8; i++) {
+    const x = Math.round((spread(8, i, 107) * CANVAS_WIDTH + time * (9 + hash(i, 109) * 12)) % CANVAS_WIDTH);
+    px(ctx, x, surfaceAt(x), 4 + Math.round(hash(i, 111) * 4), 1, `${gum}.hi`);
+  }
+
+  // Burbujas: nacen, engordan y desaparecen.
+  for (let i = 0; i < 16; i++) {
+    const life = (time / 2.7 + hash(i, 113)) % 1;
+    if (life > 0.72) continue;
+    const x = Math.round(spread(16, i, 115) * CANVAS_WIDTH);
+    const r = 1 + Math.round((life / 0.72) * 2 * scene.saliva);
+    const y = surfaceAt(x) - r;
+    px(ctx, x - r, y, r * 2, r + 1, `${gum}.light`);
+    px(ctx, x - r + 1, y, r, 1, `${gum}.hi`);
+  }
+};
+
+/**
+ * Espuma en las comisuras.
+ *
+ * En una boca abierta y aspirada la saliva se bate y se junta en los ángulos. Son
+ * cúmulos de burbujas diminutas, y le dan a la esquina algo que mirar: hasta ahora era
+ * el único trozo del cuadro completamente vacío.
+ */
+const drawFoam = (ctx: CanvasRenderingContext2D, scene: StageScene, time: number) => {
+  if (scene.saliva <= 0) return;
+  const gum = scene.gumRamp;
+
+  for (const side of [0, 1]) {
+    for (let i = 0; i < 11; i++) {
+      const seed = i + side * 17;
+      const drift = Math.sin(time * 0.6 + seed) * 3;
+      const near = 16 + spread(11, i, 117) * 54;
+      const x = Math.round(side === 0 ? near : CANVAS_WIDTH - near);
+      const edge = openingAt(scene.opening, x);
+      const y = Math.round(edge.bottom + 6 + hash(seed, 119) * 26 + drift);
+      const r = 1 + Math.round(hash(seed, 121) * 2);
+      px(ctx, x - r, y - r, r * 2, r * 2, `${gum}.light`);
+      px(ctx, x - r, y - r, r, 1, `${gum}.hi`);
+    }
+  }
+};
+
 export const mouthLayer = registerLayer({
   id: 'mouth',
   // Enmarca la escena, no está dentro de ella: va clavada a la pantalla.
@@ -515,7 +697,10 @@ export const mouthLayer = registerLayer({
         );
       }
 
-      // 3. Saliva, por delante de los dientes.
+      // 3. Lo que se acumula entre pieza y pieza, el charco del canto inferior, y la
+      //    saliva pegada a las caras, todo por delante de los dientes.
+      drawInterdental(ctx, scene, slots);
+      drawPool(ctx, scene);
       drawSaliva(ctx, scene, slots);
 
       // 4. Las comisuras: el velo casi negro de las esquinas. Va al final, por encima
@@ -548,4 +733,20 @@ export const mouthLayer = registerLayer({
     }),
 
   layout: () => ({ y: 0, w: CANVAS_WIDTH, h: CANVAS_HEIGHT, align: 'left' }),
+
+  /**
+   * Lo que hace que el marco esté vivo, y no solo bien dibujado.
+   *
+   * Va aquí y no en `props` porque todo esto pasa **por delante** de los dientes: el
+   * reflejo está en su cara, la espuma en la comisura y la respiración en la carne, y
+   * `props` se dibuja detrás del marco justamente para quedar oculto por él.
+   *
+   * `time` son segundos de simulación, así que al pausar la boca deja de respirar.
+   */
+  live: (ctx, scene, { time }) => {
+    drawBreath(ctx, scene, time);
+    drawSheen(ctx, scene, time);
+    drawPoolLife(ctx, scene, time);
+    drawFoam(ctx, scene, time);
+  },
 });

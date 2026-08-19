@@ -21,6 +21,169 @@ import { registerLayer } from './stack';
 /** Alto del azulejo, con su junta. */
 const TILE = 26;
 
+/**
+ * El suelo del quirófano, y de dónde cuelga la unidad.
+ *
+ * Se exporta porque `props.ts` dibuja **en vivo** las mangueras y sus instrumentos
+ * —para que se balanceen— y necesita clavarlas en el mismo brazo que hornea esta capa.
+ * Si cada uno calculara su altura por su cuenta, un ajuste en una las descolgaría de
+ * la otra sin que nada avisara.
+ */
+export const CLINIC_FLOOR = CANVAS_HEIGHT - 65;
+export const CLINIC_UNIT_X = Math.round(CANVAS_WIDTH * 0.55);
+/** De dónde nacen las mangueras. */
+export const CLINIC_HOSE_Y = CLINIC_FLOOR - 146;
+
+/**
+ * Sombra proyectada, tramada.
+ *
+ * Es lo que le faltaba al quirófano. Tenía mobiliario de sobra pero **todo al mismo
+ * valor**: pared, suelo y objetos con la misma claridad, de modo que la sala se leía
+ * como un plano técnico y no como un sitio con volumen. Una sombra pegada a la base de
+ * cada cosa la despega del fondo mejor que cualquier detalle añadido encima.
+ */
+const groundShadow = (
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  y: number,
+  halfW: number,
+  depth = 12
+) => {
+  for (let i = 0; i < depth; i++) {
+    const t = i / depth;
+    const half = Math.round(halfW * (1 - t * 0.35));
+    ditherOver(ctx, cx - half, y + i, half * 2, 1, 'clinic.out', Math.round(11 - t * 9));
+  }
+};
+
+/**
+ * Sombra de un objeto colgado en la pared: una **ele** por su derecha y su bajo.
+ *
+ * Se dibuja solo en la parte que sobresale del objeto, nunca encima: un rectángulo
+ * desplazado y sin recortar ensucia la mitad de la pieza que pretende despegar.
+ */
+const wallShadow = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  off = 5
+) => {
+  ditherOver(ctx, x + w, y + off, off, h, 'clinic.out', 8);
+  ditherOver(ctx, x + off, y + h, w, off, 'clinic.out', 8);
+};
+
+/**
+ * Lo que va **debajo** de todo: la mugre del azulejo y el despeje del suelo.
+ *
+ * Tiene que dibujarse antes del mobiliario. Un velo de suciedad estampado al final
+ * pasa por encima del sillón y de la unidad y los apaga a todos por igual, que es
+ * justo el problema que venía a resolver.
+ */
+const drawRoomBase = (ctx: CanvasRenderingContext2D, floor: number) => {
+  // Manchas en el azulejo, más densas cerca del suelo: una pared perfectamente limpia
+  // de arriba abajo se lee como papel, no como una sala en uso.
+  for (let i = 0; i < 40; i++) {
+    const x = Math.round(spread(40, i, 31) * CANVAS_WIDTH);
+    const y = Math.round(hash(i, 33) ** 0.6 * floor);
+    const w = 14 + Math.round(hash(i, 35) * 40);
+    const h = 8 + Math.round(hash(i, 37) * 22);
+    ditherOver(ctx, x - w, y, w * 2, h, 'clinic.out', 3 + Math.round((y / floor) * 4));
+  }
+
+  // El suelo en fuga: las juntas se juntan al alejarse y abren en abanico desde el
+  // punto de fuga. Es lo que convierte la banda del suelo en un plano y no en una
+  // tira de color, y por tanto lo que hace que el sillón se apoye en algo.
+  const vpX = Math.round(CANVAS_WIDTH * 0.5);
+  const depth = CANVAS_HEIGHT - floor;
+  for (let j = 1; j < 7; j++) {
+    const y = floor + Math.round(depth * (j / 6) ** 1.7);
+    px(ctx, 0, y, CANVAS_WIDTH, 1, 'clinic.dark');
+  }
+  for (let c = -9; c <= 9; c++) {
+    if (c === 0) continue;
+    for (let i = 0; i < depth; i++) {
+      const t = i / depth;
+      const x = vpX + Math.round(c * 34 * (0.18 + t * 1.9));
+      if (x < 0 || x >= CANVAS_WIDTH) break;
+      px(ctx, x, floor + i, 1, 1, 'clinic.dark');
+    }
+  }
+};
+
+/**
+ * Lo que va **encima** de todo: sombras proyectadas, remates de pared y la viñeta.
+ *
+ * Este es el paso que le faltaba al quirófano. Tenía mobiliario de sobra, pero sin
+ * sombras ni esquinas oscuras todo caía en el mismo valor y la sala se leía como un
+ * plano técnico: objetos correctos flotando sobre un fondo del mismo tono.
+ */
+const drawRoomDepth = (ctx: CanvasRenderingContext2D, floor: number) => {
+  // --- Sombras en el suelo, bajo lo que se apoya en él ---
+  groundShadow(ctx, Math.round(CANVAS_WIDTH * 0.37), floor, 42, 14);
+  groundShadow(ctx, Math.round(CANVAS_WIDTH * 0.2), floor, 30, 11);
+  groundShadow(ctx, CLINIC_UNIT_X, floor, 16, 10);
+  groundShadow(ctx, CANVAS_WIDTH - 90, floor, 12, 9);
+  groundShadow(ctx, Math.round(CANVAS_WIDTH * 0.9) + 15, floor, 22, 10);
+
+  // --- Sombras de lo que cuelga de la pared ---
+  wallShadow(ctx, Math.round(CANVAS_WIDTH * 0.08), 96, 96, 74);
+  wallShadow(ctx, Math.round(CANVAS_WIDTH * 0.66), 108, 78, 96);
+  wallShadow(ctx, CANVAS_WIDTH - 120, floor - 190, 60, 74);
+  wallShadow(ctx, Math.round(CANVAS_WIDTH * 0.78), floor - 78, 116, 30, 4);
+
+  // --- Reloj de pared: en toda consulta hay uno, y se lee a cualquier tamaño ---
+  const clockX = Math.round(CANVAS_WIDTH * 0.45);
+  const clockY = 52;
+  for (let dy = -14; dy <= 14; dy++) {
+    const half = Math.round(Math.sqrt(Math.max(0, 196 - dy * dy)));
+    px(ctx, clockX - half, clockY + dy, half * 2, 1, 'clinic.out');
+    if (half > 2) px(ctx, clockX - half + 2, clockY + dy, half * 2 - 4, 1, 'clinic.light');
+  }
+  px(ctx, clockX - 1, clockY - 8, 2, 9, 'clinic.out');
+  px(ctx, clockX, clockY - 1, 7, 2, 'clinic.out');
+
+  // --- Dispensador de guantes, y una caja de mascarillas debajo ---
+  const dispX = 232;
+  px(ctx, dispX, 186, 26, 34, 'clinic.mid');
+  px(ctx, dispX, 186, 26, 3, 'clinic.light');
+  px(ctx, dispX + 6, 200, 14, 12, 'clinic.out');
+  px(ctx, dispX + 8, 203, 9, 6, 'clinic.hi');
+  wallShadow(ctx, dispX, 186, 26, 34, 3);
+
+  // --- Canaleta de instalaciones bajando por la pared, con sus bridas ---
+  px(ctx, 12, 16, 9, floor - 16, 'clinic.dark');
+  px(ctx, 12, 16, 2, floor - 16, 'clinic.mid');
+  for (let y = 40; y < floor - 10; y += 58) px(ctx, 9, y, 15, 4, 'clinic.shade');
+
+  // --- Enchufe junto al zócalo, y un desagüe en el suelo ---
+  px(ctx, 108, floor - 26, 14, 16, 'clinic.light');
+  px(ctx, 111, floor - 22, 3, 5, 'clinic.out');
+  px(ctx, 116, floor - 22, 3, 5, 'clinic.out');
+  const drainX = Math.round(CANVAS_WIDTH * 0.5);
+  px(ctx, drainX - 13, floor + 26, 26, 12, 'clinic.dark');
+  for (let i = 0; i < 5; i++) px(ctx, drainX - 10 + i * 5, floor + 28, 3, 8, 'clinic.out');
+
+  // --- Viñeta: las esquinas de la sala, apagadas ---
+  // Por píxel, no por bloques: la matriz de trama está anclada a coordenadas absolutas,
+  // así que una caída hecha de tiras de un píxel sale a rayas en vez de a degradado.
+  const buf = pixelBuffer(ctx, CANVAS_WIDTH, CANVAS_HEIGHT);
+  const cx = CANVAS_WIDTH / 2;
+  const cyv = CANVAS_HEIGHT / 2;
+  for (let y = 0; y < CANVAS_HEIGHT; y++) {
+    for (let x = 0; x < CANVAS_WIDTH; x++) {
+      const u = (x - cx) / cx;
+      const v = (y - cyv) / cyv;
+      const d = Math.sqrt(u * u * 0.85 + v * v * 0.3);
+      if (d < 0.66) continue;
+      const level = 14 * Math.min(1, (d - 0.66) / 0.5) ** 1.5;
+      if (BAYER_4[y & 3][x & 3] < level) buf.set(x, y, 'clinic.out');
+    }
+  }
+  buf.commit();
+};
+
 /** Dónde cae el foco dentro de la abertura, en fracción de pantalla. */
 const LAMP_X = 0.56;
 
@@ -245,13 +408,98 @@ const drawTheatre = (ctx: CanvasRenderingContext2D, floor: number) => {
   const viewX = Math.round(CANVAS_WIDTH * 0.08);
   px(ctx, viewX, 96, 96, 74, 'clinic.out');
   px(ctx, viewX + 3, 99, 90, 68, 'glare.light');
-  px(ctx, viewX + 3, 99, 90, 68, 'glare.light');
   // Dos radiografías clavadas: siluetas oscuras de muelas a contraluz.
   for (const ox of [10, 52]) {
     px(ctx, viewX + ox, 106, 32, 54, 'clinic.shade');
     for (let i = 0; i < 3; i++) {
       px(ctx, viewX + ox + 4 + i * 10, 116, 7, 22, 'clinic.out');
       px(ctx, viewX + ox + 6 + i * 10, 138, 3, 14, 'clinic.out');
+    }
+  }
+
+  // --- Techo: estructura, rejilla de ventilación y dos plafones ---
+  px(ctx, 0, 0, CANVAS_WIDTH, 14, 'clinic.shade');
+  px(ctx, 0, 14, CANVAS_WIDTH, 2, 'clinic.out');
+  for (let x = 20; x < CANVAS_WIDTH; x += 96) px(ctx, x, 0, 3, 14, 'clinic.dark');
+  // Rejilla.
+  px(ctx, 120, 2, 66, 11, 'clinic.out');
+  for (let i = 0; i < 6; i++) px(ctx, 123 + i * 11, 4, 6, 7, 'clinic.dark');
+  // Plafones: dos paneles encendidos, que es de donde viene la luz general.
+  for (const lx of [Math.round(CANVAS_WIDTH * 0.24), Math.round(CANVAS_WIDTH * 0.8)]) {
+    px(ctx, lx - 46, 16, 92, 9, 'clinic.out');
+    px(ctx, lx - 43, 18, 86, 5, 'glare.light');
+    px(ctx, lx - 40, 19, 80, 2, 'glare.hi');
+    // Y su derrame en la pared, justo debajo.
+    for (let i = 0; i < 26; i++) {
+      ditherOver(ctx, lx - 46 - i, 25 + i, 92 + i * 2, 1, 'glare.dark', Math.round(5 - i / 6));
+    }
+  }
+
+  // --- La unidad: solo el brazo ---
+  // Las mangueras y los instrumentos que cuelgan de ella **no se hornean**: se dibujan
+  // en vivo desde `props.ts` para que se balanceen. Horneadas quedaban clavadas, y en
+  // una sala en la que nada más se mueve eso es lo primero que la delata como decorado.
+  const unitX = CLINIC_UNIT_X;
+  px(ctx, unitX - 4, floor - 150, 8, 150, 'clinic.dark');
+  px(ctx, unitX - 4, floor - 150, 2, 150, 'clinic.mid');
+  px(ctx, unitX - 30, floor - 158, 60, 12, 'clinic.shade');
+  px(ctx, unitX - 30, floor - 158, 60, 2, 'clinic.light');
+  // Los tres enganches, de los que nacen las mangueras.
+  for (let h = 0; h < 3; h++) px(ctx, unitX - 22 + h * 18, floor - 148, 7, 4, 'clinic.mid');
+
+  // --- El taburete del dentista ---
+  const stoolX = Math.round(CANVAS_WIDTH * 0.2);
+  for (let dy = 0; dy < 9; dy++) {
+    const half = Math.round(24 - dy * 0.8);
+    px(ctx, stoolX - half, floor - 76 + dy, half * 2, 1, dy < 2 ? 'clinic.light' : 'clinic.mid');
+  }
+  px(ctx, stoolX - 4, floor - 68, 8, 44, 'clinic.shade');
+  for (const leg of [-1, 1]) {
+    for (let i = 0; i < 22; i++) {
+      px(ctx, stoolX + leg * (2 + i), floor - 24 + Math.round(i * 0.9), 3, 3, 'clinic.dark');
+    }
+  }
+
+  // --- Lavabo con su espejo ---
+  const sinkX = CANVAS_WIDTH - 90;
+  px(ctx, sinkX - 34, floor - 86, 68, 18, 'clinic.light');
+  px(ctx, sinkX - 30, floor - 82, 60, 10, 'clinic.shade');
+  px(ctx, sinkX - 6, floor - 68, 12, 30, 'clinic.mid');
+  // Grifo.
+  px(ctx, sinkX - 2, floor - 108, 4, 22, 'metal.mid');
+  px(ctx, sinkX - 2, floor - 108, 18, 4, 'metal.light');
+  // Espejo encima, con su marco.
+  px(ctx, sinkX - 30, floor - 190, 60, 74, 'clinic.out');
+  px(ctx, sinkX - 27, floor - 187, 54, 68, 'clinic.mid');
+  px(ctx, sinkX - 25, floor - 185, 20, 60, 'clinic.light');
+
+  // --- Contenedor de punzantes y papelera ---
+  px(ctx, Math.round(CANVAS_WIDTH * 0.9), floor - 44, 30, 44, 'warden.dark');
+  px(ctx, Math.round(CANVAS_WIDTH * 0.9), floor - 44, 30, 6, 'warden.mid');
+  px(ctx, Math.round(CANVAS_WIDTH * 0.9) + 10, floor - 40, 10, 3, 'clinic.out');
+
+  // --- Cartel de anatomía dental en la pared ---
+  const chartX = Math.round(CANVAS_WIDTH * 0.66);
+  px(ctx, chartX, 108, 78, 96, 'clinic.light');
+  px(ctx, chartX, 108, 78, 3, 'clinic.hi');
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 6; c++) {
+      px(ctx, chartX + 6 + c * 11, 118 + r * 28, 7, 16, 'clinic.shade');
+      px(ctx, chartX + 8 + c * 11, 134 + r * 28, 3, 6, 'clinic.dark');
+    }
+  }
+
+  // Sin puerta al fondo: la que había, centrada, era una losa oscura de suelo a techo
+  // que partía la escena en dos y tapaba el sillón y la lámpara. Una escena densa no
+  // necesita todo lo que quepa; necesita que se lea.
+
+  // --- Reflejos en el suelo ---
+  // El gres devuelve las luces del techo en columnas difusas: es lo que le da
+  // profundidad a una banda que si no es un plano muerto.
+  for (const lx of [Math.round(CANVAS_WIDTH * 0.24), Math.round(CANVAS_WIDTH * 0.8)]) {
+    for (let i = 0; i < 46; i++) {
+      const half = Math.round(30 + i * 0.7);
+      ditherOver(ctx, lx - half, floor + i, half * 2, 1, 'glare.light', Math.round(6 - i / 8));
     }
   }
 };
@@ -277,14 +525,16 @@ export const clinicLayer = registerLayer({
         // Fuera de la boca: la clínica **es** el escenario, así que se dibuja entera y
         // el suelo llega abajo del todo, no a la altura del canto de una abertura que
         // aquí no existe.
-        const room = CANVAS_HEIGHT - 60;
+        const room = CLINIC_FLOOR + 5;
         drawTiles(ctx, 0, room);
-        ditherFill(ctx, 0, room, CANVAS_WIDTH, CANVAS_HEIGHT - room, 'clinic.out', 'clinic.shade', 8);
+        ditherFill(ctx, 0, room, CANVAS_WIDTH, CANVAS_HEIGHT - room, 'clinic.dark', 'clinic.shade', 8);
         // Zócalo: separa la pared del suelo, que si no se funden en una sola masa.
-        px(ctx, 0, room - 5, CANVAS_WIDTH, 5, 'clinic.shade');
-        px(ctx, 0, room - 5, CANVAS_WIDTH, 1, 'clinic.mid');
-        drawFurniture(ctx, room - 5);
-        drawTheatre(ctx, room - 5);
+        px(ctx, 0, CLINIC_FLOOR, CANVAS_WIDTH, 5, 'clinic.shade');
+        px(ctx, 0, CLINIC_FLOOR, CANVAS_WIDTH, 1, 'clinic.mid');
+        drawRoomBase(ctx, CLINIC_FLOOR);
+        drawFurniture(ctx, CLINIC_FLOOR);
+        drawTheatre(ctx, CLINIC_FLOOR);
+        drawRoomDepth(ctx, CLINIC_FLOOR);
       } else if (through !== 'gap') {
         drawTiles(ctx, 0, floor);
         ditherFill(ctx, 0, floor, CANVAS_WIDTH, CANVAS_HEIGHT - floor, 'clinic.out', 'clinic.shade', 7);
@@ -294,9 +544,13 @@ export const clinicLayer = registerLayer({
       }
 
       // 2. El foco. Es la pieza que da el contraste; su fuerza cambia por fase.
-      const strength = through === 'gap' ? 0.6 : through === 'grime' ? 0.55 : 0.8;
+      // En el quirófano los plafones del techo ya iluminan, así que el foco baja: a
+      // plena potencia lavaba el centro y se comía la unidad y el sillón.
+      const strength =
+        scene.zone === 'clinic' ? 0.45 : through === 'gap' ? 0.6 : through === 'grime' ? 0.55 : 0.8;
       const glow = pixelBuffer(ctx, CANVAS_WIDTH, CANVAS_HEIGHT);
-      drawGlare(glow, lampX, cy - 20, 150, 108, strength);
+      const glareR = scene.zone === 'clinic' ? 108 : 150;
+      drawGlare(glow, lampX, cy - 20, glareR, Math.round(glareR * 0.72), strength);
       glow.commit();
 
       // 3. Quien se asoma.

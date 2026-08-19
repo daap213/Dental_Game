@@ -134,7 +134,7 @@ export const STAGE_SCENES: readonly StageScene[] = [
     gumRamp: 'gum',
     toothRamp: 'enamel',
     cheekRamp: 'mucosa',
-    layers: ['throat', 'clinic', 'mouth', 'props'],
+    layers: ['throat', 'clinic', 'props', 'mouth'],
     // Al fondo de la boca: la abertura es un resquicio lejano y la herradura se
     // cierra casi del todo.
     opening: { halfW: 0.5, halfH: 70, cy: 262, taper: 0.5, drop: 72 },
@@ -158,7 +158,7 @@ export const STAGE_SCENES: readonly StageScene[] = [
     gumRamp: 'gumSick',
     toothRamp: 'enamel',
     cheekRamp: 'mucosa',
-    layers: ['throat', 'clinic', 'mouth', 'props'],
+    layers: ['throat', 'clinic', 'props', 'mouth'],
     // Premolares: la abertura ya deja ver el foco.
     opening: { halfW: 0.5, halfH: 78, cy: 256, taper: 0.4, drop: 62 },
     throughOpening: 'lamp',
@@ -180,7 +180,7 @@ export const STAGE_SCENES: readonly StageScene[] = [
     gumRamp: 'gumSick',
     toothRamp: 'enamelStained',
     cheekRamp: 'mucosa',
-    layers: ['throat', 'clinic', 'mouth', 'props'],
+    layers: ['throat', 'clinic', 'props', 'mouth'],
     // Incisivos: la boca está bien abierta y por el hueco cabe el dentista entero.
     opening: { halfW: 0.5, halfH: 92, cy: 248, taper: 0.26, drop: 48 },
     throughOpening: 'dentist',
@@ -206,7 +206,7 @@ export const STAGE_SCENES: readonly StageScene[] = [
     gumRamp: 'gumSick',
     toothRamp: 'enamelStained',
     cheekRamp: 'mucosa',
-    layers: ['throat', 'clinic', 'mouth', 'props'],
+    layers: ['throat', 'clinic', 'props', 'mouth'],
     // Infección profunda: la boca a medio cerrar. La abertura se achata y la luz que
     // entra está sucia.
     opening: { halfW: 0.5, halfH: 68, cy: 264, taper: 0.55, drop: 78 },
