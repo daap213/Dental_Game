@@ -26,7 +26,7 @@ import { bossSprite, bossSpriteId } from './bosses';
 import { drawProjectiles, drawHeldWeapon, drawPowerUp } from './weapons';
 import { armPose } from './pose';
 import { drawBackground } from './background';
-import { drawPlatforms } from './level';
+import { drawPlatforms, drawTransition } from './level';
 import { drawParticles } from './particles';
 import { drawCreditsScene, CREDITS_W, CREDITS_H } from './credits';
 import type { EnemyPose } from './pose';
@@ -318,14 +318,15 @@ const terrainItems = (): PreviewItem[] => [
  * píxel —los contornos— y deja de parecerse a lo que se ve jugando. Es el mismo
  * criterio que la escena de créditos, que también se enseña a tamaño completo.
  */
-const stageItems = (): PreviewItem[] =>
-  STAGE_PALETTES.map((palette, index) => ({
+const stageItems = (): PreviewItem[] => [
+  ...STAGE_PALETTES.map((palette, index) => ({
     id: `stage:${index + 1}`,
     key: palette.id,
     w: CANVAS_WIDTH,
     h: CANVAS_HEIGHT,
-    draw: (ctx, t) => drawBackground(ctx, 0, index + 1, t),
-  }));
+    draw: (ctx: CanvasRenderingContext2D, t: number) => drawBackground(ctx, 0, index + 1, t),
+  })),
+];
 
 // --- Efectos ---------------------------------------------------------------
 
@@ -424,6 +425,26 @@ const sceneItems = (): PreviewItem[] => [
     h: CREDITS_H,
     draw: (ctx, t) => drawCreditsScene(ctx, t),
   },
+  /**
+   * La mordida de cada fase, sobre su propio fondo.
+   *
+   * Está aquí porque **solo se ve al terminar una fase**, o sea después de matar
+   * a un jefe: revisarla a mano cuesta una partida entera por variante, y por eso
+   * pudo pasar tanto tiempo dibujada con dientes que no eran los del escenario.
+   * El ciclo se recorre solo, para verla abrir y cerrar.
+   */
+  ...STAGE_PALETTES.map((palette, index) => ({
+    id: `bite:${index + 1}`,
+    key: `${palette.id} · bite`,
+    w: CANVAS_WIDTH,
+    h: CANVAS_HEIGHT,
+    draw: (ctx: CanvasRenderingContext2D, t: number) => {
+      drawBackground(ctx, 0, index + 1, t);
+      // Vaivén de cinco segundos: cierra, aguanta un momento y abre.
+      const cycle = (t % 5) / 5;
+      drawTransition(ctx, cycle < 0.5 ? cycle * 2 : (1 - cycle) * 2, index + 1);
+    },
+  })),
 ];
 
 // --- Materiales ------------------------------------------------------------

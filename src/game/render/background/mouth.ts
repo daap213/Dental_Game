@@ -1,6 +1,12 @@
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from '../../data/physics';
 import type { PaletteKey } from '../../data/palette';
-import { archSlots, openingAt, toothSizeAt, type Opening, type ToothSlot } from '../../data/opening';
+import {
+  archSlots,
+  openingAt,
+  toothSizeAt,
+  type Opening,
+  type ToothSlot,
+} from '../../data/opening';
 import type { Decay, StageScene } from '../../data/stages';
 import { bake, blit, pixelBuffer, px, type PixelBuffer } from '../pixel';
 import { BAYER_4, ditherOver } from '../dither';
@@ -60,7 +66,18 @@ const veil = (
   }
 };
 
-/** Hornea un diente de la arcada, ya con su deterioro. */
+/**
+ * Hornea un diente de la arcada, ya con su deterioro.
+ *
+ * **Se exporta** porque la transición entre fases muerde con estos mismos
+ * dientes. Antes tenía los suyos propios —una silueta genérica de esmalte, sin
+ * deterioro y del mismo tamaño toda la fila—, así que la mordida no se parecía
+ * a la boca en la que estabas: cerrabas los ojos en un quirófano lleno de sarro
+ * y te mordía una dentadura sana de catálogo.
+ */
+export const archTooth = (scene: StageScene, slot: ToothSlot, upper: boolean, variant: number) =>
+  toothCanvas(scene, slot, upper, variant);
+
 const toothCanvas = (scene: StageScene, slot: ToothSlot, upper: boolean, variant: number) => {
   const { w, h } = slot.size;
   const id = `bg:${scene.id}:tooth:${upper ? 'u' : 'l'}:${slot.kind}:${w}x${h}:${variant}`;
@@ -592,12 +609,16 @@ const drawPoolLife = (ctx: CanvasRenderingContext2D, scene: StageScene, time: nu
 
   const surfaceAt = (x: number) => {
     const edge = openingAt(scene.opening, x);
-    return Math.round(edge.bottom) + Math.round(Math.sin(x * 0.07) * 1.6 + Math.sin(x * 0.017) * 2.2);
+    return (
+      Math.round(edge.bottom) + Math.round(Math.sin(x * 0.07) * 1.6 + Math.sin(x * 0.017) * 2.2)
+    );
   };
 
   // Destellos deslizándose por la superficie.
   for (let i = 0; i < 8; i++) {
-    const x = Math.round((spread(8, i, 107) * CANVAS_WIDTH + time * (9 + hash(i, 109) * 12)) % CANVAS_WIDTH);
+    const x = Math.round(
+      (spread(8, i, 107) * CANVAS_WIDTH + time * (9 + hash(i, 109) * 12)) % CANVAS_WIDTH
+    );
     px(ctx, x, surfaceAt(x), 4 + Math.round(hash(i, 111) * 4), 1, `${gum}.hi`);
   }
 

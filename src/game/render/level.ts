@@ -2,12 +2,14 @@ import type { Platform } from '../../types';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../data/physics';
 import type { PaletteKey } from '../data/palette';
 import { getStageScene } from '../data/stages';
+import { archSlots, openingAt } from '../data/opening';
+import { archTooth } from './background/mouth';
 import { px, blit, bake } from './pixel';
 import { ditherFill, ditherOver } from './dither';
-import { hash, hashInt, spread } from './noise';
+import { chance, hash, hashInt, jitter, spread } from './noise';
 import { drawSprite } from './sprites/format';
 import { shadeMask } from './sprites/shade';
-import { rect, merge, ellipse } from './sprites/masks/shapes';
+import { rect } from './sprites/masks/shapes';
 
 /**
  * Plataformas y transición entre fases.
@@ -178,11 +180,7 @@ const bracesTile = (variant: number, stage: number) =>
     px(ctx, bx + 2, 12, 10, 2, elastic);
   });
 
-export const drawPlatforms = (
-  ctx: CanvasRenderingContext2D,
-  platforms: Platform[],
-  stage = 1
-) => {
+export const drawPlatforms = (ctx: CanvasRenderingContext2D, platforms: Platform[], stage = 1) => {
   const inClinic = getStageScene(stage).zone === 'clinic';
 
   platforms.forEach((p) => {
@@ -208,86 +206,126 @@ export const drawPlatforms = (
 
 // --- Transición entre fases ------------------------------------------------
 
-const JAW_TOOTH_W = 40;
-const JAW_TOOTH_H = 56;
+/**
+ * La mordida que cierra una fase.
+ *
+ * **Muerde con los dientes de la fase en la que estás**, no con una dentadura
+ * propia. Antes tenía su propio diente —una silueta genérica de esmalte, cuatro
+ * variantes, todos del mismo tamaño y sin rastro del deterioro— así que en el
+ * sarro o en el quirófano te mordía una boca sana que no era la del escenario.
+ * Ahora sale de `archSlots()` y de `archTooth()`, exactamente lo mismo que dibuja
+ * la arcada del fondo: mismos tamaños por posición, mismo tipo de pieza, misma
+ * rampa, mismo deterioro y **los mismos huecos** donde a esa fase le faltan
+ * piezas.
+ *
+ * La curva también es la suya: cada columna se desplaza según la curvatura que
+ * `openingAt` da en ese punto, así que la fila cierra con el mismo arco que tiene
+ * la boca abierta detrás.
+ */
 
-const JAW_VARIANTS = 4;
+/**
+ * El festón de encía del que nace cada pieza.
+ *
+ * **El mismo valor que usa la arcada del fondo** (`SCALLOP` en `mouth.ts`), y no
+ * es una coincidencia que haya que mantener: con un valor propio y más alto, los
+ * arcos de encía salían como globos rojos entre los dientes en vez de como el
+ * borde del que cuelgan. Si allí cambia, aquí también.
+ */
+const JAW_SCALLOP = 7;
 
-const jawTooth = (isTop: boolean, variant: number) =>
-  bake(`jaw:tooth:${isTop ? 'top' : 'bottom'}:${variant}`, JAW_TOOTH_W, JAW_TOOTH_H, (ctx) => {
-    // Una o dos cúspides, y la corona más o menos ancha: cuatro variantes bastan
-    // para que la mordida no parezca una cremallera.
-    const twin = hash(variant, 71) > 0.35;
-    const rx = twin ? 12 : 17;
-    const crown = twin
-      ? merge(
-          ellipse(JAW_TOOTH_W, JAW_TOOTH_H, 13, 22, rx, 18),
-          ellipse(JAW_TOOTH_W, JAW_TOOTH_H, 27, 22, rx, 18),
-          rect(JAW_TOOTH_W, JAW_TOOTH_H, 2, 14, 36, 26)
-        )
-      : merge(
-          ellipse(JAW_TOOTH_W, JAW_TOOTH_H, 20, 22, rx, 19),
-          rect(JAW_TOOTH_W, JAW_TOOTH_H, 3, 14, 34, 26)
-        );
-    const root = rect(JAW_TOOTH_W, JAW_TOOTH_H, 10, 34, 20, 22, 6);
-    const shape = merge(crown, root);
-    const oriented = isTop ? shape : [...shape].reverse();
-    drawSprite(ctx, `jaw:tooth:art:${isTop}:${variant}`, shadeMask(oriented, 'enamel'), 0, 0);
-  });
+/** Margen para que las arcadas entren y salgan de cuadro por completo. */
+const JAW_REACH = 40;
+
+/**
+ * Perfil del arco en una columna, relativo al centro.
+ *
+ * Positivo = esa columna cierra más tarde que el centro. Con esto la fila de
+ * dientes no es una línea recta: reproduce la curvatura de la propia boca.
+ */
+const archProfile = (scene: ReturnType<typeof getStageScene>, cx: number, upper: boolean) => {
+  const here = openingAt(scene.opening, cx);
+  const middle = openingAt(scene.opening, CANVAS_WIDTH / 2);
+  return upper ? here.top - middle.top : here.bottom - middle.bottom;
+};
 
 export const drawTransition = (ctx: CanvasRenderingContext2D, progress: number, stage: number) => {
   if (progress <= 0) return;
 
+  const scene = getStageScene(stage);
+  const slots = archSlots();
+  const gum = scene.gumRamp;
+
   const ease =
     progress < 0.5 ? 4 * progress * progress * progress : 1 - Math.pow(-2 * progress + 2, 3) / 2;
   const half = CANVAS_HEIGHT / 2;
-  const topY = -110 + (half + 110) * ease;
-  const botY = CANVAS_HEIGHT + 110 - (half + 110) * ease;
 
+  // El diente más alto marca desde cuán fuera de cuadro entra cada arcada.
+  const reach = Math.max(...slots.map((slot) => slot.size.h)) + JAW_SCALLOP + JAW_REACH;
+  const topLine = -reach + (half + reach) * ease;
+  const botLine = CANVAS_HEIGHT + reach - (half + reach) * ease;
+
+  /**
+   * **Sin `setTransform`**. Lo llevaba, y con ello se cargaba la escala de
+   * supermuestreo del lienzo: la mordida se dibujaba a 800×450 sobre un búfer del
+   * doble, o sea en un cuarto de la pantalla, arrinconada arriba a la izquierda.
+   * La cámara ya viene restaurada por `renderScene`, así que no hay nada de lo que
+   * escapar.
+   */
   ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-  // Encía de cada mandíbula: una banda tramada que se cierra.
-  ditherFill(ctx, 0, topY - CANVAS_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT, 'gum.dark', 'gum.out', 6);
-  ditherFill(ctx, 0, botY, CANVAS_WIDTH, CANVAS_HEIGHT, 'gum.dark', 'gum.out', 6);
+  // Encía de cada mandíbula, en la rampa de la fase: una banda tramada que cierra.
+  ditherFill(
+    ctx,
+    0,
+    topLine - CANVAS_HEIGHT,
+    CANVAS_WIDTH,
+    CANVAS_HEIGHT,
+    `${gum}.dark`,
+    `${gum}.out`,
+    6
+  );
+  ditherFill(ctx, 0, botLine, CANVAS_WIDTH, CANVAS_HEIGHT, `${gum}.dark`, `${gum}.out`, 6);
 
-  // Festón de la encía en el canto de cada mandíbula: es de donde nacen los
-  // dientes, y sin él la encía era una banda plana cortada en seco.
-  for (let x = 0; x < CANVAS_WIDTH; x += 16) {
-    const bulge = 5 + Math.round(hash(x, 77) * 4);
-    for (let i = 0; i < 16; i++) {
-      const t = (i / 15) * 2 - 1;
-      const depth = Math.round((1 - t * t) * bulge);
-      if (depth <= 0) continue;
-      px(ctx, x + i, topY - depth, 1, depth + 1, 'gum.mid');
-      px(ctx, x + i, botY - 1, 1, depth + 1, 'gum.mid');
+  // De dentro hacia fuera, para que la pieza del borde tape a su vecina, igual que
+  // hace la arcada del fondo.
+  const ordered = [...slots].sort((a, b) => a.depth - b.depth);
+
+  for (const upper of [true, false]) {
+    for (const slot of ordered) {
+      // El mismo sorteo que el fondo, con la misma semilla: si a esta fase le falta
+      // esa pieza, también le falta al morder.
+      if (chance(scene.gaps, slot.cx, 77)) continue;
+
+      const curve = Math.round(archProfile(scene, slot.cx, upper));
+      const variant = Math.floor(hash(slot.cx, 79) * 6);
+      const h = slot.size.h;
+
+      // Nacimiento de la pieza: arriba cuelga hacia abajo, abajo asoma hacia arriba.
+      const y = upper ? topLine + curve - h : botLine - curve;
+
+      // Festón: el arco de encía del que nace la pieza. Sin él, la fila de dientes
+      // sale pegada a un canto recto y se lee como una sierra, no como una boca.
+      // Se hincha con la inflamación, igual que en el fondo y con la misma semilla.
+      const swell = JAW_SCALLOP + Math.round(scene.decay.inflammation * 7) + jitter(2, slot.cx, 61);
+      for (let i = 0; i < slot.size.w; i++) {
+        const t = (i / (slot.size.w - 1)) * 2 - 1;
+        const depth = Math.round((1 - t * t) * swell);
+        if (depth <= 0) continue;
+        const gy = upper ? Math.round(y) - depth : Math.round(y) + h;
+        px(ctx, slot.x + i, gy, 1, depth + 1, `${gum}.mid`);
+        px(ctx, slot.x + i, upper ? gy + depth : gy, 1, 1, `${gum}.light`);
+      }
+
+      blit(
+        ctx,
+        archTooth(scene, slot, upper, upper ? variant : variant + 3),
+        slot.x,
+        Math.round(y),
+        slot.size.w,
+        h,
+        slot.flip
+      );
     }
-  }
-
-  // Dientes colgando de cada arcada, con variantes: repetir el mismo hacía que la
-  // mordida pareciera una cremallera.
-  for (let i = -1; i * JAW_TOOTH_W < CANVAS_WIDTH + JAW_TOOTH_W; i++) {
-    const x = i * JAW_TOOTH_W;
-    const arcOffset = Math.round(Math.sin((x / CANVAS_WIDTH) * Math.PI) * 14);
-    const flip = hash(i, 79) > 0.5;
-    blit(
-      ctx,
-      jawTooth(true, hashInt(JAW_VARIANTS, i, 81)),
-      x,
-      topY - JAW_TOOTH_H + arcOffset,
-      JAW_TOOTH_W,
-      JAW_TOOTH_H,
-      flip
-    );
-    blit(
-      ctx,
-      jawTooth(false, hashInt(JAW_VARIANTS, i, 83)),
-      x,
-      botY - arcOffset,
-      JAW_TOOTH_W,
-      JAW_TOOTH_H,
-      flip
-    );
   }
 
   if (progress > 0.95) {
@@ -298,10 +336,6 @@ export const drawTransition = (ctx: CanvasRenderingContext2D, progress: number, 
     ctx.fillText(`STAGE ${stage} COMPLETE`, CANVAS_WIDTH / 2 + 2, half - 18);
     ctx.fillStyle = '#fff';
     ctx.fillText(`STAGE ${stage} COMPLETE`, CANVAS_WIDTH / 2, half - 20);
-    ctx.fillStyle = '#000';
-    ctx.fillText('BRUSHING...', CANVAS_WIDTH / 2 + 2, half + 22);
-    ctx.fillStyle = '#fef08a';
-    ctx.fillText('BRUSHING...', CANVAS_WIDTH / 2, half + 20);
   }
 
   ctx.restore();

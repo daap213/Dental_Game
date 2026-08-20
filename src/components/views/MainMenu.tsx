@@ -191,10 +191,10 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   );
 
   return (
-    <div className="pixel-crt relative h-full w-full overflow-y-auto overflow-x-hidden bg-slate-900 text-white">
+    <div className="pixel-crt relative flex h-full w-full flex-col overflow-x-hidden overflow-y-auto bg-slate-900 text-white">
       <MenuBackground />
 
-      <div className="relative z-10 mx-auto flex w-full max-w-6xl flex-col gap-3 p-3 md:gap-4 md:p-6">
+      <div className="relative z-10 mx-auto flex w-full max-w-6xl flex-1 flex-col justify-center gap-2 p-2 md:gap-3 md:p-4">
         {/* CABECERA: rejilla de tres celdas, así que el título se centra solo.
             Antes se centraba con un hueco vacío del mismo ancho que el botón. */}
         <header className="grid grid-cols-[auto_1fr_auto] items-center gap-2">
@@ -234,7 +234,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           <PixelButton
             onClick={onStart}
             variant="primary"
-            className="flex min-h-14 flex-1 items-center justify-center gap-2 px-6 py-4 text-xs tracking-[0.2em] md:text-sm"
+            className="flex min-h-12 flex-1 items-center justify-center gap-2 px-6 py-3 text-xs tracking-[0.2em] md:text-sm"
           >
             <span aria-hidden className="pixel-blink">
               ▶
@@ -243,7 +243,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           </PixelButton>
           <PixelButton
             onClick={onRecords}
-            className="flex min-h-14 items-center justify-center gap-2 px-5 py-4 sm:w-48"
+            className="flex min-h-12 items-center justify-center gap-2 px-5 py-3 sm:w-44"
           >
             <Trophy className="h-4 w-4" strokeWidth={3} />
             {tr.btn}
@@ -270,7 +270,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               label={t.select_char}
               marker
               className="grid grid-cols-1 gap-1.5"
-              buttonClassName="min-h-11 px-2 py-2 text-left"
+              buttonClassName="min-h-10 px-2 py-1.5 text-left"
             />
           </PixelPanel>
 
@@ -293,8 +293,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               value={loadout}
               onSelect={setLoadout}
               label={t.select_loadout}
-              className="grid grid-cols-3 gap-1.5 sm:grid-cols-3"
-              buttonClassName="flex min-h-11 flex-col items-center justify-center gap-1 px-1 py-2 text-[7px]"
+              className="grid grid-cols-5 gap-1"
+              buttonClassName="flex min-h-10 flex-col items-center justify-center gap-0.5 px-0.5 py-1.5 text-[7px]"
             />
           </PixelPanel>
 
@@ -309,7 +309,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                 label={t.select_difficulty}
                 marker
                 className="grid grid-cols-2 gap-1.5"
-                buttonClassName="min-h-11 px-1 py-2"
+                buttonClassName="min-h-10 px-1 py-1.5"
               />
             </PixelPanel>
 
@@ -364,51 +364,52 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         {/* CONTROLES: **derivados de la tabla**, no escritos a mano. Antes eran
             literales sueltos que ya mentían —nunca mencionaron ESC ni el clic
             derecho— y que mentirían del todo en cuanto se reasignase una tecla. */}
-        <div className="flex w-full flex-col items-center gap-1.5">
-          <PixelLabel>{t.controls}</PixelLabel>
-          <div className="flex flex-wrap justify-center gap-1.5">
-            {controlChips.map(({ label, codes }) => (
-              <PixelKey key={label}>
-                {codes.join(' / ')} · {label}
-              </PixelKey>
-            ))}
-            <PixelKey>
-              {ts.mouse_left} · {t.ctrl_shoot}
+        {/* El rótulo va **en la misma fila** que las fichas: en una portada que no
+            debe desplazarse, un renglón entero para una palabra es caro. */}
+        <div className="flex w-full flex-wrap items-center justify-center gap-x-1.5 gap-y-1">
+          <PixelLabel className="mr-1">{t.controls}</PixelLabel>
+          {controlChips.map(({ label, codes }) => (
+            <PixelKey key={label}>
+              {codes.join('/')} · {label}
             </PixelKey>
-            <PixelKey>
-              {codeLabel('Escape')} · {ts.fixed_pause}
-            </PixelKey>
-          </div>
+          ))}
+          <PixelKey>
+            {ts.mouse_left} · {t.ctrl_shoot}
+          </PixelKey>
+          <PixelKey>
+            {codeLabel('Escape')} · {ts.fixed_pause}
+          </PixelKey>
         </div>
 
-        <div className="flex w-full flex-col items-center gap-1 border-t-4 border-slate-800 pt-2 pb-2">
-          <nav className="flex flex-wrap justify-center gap-x-3 gap-y-1" aria-label={tl.title}>
-            <button
-              type="button"
-              onClick={() => onLegal('terms')}
-              className="pixel-link text-[8px] tracking-[0.2em] uppercase"
-            >
-              {tl.tab_terms}
-            </button>
-            <button
-              type="button"
-              onClick={() => onLegal('privacy')}
-              className="pixel-link text-[8px] tracking-[0.2em] uppercase"
-            >
-              {tl.tab_privacy}
-            </button>
-            <button
-              type="button"
-              onClick={() => onLegal('licenses')}
-              className="pixel-link text-[8px] tracking-[0.2em] uppercase"
-            >
-              {tl.tab_licenses}
-            </button>
-          </nav>
-          <PixelLabel className="text-center">
+        {/* PIE: los tres documentos y el copyright **en la misma línea**. Eran
+            dos filas apiladas, que en una portada que ya no puede desplazarse es
+            un renglón entero gastado en separar cosas que van juntas. */}
+        <nav
+          className="flex w-full flex-wrap items-center justify-center gap-x-2 gap-y-1 border-t-4 border-slate-800 pt-2 text-[8px] tracking-[0.2em] uppercase"
+          aria-label={tl.title}
+        >
+          <button type="button" onClick={() => onLegal('terms')} className="pixel-link">
+            {tl.tab_terms}
+          </button>
+          <span aria-hidden className="text-slate-600">
+            ·
+          </span>
+          <button type="button" onClick={() => onLegal('privacy')} className="pixel-link">
+            {tl.tab_privacy}
+          </button>
+          <span aria-hidden className="text-slate-600">
+            ·
+          </span>
+          <button type="button" onClick={() => onLegal('licenses')} className="pixel-link">
+            {tl.tab_licenses}
+          </button>
+          <span aria-hidden className="text-slate-600">
+            ·
+          </span>
+          <span className="text-slate-500">
             {copyrightLine()} · {TEXT[lang].credits.rights_reserved}
-          </PixelLabel>
-        </div>
+          </span>
+        </nav>
       </div>
     </div>
   );

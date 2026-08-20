@@ -136,7 +136,7 @@ export const PixelLabel: React.FC<{ children: React.ReactNode; className?: strin
 
 /** Tecla dibujada como una tapa de teclado. */
 export const PixelKey: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <span className="pixel-inset border-slate-700 bg-slate-900 px-1.5 py-0.5 text-[8px] whitespace-nowrap text-slate-300">
+  <span className="pixel-inset border-slate-700 bg-slate-900 px-1.5 py-0.5 text-[7px] whitespace-nowrap text-slate-300">
     {children}
   </span>
 );
