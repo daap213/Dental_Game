@@ -1,3 +1,8 @@
 dist
 node_modules
 pnpm-lock.yaml
+
+# Textos de licencia que estamos OBLIGADOS a reproducir literalmente.
+# Reformatearlos no es un problema de estilo, es un incumplimiento.
+public/legal
+LICENSE

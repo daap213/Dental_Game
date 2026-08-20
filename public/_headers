@@ -1,0 +1,29 @@
+# Cabeceras de Cloudflare Pages.
+#
+# Ni `pnpm dev` ni `pnpm preview` sirven este fichero, así que un error de CSP es
+# invisible hasta estar en producción. Para probarlo en local:
+#   pnpm build && npx wrangler pages dev dist
+#
+# La CSP puede ser estricta porque el juego no hace NINGUNA petición saliente:
+# no hay CDN, no hay analítica, la fuente se autoaloja y no queda ninguna API.
+# `connect-src 'none'` es lo que convierte esa afirmación de la política de
+# privacidad en algo que el navegador hace cumplir.
+#
+# `style-src 'unsafe-inline'` es obligatorio: React escribe `style={{ transform:
+# scale(...) }}` en cada contenedor de `useFitScale` y en la trama del menú. Son
+# atributos de estilo y no se pueden endurecer sin reescribirlos.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY
+  Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=(), usb=(), interest-cohort=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'none'; media-src 'none'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'
+
+# Los nombres llevan hash de contenido, así que son inmutables.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/legal/*
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=86400

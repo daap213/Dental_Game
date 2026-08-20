@@ -2,11 +2,43 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
-    />
+    <!--
+      Sin `maximum-scale` ni `user-scalable=no`. Los llevaba, y bloquear el zoom
+      incumple la WCAG 1.4.4; ahora además hay una pantalla legal cuyo único
+      cometido es leerse y cuyo remedio natural es el zoom con pellizco. El
+      motivo por el que se pusieron —el rebote al jugar en móvil— ya lo cubre
+      `body { overflow: hidden }` en `src/styles.css`.
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
     <title>Super Molar: Plaque Attack</title>
+    <meta
+      name="description"
+      content="Retro run-and-gun set inside a mouth: a heroic tooth against cavities, plaque and tartar. Pixel art drawn entirely by code, no downloads, no tracking."
+    />
+    <meta name="author" content="DaapTech" />
+    <meta name="theme-color" content="#1a202c" />
+    <meta name="color-scheme" content="dark" />
+
+    <!--
+      El `lang` de arriba es el de arranque; `App.tsx` lo sincroniza con el
+      idioma elegido, porque el juego lo alterna en caliente y los lectores de
+      pantalla leen este atributo.
+    -->
+    <link rel="canonical" href="https://supermolar.daaptech.org/" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Super Molar: Plaque Attack" />
+    <meta
+      property="og:description"
+      content="Retro run-and-gun set inside a mouth. Pixel art drawn entirely by code."
+    />
+    <meta property="og:url" content="https://supermolar.daaptech.org/" />
+    <meta property="og:site_name" content="Super Molar: Plaque Attack" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:locale:alternate" content="es_ES" />
+    <meta name="twitter:card" content="summary" />
   </head>
   <body>
     <div id="root"></div>

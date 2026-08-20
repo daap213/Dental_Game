@@ -24,7 +24,7 @@ Run a single test file with `pnpm vitest run src/game/perks.test.ts`, or a singl
 
 Install-script approvals live in `pnpm-workspace.yaml` under `allowBuilds` (pnpm 11 moved these out of `package.json`). Only `esbuild` is allowed — it needs its postinstall to link the native binary Vite uses.
 
-**Gemini API key (optional):** create `.env.local` at the repo root with `GEMINI_API_KEY=...`. `vite.config.ts` inlines it as both `process.env.API_KEY` and `process.env.GEMINI_API_KEY` (so it ends up in the client bundle — it is public to anyone who opens the game). Without a key, `src/services/geminiService.ts` sets its client to `null` and every call returns a hardcoded localized fallback — the game is fully playable without one.
+**No environment variables, and that is now load-bearing.** The game makes **zero outbound network requests** — nothing is fetched, no CDN, no analytics, no API. This used to be false: a Gemini integration wrote the mission briefing and the death diagnosis, with the API key inlined into the public bundle by a `define` in `vite.config.ts`. It was removed, and the published privacy policy now asserts that nothing leaves the browser. Adding any outbound call breaks a legal claim, not just a build rule — see `src/i18n/legal/`.
 
 ## Migration in progress
 
@@ -53,7 +53,7 @@ A single-page React app. The game lives in `src/game/`, in layers that only depe
 - **Fixed timestep.** `planSteps` (`src/game/loop.ts`) decides how much simulation a frame gets: the loop accumulates real elapsed time and spends it in `FIXED_STEP` (1/60s) chunks, so `update()` always receives the same `dt`. The time entering one frame is capped at `MAX_STEPS_PER_FRAME` steps (33ms) and any excess is **dropped, never chased** — the game may run slow on a machine that can't keep up, but it never fast-forwards. Raising that cap brings back the "everything suddenly sped up" feel after any browser hitch. The stepping loop also breaks as soon as `world.events` is non-empty, so a perk offer freezes the game on the frame it happens instead of simulating past it.
 - **Mixed time base, now safe:** positions integrate per _step_ (`p.x += p.vx`, `p.vy += GRAVITY`) while timers and cooldowns are `dt`-scaled, and the weapon cooldown `p.frameTimer` decrements by 1 per step. Both conventions coexist because a step always represents 1/60s — this is what the fixed timestep buys. Preserve whichever convention the surrounding code uses, and do **not** reintroduce `Date.now()` into the simulation (rendering may use it freely).
 - `syncHud(world)` runs once per frame in the loop, right before the `hudChanged` check, so it also refreshes while the game is frozen picking a perk.
-- The loop stops rescheduling itself when `hp <= 0 && lives <= 0`, which is what triggers `handleGameOver` (it awaits Gemini for the death diagnosis).
+- The loop stops rescheduling itself when `hp <= 0 && lives <= 0`, which is what triggers `handleGameOver`. It publishes the score and switches to `GAME_OVER` in one call; `GameOver` derives the villain's diagnosis from the score itself (`game/gameover.ts`). It used to be split into two `onGameOver` calls because the diagnosis came from an API and arrived late — the first call existed only so the score would not lag a run behind.
 
 ### `src/game/` modules mutate arguments; they are not pure transforms
 
@@ -220,6 +220,21 @@ Two rules the screen keeps:
 ### Localization
 
 `src/i18n/en.ts` is the reference dictionary and exports its own shape as `Dictionary`; `src/i18n/es.ts` is typed against it, so a missing or extra key is a **compile error**, not a runtime `undefined`. `src/i18n/index.ts` exports `TEXT: Record<Language, Dictionary>`. Data modules store IDs only and hydrate localized text at call time (`src/game/perks.ts` is the reference pattern).
+
+### The legal texts are the one thing that does *not* live in `Dictionary`
+
+`src/legal/` holds the terms, the privacy policy and the licences page — prose, not labels — and it stays out of `src/i18n/` on purpose. `locales.test.ts` asserts exact **path** parity, so legal prose inside the dictionary would force EN and ES to have the same number of paragraphs, which is an editorial straitjacket (the two drafting traditions split clauses differently). Worse, it would dilute what that test means: today its parity says "every UI label is translated"; afterwards it would mostly say "somebody pressed Enter the same number of times". Only the screen's chrome — tab labels, "Last updated" — lives in the dictionary, under `legal:`.
+
+Parity there is by **`LegalSection.id`**, which is never translated: a section may run two paragraphs in one language and three in the other, but it may not go missing. `es.ts` is annotated `: LegalPack`, never `typeof en` — with `typeof`, every English sentence becomes a literal type the Spanish has to match character for character. Same division of labour the dictionary already uses: the type catches the shape, the test catches the content.
+
+Four things here are load-bearing, and three of them are obligations rather than preferences:
+
+- **The site already redistributes Press Start 2P** (`dist/assets/press-start-2p-*.woff2`/`.woff`), and OFL-1.1 clause 2 requires the copyright notice **and the full licence text** to travel with those bytes. That is what `public/legal/OFL.txt` is for, and why `public/legal` is in `.prettierignore`: reformatting a licence you are obliged to reproduce verbatim is a compliance problem, not a style one.
+- **Vite strips licence comments when bundling**, so `ATTRIBUTIONS` (`src/legal/attributions.ts`) is the only place React, react-dom, lucide-react and Tailwind's notices reach the player. `attributions.test.ts` reads `package.json` and fails if a runtime dependency has no entry — adding a dep and forgetting its notice is exactly the silent failure the rest of the suite hunts. It is **hand-written on purpose**: licence scanners mangle lucide's dual ISC-with-embedded-MIT notice, which is the one case present here.
+- **No fact the code knows may be written into the prose.** Owner, domain, contact, jurisdiction and dates come from `src/legal/identity.ts`; links come from `LEGAL_LINKS`, and `legal.test.ts` rejects any `href` that is not in that table. Same rule as "no number the game computes goes into a translated string".
+- **The published privacy policy asserts that the game makes no outbound request.** Adding a fetch, a CDN, an analytics beacon or a font from Google breaks a legal claim, not just a build convention. `public/_headers` backs it with `connect-src 'none'`.
+
+The screen itself (`components/views/LegalScreen.tsx`) is a clone of `IntelDatabase` because that is the project's only screen with real scrolling — keep the `min-h-0` pair on both the column and the scroll child. `Credits` cannot host it: it is deliberately built to *shrink* with `useFitScale` rather than scroll. It mounts as an **overlay** in `App.tsx`, never as a short-circuit `return` like `?sprites=`, because that would unmount `GameCanvas`. Its URL (`legalRoute.ts`, `/privacy`, `?legal=…`) is cross-checked against `public/_redirects` by a test, so a rewrite and the parser cannot drift apart.
 
 ## Where balance lives
 

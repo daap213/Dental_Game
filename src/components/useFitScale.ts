@@ -34,7 +34,7 @@ export const useFitScale = <C extends HTMLElement, T extends HTMLElement>() => {
 
     measure();
 
-    // El contenido cambia de alto al traducir textos o al cambiar el briefing,
+    // El contenido cambia de alto al traducir textos,
     // así que se observan los dos elementos y no solo la ventana.
     const observer = new ResizeObserver(measure);
     observer.observe(container);

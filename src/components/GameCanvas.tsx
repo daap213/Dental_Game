@@ -12,7 +12,6 @@ import {
     SCORE_PER_KILL, SCORE_PER_BOSS, SCORE_WEAPON_LEVEL_UP, SCORE_WEAPON_MAXED,
 } from '../game/data/physics';
 import { COLORS, tone } from '../game/data/palette';
-import { generateGameOverMessage } from '../services/geminiService';
 import { checkRectCollide } from '../game/physics';
 
 // Modules
@@ -42,7 +41,6 @@ import { contactDamageFor, deathBurstFor, waveInterval, HIDDEN_BOSS, ENEMY_CULL_
 import { getFireCooldown, MAX_LEVEL } from '../game/data/weapons';
 import { createTriggerState, advanceTriggers, isBossSpeedkill } from '../game/triggers';
 import { claimScoreMilestone, claimKillMilestone } from '../game/progression';
-import { TEXT } from '../i18n';
 import { GameHUD } from './GameHUD';
 
 /**
@@ -79,7 +77,7 @@ const overlapCentre = (a: Rect, b: Rect) => ({
 });
 
 interface GameCanvasProps {
-  onGameOver: (score: number, message: string) => void;
+  onGameOver: (score: number) => void;
   gameState: GameState;
   setGameState: (state: GameState) => void;
   sessionId: number;
@@ -315,18 +313,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       s.triggers = createTriggerState(s.player.x);
   };
 
-  const handleGameOver = async () => {
+  // La puntuación se publica en la misma llamada que el cambio de pantalla.
+  // Esto llegó a estar partido en dos fases porque el diagnóstico lo redactaba
+  // una IA y tardaba: hasta que resolvía se veía la puntuación de la partida
+  // anterior (o 0 en la primera). Sin esa espera, una sola fase es correcta —y
+  // el diagnóstico lo deriva `GameOver` de la propia puntuación—.
+  const handleGameOver = () => {
     audioManager.current.playGameOver();
-    const player = entities.current.player;
-
-    // La puntuación se publica ya, con un texto de espera. Antes se cambiaba de
-    // pantalla al instante pero la puntuación y el diagnóstico solo llegaban al
-    // resolverse la llamada a Gemini, así que hasta entonces se veía la
-    // puntuación de la partida anterior (o 0 en la primera).
-    onGameOver(player.score, TEXT[lang].gameover.analyzing);
-
-    const msg = await generateGameOverMessage(player.score, "Tooth Decay", lang);
-    onGameOver(player.score, msg);
+    onGameOver(entities.current.player.score);
   };
 
   const triggerPerkSelection = () => {

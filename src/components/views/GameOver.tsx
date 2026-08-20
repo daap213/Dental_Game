@@ -4,17 +4,20 @@ import { Language } from '../../types';
 import { TEXT } from '../../i18n';
 import { PixelPanel, PixelLabel } from '../ui/Pixel';
 import { useFitScale } from '../useFitScale';
+import { diagnosisFor } from '../../game/gameover';
 
 interface GameOverProps {
   score: number;
-  message: string;
   onRestart: () => void;
   onQuit: () => void;
   lang: Language;
 }
 
-export const GameOver: React.FC<GameOverProps> = ({ score, message, onRestart, onQuit, lang }) => {
+export const GameOver: React.FC<GameOverProps> = ({ score, onRestart, onQuit, lang }) => {
   const t = TEXT[lang].gameover;
+  // El diagnóstico se deriva aquí de la puntuación. Antes bajaba como prop
+  // porque lo redactaba una llamada a una IA que llegaba tarde.
+  const message = diagnosisFor(score, lang);
   const { containerRef, contentRef, scale } = useFitScale<HTMLDivElement, HTMLDivElement>();
 
   return (

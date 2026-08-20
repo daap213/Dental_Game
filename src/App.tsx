@@ -7,10 +7,15 @@ import { PauseMenu } from './components/views/PauseMenu';
 import { PerkMenu } from './components/views/PerkMenu';
 import { Credits } from './components/views/Credits';
 import { SpriteGallery, galleryPageFromSearch } from './components/views/SpriteGallery';
+import { LegalScreen } from './components/views/LegalScreen';
+import {
+  legalTargetFromLocation,
+  pathForLegalTab,
+  type LegalTabId,
+} from './components/views/legalRoute';
 import { useViewportSize } from './components/useViewportSize';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from './game/data/physics';
 import { GameState, InputMethod, Perk, LoadoutType, Language, Difficulty, CharacterType } from './types';
-import { generateBriefing } from './services/geminiService';
 
 /**
  * `?sprites=palette|player|enemies|bosses` abre la galería de arte en lugar del
@@ -30,9 +35,7 @@ const App: React.FC = () => {
 
   const [gameState, setGameState] = useState<GameState>(GameState.MENU);
   const [finalScore, setFinalScore] = useState(0);
-  const [gameOverMessage, setGameOverMessage] = useState("Diagnosis: Unknown");
   const [sessionId, setSessionId] = useState(0);
-  const [briefing, setBriefing] = useState<string>("Loading Mission...");
   const [inputMethod, setInputMethod] = useState<InputMethod>('mouse');
   const [loadout, setLoadout] = useState<LoadoutType>('all');
   const [difficulty, setDifficulty] = useState<Difficulty>('normal');
@@ -41,15 +44,52 @@ const App: React.FC = () => {
   const [language, setLanguage] = useState<Language>('en');
   const [character, setCharacter] = useState<CharacterType>('molar');
 
-  useEffect(() => {
-    if (gameState === GameState.MENU) {
-       generateBriefing(language).then(setBriefing);
-    }
-  }, [gameState, language]);
+  /**
+   * Los créditos se abren desde el menú, desde la pantalla legal y al ganar, así
+   * que el estado vive aquí en vez de dentro del menú: sin esto, la pantalla
+   * legal no tendría forma de enlazarlos.
+   */
+  const [showCredits, setShowCredits] = useState(false);
 
-  const handleGameOver = (score: number, message: string) => {
+  /**
+   * La pantalla legal se inicializa **desde la URL** —para que
+   * `.../privacy` sea un enlace que se pueda pegar en un correo— y a la vez vive
+   * en estado, para poder cerrarse *hacia dentro* del juego.
+   *
+   * Va como capa superpuesta y **no** como corto-circuito antes de `GameCanvas`,
+   * que es lo que hace `?sprites=`: ese patrón desmontaría el lienzo, y
+   * "GameCanvas no se desmonta nunca" es un invariante del proyecto.
+   * `SpriteGallery` se lo puede permitir porque es una herramienta interna que
+   * se cierra cerrando la pestaña.
+   */
+  const [legal, setLegal] = useState<LegalTabId | null>(() =>
+    typeof window === 'undefined'
+      ? null
+      : legalTargetFromLocation(window.location.pathname, window.location.search)
+  );
+
+  // `replaceState` y no `pushState`: una entrada de historial falsa a mitad de
+  // sesión es peor que una capa a la que el botón Atrás no vuelve.
+  const openLegal = (tab: LegalTabId) => {
+    setShowCredits(false);
+    setLegal(tab);
+    window.history.replaceState(null, '', pathForLegalTab(tab));
+  };
+
+  const closeLegal = () => {
+    setLegal(null);
+    if (window.location.pathname !== '/') window.history.replaceState(null, '', '/');
+  };
+
+  // El idioma de la interfaz tiene que llegar al documento: los lectores de
+  // pantalla y los traductores del navegador leen `lang`, y el juego lo cambia
+  // en caliente desde el menú.
+  useEffect(() => {
+    document.documentElement.lang = language;
+  }, [language]);
+
+  const handleGameOver = (score: number) => {
     setFinalScore(score);
-    setGameOverMessage(message);
     setGameState(GameState.GAME_OVER);
   };
 
@@ -117,9 +157,8 @@ const App: React.FC = () => {
 
       {gameState === GameState.MENU && (
         <div className="absolute inset-0 z-50">
-          <MainMenu 
-            onStart={startGame} 
-            briefing={briefing} 
+          <MainMenu
+            onStart={startGame}
             inputMethod={inputMethod}
             setInputMethod={setInputMethod}
             loadout={loadout}
@@ -130,6 +169,8 @@ const App: React.FC = () => {
             setCharacter={setCharacter}
             lang={language}
             setLang={setLanguage}
+            onCredits={() => setShowCredits(true)}
+            onLegal={openLegal}
           />
         </div>
       )}
@@ -152,17 +193,39 @@ const App: React.FC = () => {
       )}
 
       {gameState === GameState.GAME_OVER && (
-        <GameOver 
+        <GameOver
           score={finalScore}
-          message={gameOverMessage}
           onRestart={startGame}
           onQuit={() => setGameState(GameState.MENU)}
           lang={language}
         />
       )}
 
-      {gameState === GameState.VICTORY && (
-          <Credits onClose={() => setGameState(GameState.MENU)} lang={language} />
+      {(gameState === GameState.VICTORY || showCredits) && (
+        <Credits
+          onClose={() => {
+            setShowCredits(false);
+            if (gameState === GameState.VICTORY) setGameState(GameState.MENU);
+          }}
+          onLegal={() => openLegal('terms')}
+          lang={language}
+        />
+      )}
+
+      {/* Por encima del resto de capas: se puede llegar desde el menú, desde los
+          créditos y directamente por URL. */}
+      {legal && (
+        <LegalScreen
+          tab={legal}
+          onTab={openLegal}
+          onClose={closeLegal}
+          onCredits={() => {
+            closeLegal();
+            setShowCredits(true);
+          }}
+          lang={language}
+          setLang={setLanguage}
+        />
       )}
     </div>
   );

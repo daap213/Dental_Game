@@ -88,3 +88,40 @@ export const PixelKey: React.FC<{ children: React.ReactNode }> = ({ children }) 
     {children}
   </span>
 );
+
+/**
+ * Texto largo para leer, no para mirar.
+ *
+ * Press Start 2P es una fuente de display de ocho píxeles: perfecta para un
+ * rótulo y penosa para dos mil palabras de política de privacidad, hasta el
+ * punto de ser un problema de accesibilidad. La clase `legal-prose`
+ * (`src/styles.css`) cambia **solo los párrafos** a la fuente del sistema; los
+ * títulos, las pestañas y los botones siguen en píxel, así que la pantalla no
+ * deja de ser del juego. Es una regla CSS: revertirlo es borrarla.
+ */
+export const PixelProse: React.FC<{ children: React.ReactNode; className?: string }> = ({
+  children,
+  className = '',
+}) => <div className={`legal-prose max-w-[68ch] text-slate-300 ${className}`}>{children}</div>;
+
+/**
+ * Enlace. No había ninguno en todo el proyecto, y el preflight de Tailwind v4
+ * resetea `a` por completo: sin esto, un enlace se ve exactamente igual que el
+ * texto que lo rodea. El anillo de foco tampoco existía en ningún sitio.
+ */
+export const PixelLink: React.FC<{
+  href: string;
+  children: React.ReactNode;
+  className?: string;
+}> = ({ href, children, className = '' }) => {
+  const external = href.startsWith('http');
+  return (
+    <a
+      href={href}
+      className={`pixel-link ${className}`}
+      {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+    >
+      {children}
+    </a>
+  );
+};

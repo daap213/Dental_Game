@@ -8,6 +8,7 @@ import {
   Keyboard,
   MousePointer,
   Rocket,
+  Scale,
   Sword,
   Target,
   Scissors,
@@ -16,10 +17,12 @@ import {
   Wind,
   Zap,
 } from 'lucide-react';
-import { Credits } from './Credits';
 import { IntelDatabase } from './IntelDatabase';
 import { TEXT } from '../../i18n';
 import { characterSummary } from '../../game/data/characters';
+import { briefingText, randomBriefingId } from '../../game/briefings';
+import { copyrightLine } from '../../legal/identity';
+import type { LegalTabId } from './legalRoute';
 import { WEAPONS } from '../../game/data/weapons';
 import { PixelPanel, PixelButton, PixelLabel, PixelKey } from '../ui/Pixel';
 import { useFitScale } from '../useFitScale';
@@ -45,7 +48,8 @@ const WEAPON_LOOK: Record<
 
 interface MainMenuProps {
   onStart: () => void;
-  briefing: string;
+  onCredits: () => void;
+  onLegal: (tab: LegalTabId) => void;
   inputMethod: InputMethod;
   setInputMethod: (method: InputMethod) => void;
   loadout: LoadoutType;
@@ -60,7 +64,8 @@ interface MainMenuProps {
 
 export const MainMenu: React.FC<MainMenuProps> = ({
   onStart,
-  briefing,
+  onCredits,
+  onLegal,
   inputMethod,
   setInputMethod,
   loadout,
@@ -73,14 +78,14 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   setLang,
 }) => {
   const [showIntel, setShowIntel] = useState(false);
-  const [showCredits, setShowCredits] = useState(false);
+  // Inicializador perezoso: se sortea una vez al montar el menú. Sorteado en
+  // render, cada repintado cambiaría el texto y `useFitScale`, que mide el
+  // contenido, recalcularía la escala sin parar.
+  const [briefingId] = useState(randomBriefingId);
   const { containerRef, contentRef, scale } = useFitScale<HTMLDivElement, HTMLDivElement>();
   const t = TEXT[lang].menu;
+  const tl = TEXT[lang].legal;
   const c = TEXT[lang].characters;
-
-  if (showCredits) {
-    return <Credits onClose={() => setShowCredits(false)} lang={lang} />;
-  }
 
   if (showIntel) {
     return <IntelDatabase onClose={() => setShowIntel(false)} lang={lang} />;
@@ -182,11 +187,11 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         {/* TRES COLUMNAS: informe / equipo / reglas */}
         <div className="grid w-full grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
           {/* 1. INFORME DE MISIÓN */}
-          <PixelPanel title={t.briefing_label} accent="border-green-700" className="flex flex-col">
+          <PixelPanel title={t.mission_label} accent="border-green-700" className="flex flex-col">
             <div className="flex items-start gap-2">
               <span className="pixel-blink mt-0.5 h-2 w-2 shrink-0 bg-green-400" aria-hidden />
               <p className="text-[9px] leading-[1.9] text-green-300">
-                {briefing === 'Loading Mission...' ? t.loading : briefing}
+                {briefingText(briefingId, lang)}
               </p>
             </div>
           </PixelPanel>
@@ -312,12 +317,21 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           </button>
 
           <PixelButton
-            onClick={() => setShowCredits(true)}
+            onClick={onCredits}
             activeClass=""
             className="flex items-center gap-2 px-4 py-3"
           >
             <User className="h-4 w-4" strokeWidth={3} />
             {t.btn_credits}
+          </PixelButton>
+
+          <PixelButton
+            onClick={() => onLegal('terms')}
+            activeClass=""
+            className="flex items-center gap-2 px-4 py-3"
+          >
+            <Scale className="h-4 w-4" strokeWidth={3} />
+            {t.btn_legal}
           </PixelButton>
         </div>
 
@@ -335,6 +349,27 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             </PixelKey>
             <PixelKey>SHIFT · {t.ctrl_dash}</PixelKey>
           </div>
+        </div>
+
+        {/* PIE LEGAL
+            Un enlace a la política se espera en un pie visible, no escondido
+            dentro de un botón. Va dentro del contenedor de `useFitScale`, así
+            que encoge con todo lo demás en ventanas bajas. */}
+        <div className="flex w-full shrink-0 flex-col items-center gap-1 border-t-4 border-slate-800 pt-2">
+          <nav className="flex flex-wrap justify-center gap-x-3 gap-y-1" aria-label={tl.title}>
+            <button type="button" onClick={() => onLegal('terms')} className="pixel-link text-[8px] tracking-[0.2em] uppercase">
+              {tl.tab_terms}
+            </button>
+            <button type="button" onClick={() => onLegal('privacy')} className="pixel-link text-[8px] tracking-[0.2em] uppercase">
+              {tl.tab_privacy}
+            </button>
+            <button type="button" onClick={() => onLegal('licenses')} className="pixel-link text-[8px] tracking-[0.2em] uppercase">
+              {tl.tab_licenses}
+            </button>
+          </nav>
+          <PixelLabel>
+            {copyrightLine()} · {TEXT[lang].credits.rights_reserved}
+          </PixelLabel>
         </div>
       </div>
     </div>

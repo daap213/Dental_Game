@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" shape-rendering="crispEdges">
+  <!--
+    Un molar dibujado a rectángulos sobre una retícula de 16x16, a mano y en el
+    mismo lenguaje que el resto del juego: sin curvas, sin degradados y sin
+    pasar por un editor. El proyecto no tiene ni un asset de imagen y esto no lo
+    rompe — es geometría escrita, igual que los sprites.
+  -->
+  <rect width="16" height="16" fill="#1a202c"/>
+
+  <!-- Corona: se estrecha arriba, como las coronas de los sprites del jugador. -->
+  <rect x="4" y="2" width="8" height="1" fill="#f8fafc"/>
+  <rect x="3" y="3" width="10" height="5" fill="#f8fafc"/>
+
+  <!-- Cúspides: dos muescas en la cara oclusal. -->
+  <rect x="6" y="2" width="1" height="1" fill="#1a202c"/>
+  <rect x="9" y="2" width="1" height="1" fill="#1a202c"/>
+
+  <!-- Dos raíces, que es lo que hace que se lea como molar y no como diente genérico. -->
+  <rect x="3" y="8" width="4" height="5" fill="#e2e8f0"/>
+  <rect x="9" y="8" width="4" height="5" fill="#e2e8f0"/>
+  <rect x="4" y="13" width="2" height="1" fill="#e2e8f0"/>
+  <rect x="10" y="13" width="2" height="1" fill="#e2e8f0"/>
+
+  <!-- Sombra a la derecha y abajo, la misma luz que `shadeMask`: arriba-izquierda. -->
+  <rect x="11" y="3" width="2" height="5" fill="#cbd5e1"/>
+  <rect x="11" y="8" width="2" height="5" fill="#94a3b8"/>
+  <rect x="5" y="8" width="2" height="5" fill="#94a3b8"/>
+</svg>

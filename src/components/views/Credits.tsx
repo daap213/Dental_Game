@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Heart, Cpu, User, ArrowLeft, Gamepad2 } from 'lucide-react';
+import { Heart, Cpu, User, ArrowLeft, Gamepad2, ScrollText } from 'lucide-react';
 import { Language } from '../../types';
 import { TEXT } from '../../i18n';
 import {
@@ -13,16 +13,19 @@ import { prefersReducedMotion } from '../previewClock';
 import { PixelPanel, PixelLabel } from '../ui/Pixel';
 import { useFitScale } from '../useFitScale';
 import { supersampleFor } from '../scale';
+import { copyrightLine } from '../../legal/identity';
 
 interface CreditsProps {
   onClose: () => void;
+  onLegal: () => void;
   lang: Language;
 }
 
-export const Credits: React.FC<CreditsProps> = ({ onClose, lang }) => {
+export const Credits: React.FC<CreditsProps> = ({ onClose, onLegal, lang }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { containerRef, contentRef, scale: fitScale } = useFitScale<HTMLDivElement, HTMLDivElement>();
   const t = TEXT[lang].credits;
+  const tl = TEXT[lang].legal;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -89,13 +92,6 @@ export const Credits: React.FC<CreditsProps> = ({ onClose, lang }) => {
 
   const roles = [
     {
-      icon: <Cpu className="h-7 w-7" strokeWidth={3} />,
-      role: t.dev_role,
-      name: 'GEMINI',
-      color: '#60a5fa',
-      border: 'border-blue-600',
-    },
-    {
       icon: <User className="h-7 w-7" strokeWidth={3} />,
       role: t.creator_role,
       name: 'DANIEL',
@@ -131,14 +127,24 @@ export const Credits: React.FC<CreditsProps> = ({ onClose, lang }) => {
         <h2 className="pixel-text-shadow text-sm tracking-[0.25em] text-blue-300 uppercase md:text-base">
           {t.title}
         </h2>
-        <button
-          type="button"
-          onClick={onClose}
-          className="pixel-btn pixel-text-shadow flex cursor-pointer items-center gap-2 border-slate-500 bg-slate-700 px-4 py-2 text-[10px] tracking-wider text-white uppercase hover:bg-slate-600"
-        >
-          <ArrowLeft className="h-4 w-4" strokeWidth={3} />
-          {t.back}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onLegal}
+            className="pixel-btn pixel-text-shadow flex cursor-pointer items-center gap-2 border-slate-600 bg-slate-800 px-3 py-2 text-[10px] tracking-wider text-slate-300 uppercase hover:bg-slate-700"
+          >
+            <ScrollText className="h-4 w-4" strokeWidth={3} />
+            {tl.title}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="pixel-btn pixel-text-shadow flex cursor-pointer items-center gap-2 border-slate-500 bg-slate-700 px-4 py-2 text-[10px] tracking-wider text-white uppercase hover:bg-slate-600"
+          >
+            <ArrowLeft className="h-4 w-4" strokeWidth={3} />
+            {t.back}
+          </button>
+        </div>
       </header>
 
       {/* Contenido: cabe entero, se encoge en ventanas bajas en vez de scrollear. */}
@@ -148,7 +154,7 @@ export const Credits: React.FC<CreditsProps> = ({ onClose, lang }) => {
           style={{ transform: `scale(${fitScale})` }}
           className="flex w-full max-w-3xl flex-col items-center gap-4 p-4"
         >
-          <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2">
             {roles.map((entry) => (
               <PixelPanel key={entry.name} accent={entry.border} bodyClassName="p-3">
                 <div className="flex flex-col items-center gap-2 text-center">
@@ -172,6 +178,15 @@ export const Credits: React.FC<CreditsProps> = ({ onClose, lang }) => {
             ))}
           </div>
 
+          {/* La IA aparece como nota, no como tarjeta de rol: se hizo con
+              asistencia de herramientas generativas, no lo firmó un proveedor. */}
+          <PixelPanel accent="border-blue-700" className="w-full" bodyClassName="p-3">
+            <div className="flex items-center justify-center gap-3 text-center">
+              <Cpu className="h-5 w-5 shrink-0 text-blue-400" strokeWidth={3} />
+              <p className="text-[8px] leading-[1.9] text-blue-200">{t.ai_note}</p>
+            </div>
+          </PixelPanel>
+
           {/* Dedicatoria */}
           <PixelPanel
             accent="border-pink-600"
@@ -183,13 +198,15 @@ export const Credits: React.FC<CreditsProps> = ({ onClose, lang }) => {
               <p className="text-[7px] tracking-[0.25em] text-pink-300 uppercase">
                 {t.dedication_title}
               </p>
-              <p className="pixel-title text-lg tracking-[0.1em] text-white">Dr. Melanie</p>
+              {/* Solo la inicial: es una persona real y esto es una página
+                  pública. La dedicatoria se lee igual de bien. */}
+              <p className="pixel-title text-lg tracking-[0.1em] text-white">Dra. M.</p>
               <p className="text-[9px] leading-[1.9] text-pink-200">{t.dedication_quote}</p>
             </div>
           </PixelPanel>
 
-          <PixelLabel>
-            {t.footer} {new Date().getFullYear()}
+          <PixelLabel className="text-center">
+            {t.footer} · {copyrightLine()} · {t.rights_reserved}
           </PixelLabel>
         </div>
       </div>

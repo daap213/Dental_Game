@@ -3,8 +3,15 @@
 export const en = {
   menu: {
     subtitle: 'Plaque Attack',
-    briefing_label: 'MISSION BRIEFING',
-    loading: 'Loading Mission...',
+    mission_label: 'MISSION BRIEFING',
+    /** Informes fijos; se elige uno al montar el menú. Ver `game/briefings.ts`. */
+    briefings: {
+      scrub: 'Enamel is holding, soldier. Barely. Scrub every last colony before the molars give.',
+      siege: 'They have taken the back rows and they are digging in. Push through and do not look down.',
+      decay: 'Decay spreads faster than we can drill. Cut the rot at the root, one cavity at a time.',
+      sweep: 'Sweep the arch, edge to edge. Anything you leave behind will be twice the size tomorrow.',
+      relief: 'The gums are begging for relief. You are the only bristle left standing. Make it count.',
+    },
     select_aim: 'Aiming Style',
     mouse_aim: 'MOUSE AIM',
     keyboard_aim: 'KEYBOARD',
@@ -19,6 +26,7 @@ export const en = {
     btn_knowledge: 'DATABASE',
     btn_start: 'START OPERATION',
     btn_credits: 'CREDITS',
+    btn_legal: 'LEGAL',
     controls: 'CONTROLS',
     ctrl_move: 'Move',
     ctrl_aim: 'Aim Up',
@@ -92,8 +100,17 @@ export const en = {
     subtitle: 'The Cavities Won...',
     try_again: 'TRY AGAIN',
     menu: 'MAIN MENU',
-    /** Mientras se espera el diagnóstico de Gemini. */
-    analyzing: 'Analyzing the damage...',
+    /**
+     * Diagnóstico del villano, elegido por puntuación en `game/gameover.ts`:
+     * de peor a mejor partida. El orden importa y el test de paridad obliga a
+     * que ambos idiomas tengan las mismas cuatro.
+     */
+    diagnosis: [
+      'Diagnosis: total structural collapse. You did not even chip my plaque.',
+      'Diagnosis: mild resistance detected. Cute. Come back when you can brush.',
+      'Diagnosis: you gave the gums a scare. A scare is not a cure, little tooth.',
+      'Diagnosis: impressive. Annoyingly impressive. I will simply grow back harder.',
+    ],
   },
   perks: {
     title: 'LEVEL UP!',
@@ -102,12 +119,33 @@ export const en = {
   credits: {
     title: 'CREDITS',
     back: 'BACK',
-    dev_role: 'Lead Developer (AI)',
-    creator_role: 'Created By',
+    creator_role: 'Code, Art & Design',
     tester_role: 'Tester & Ideas',
+    ai_note:
+      'Built with the assistance of generative AI tools, under human direction and review.',
     dedication_title: 'Special Dedication',
     dedication_quote: '"My favorite dentist."',
-    footer: 'Super Molar: Plaque Attack ©',
+    footer: 'Super Molar: Plaque Attack',
+    rights_reserved: 'All rights reserved',
+  },
+  /**
+   * Solo el "cromo" de la pantalla legal: etiquetas de interfaz, todas cortas.
+   * La prosa de los documentos vive en `src/legal/`, fuera de este diccionario,
+   * porque `locales.test.ts` exige paridad exacta de rutas y eso obligaría al
+   * inglés y al español a tener el mismo número de párrafos.
+   */
+  legal: {
+    title: 'LEGAL',
+    close: 'CLOSE',
+    updated: 'Last updated',
+    contents: 'Contents',
+    tab_terms: 'TERMS',
+    tab_privacy: 'PRIVACY',
+    tab_licenses: 'LICENCES',
+    credits: 'CREDITS',
+    col_package: 'Package',
+    col_license: 'Licence',
+    col_copyright: 'Copyright',
   },
   // Static Data
   weapons: {

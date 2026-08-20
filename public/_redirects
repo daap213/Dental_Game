@@ -1,0 +1,14 @@
+# Reescrituras (estado 200), no redirecciones: la URL amigable es la que el
+# visitante conserva en la barra, que es lo que se pega en un correo.
+#
+# Sin comodín `/*`: esta SPA no tiene enrutado y todo lo demás vive en `/`.
+# Un comodín convertiría cualquier errata en un 200 silencioso en vez de un 404.
+#
+# `legalRoute.test.ts` comprueba que estas rutas y el parser no se separen.
+/legal        /index.html  200
+/terms        /index.html  200
+/aviso-legal  /index.html  200
+/privacy      /index.html  200
+/privacidad   /index.html  200
+/licenses     /index.html  200
+/licencias    /index.html  200

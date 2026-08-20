@@ -3,8 +3,14 @@ import type { Dictionary } from './en';
 export const es: Dictionary = {
   menu: {
     subtitle: 'Ataque de Placa',
-    briefing_label: 'MISIÓN (IA)',
-    loading: 'Cargando Misión...',
+    mission_label: 'INFORME DE MISIÓN',
+    briefings: {
+      scrub: 'El esmalte aguanta, soldado. Por poco. Friega hasta la última colonia antes de que cedan las muelas.',
+      siege: 'Han tomado las filas del fondo y se están atrincherando. Ábrete paso y no mires abajo.',
+      decay: 'La caries avanza más rápido de lo que podemos fresar. Corta la podredumbre de raíz, cavidad a cavidad.',
+      sweep: 'Barre la arcada de punta a punta. Lo que dejes atrás mañana será el doble de grande.',
+      relief: 'Las encías piden auxilio a gritos. Eres la última cerda en pie. Que valga la pena.',
+    },
     select_aim: 'Estilo de Apuntado',
     mouse_aim: 'MOUSE (RATÓN)',
     keyboard_aim: 'TECLADO SOLO',
@@ -19,6 +25,7 @@ export const es: Dictionary = {
     btn_knowledge: 'CONOCIMIENTO',
     btn_start: 'INICIAR OPERACIÓN',
     btn_credits: 'CRÉDITOS',
+    btn_legal: 'LEGAL',
     controls: 'CONTROLES',
     ctrl_move: 'Mover',
     ctrl_aim: 'Apuntar Arriba',
@@ -91,7 +98,12 @@ export const es: Dictionary = {
     subtitle: 'Las Caries ganaron...',
     try_again: 'REINTENTAR',
     menu: 'MENÚ PRINCIPAL',
-    analyzing: 'Analizando los daños...',
+    diagnosis: [
+      'Diagnóstico: colapso estructural total. No llegaste ni a rascarme la placa.',
+      'Diagnóstico: se detecta una resistencia leve. Adorable. Vuelve cuando sepas cepillarte.',
+      'Diagnóstico: le diste un buen susto a las encías. Un susto no es una cura, dientecito.',
+      'Diagnóstico: impresionante. Molestamente impresionante. Volveré a crecer más duro.',
+    ],
   },
   perks: {
     title: '¡SUBIDA DE NIVEL!',
@@ -100,12 +112,27 @@ export const es: Dictionary = {
   credits: {
     title: 'CRÉDITOS',
     back: 'VOLVER',
-    dev_role: 'Desarrollador Líder (IA)',
-    creator_role: 'Creado Por',
+    creator_role: 'Código, Arte y Diseño',
     tester_role: 'Tester e Ideas',
+    ai_note:
+      'Desarrollado con asistencia de herramientas de IA generativa, bajo dirección y revisión humana.',
     dedication_title: 'Dedicatoria Especial',
     dedication_quote: '"Mi odontóloga favorita."',
-    footer: 'Super Molar: Plaque Attack ©',
+    footer: 'Super Molar: Plaque Attack',
+    rights_reserved: 'Todos los derechos reservados',
+  },
+  legal: {
+    title: 'LEGAL',
+    close: 'CERRAR',
+    updated: 'Última actualización',
+    contents: 'Contenido',
+    tab_terms: 'TÉRMINOS',
+    tab_privacy: 'PRIVACIDAD',
+    tab_licenses: 'LICENCIAS',
+    credits: 'CRÉDITOS',
+    col_package: 'Paquete',
+    col_license: 'Licencia',
+    col_copyright: 'Copyright',
   },
   // Static Data
   weapons: {
