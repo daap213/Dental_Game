@@ -91,7 +91,7 @@ export const BAKED_STEPS: readonly number[] = Array.from(
 export interface AimInput {
   usingMouse: boolean;
   aimUp: boolean;
-  /** Las dos teclas laterales, que con `aimUp` dan las diagonales del teclado. */
+  /** Las dos laterales, que junto con `aimUp` dan las diagonales sin ratón. */
   left: boolean;
   right: boolean;
   mouseX: number;
@@ -120,7 +120,15 @@ export const aimStepFrom = (
   if (aim.usingMouse) {
     return aimStep(aim.mouseX + aim.cameraX - centreX, aim.mouseY + aim.cameraY - centreY);
   }
-  // Con teclado solo hay cinco direcciones: no existe tecla para apuntar hacia abajo.
+  /**
+   * **Sin ratón**, y esta rama no es un resto del modo de teclado que se retiró:
+   * son cinco direcciones —no hay forma de apuntar hacia abajo— y las usan dos
+   * cosas vivas. El **mando táctil**, porque el apuntado con ratón está
+   * condicionado a `!isMobile` y un teléfono cae siempre aquí; y los **primeros
+   * instantes de cada partida**, antes de que el ratón se mueva por primera vez.
+   * Borrarla deja al móvil sin poder apuntar y al primer disparo sin dirección.
+   * `aim.test.ts` la fija.
+   */
   if (!aim.aimUp) return facing < 0 ? AIM_STEPS / 2 : 0;
   return aimStep(aim.left ? -1 : aim.right ? 1 : 0, -1);
 };

@@ -202,7 +202,7 @@ export const legalEn: LegalPack = {
             spans: [
               'It is not specifically directed at children. Because ',
               { strong: 'no data is collected from anyone' },
-              ', minors included, there is no parental consent mechanism to apply. Supervision of younger players is still recommended.',
+              ', minors included, there is no parental consent mechanism to apply. The scoreboard nickname never leaves the device it was typed on. Supervision of younger players is still recommended.',
             ],
           },
         ],
@@ -322,7 +322,7 @@ export const legalEn: LegalPack = {
           {
             kind: 'p',
             spans: [
-              'The rest of this page explains why that is literally true, and what the one honest exception is: the server that delivers the page to you.',
+              'The rest of this page explains why that is literally true, and what the two honest exceptions are: what your own browser remembers — your settings and your scores, which never leave it — and the server that delivers the page to you.',
             ],
           },
         ],
@@ -374,8 +374,8 @@ export const legalEn: LegalPack = {
             kind: 'p',
             spans: [
               'The game has ',
-              { strong: 'not a single text field' },
-              ': there is no way to enter information even if you wanted to.',
+              { strong: 'exactly one text field' },
+              ': the optional scoreboard nickname. It is free-form, stored only in your browser, and never sent anywhere. There is nowhere else to enter information.',
             ],
           },
         ],
@@ -407,17 +407,9 @@ export const legalEn: LegalPack = {
           {
             kind: 'p',
             spans: [
-              'Today the game ',
-              { strong: 'stores nothing' },
-              ' in your browser: no local storage, no session storage, no databases. Reload the page and everything starts over.',
-            ],
-          },
-          {
-            kind: 'p',
-            spans: [
-              'In future the game may store, ',
+              'The game stores, ',
               { strong: 'on your device only' },
-              ', your preferences (language, difficulty, class, loadout, controls and sound) and a nickname you choose, along with your scores.',
+              ', your preferences — language, difficulty, class, loadout, key bindings and sound levels — and a nickname you choose, along with your score table.',
             ],
           },
           {
@@ -433,7 +425,12 @@ export const legalEn: LegalPack = {
                 ' or anything that identifies you.',
               ],
               [
-                'You will be able to erase it from within the game, or at any time by clearing site data in your browser.',
+                'You can erase all of it from ',
+                { strong: 'Settings → Audio & data → Erase my data' },
+                ', or by clearing site data in your browser.',
+              ],
+              [
+                'Technically it is two `localStorage` entries under the `supermolar:` prefix, and there are no others.',
               ],
             ],
           },
@@ -520,7 +517,7 @@ export const legalEn: LegalPack = {
           {
             kind: 'p',
             spans: [
-              'We retain nothing, because we collect nothing. The hosting provider manages its technical logs under its own policy. Anything stored locally in future lives in your browser until you delete it.',
+              'We retain nothing, because we collect nothing. The hosting provider manages its technical logs under its own policy. Whatever is stored locally lives in your browser until you delete it.',
             ],
           },
         ],

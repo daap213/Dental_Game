@@ -7,6 +7,7 @@ import type { LegalBlock, LegalSpan } from '../../legal';
 import { ATTRIBUTIONS } from '../../legal/attributions';
 import { copyrightLine } from '../../legal/identity';
 import { PixelButton, PixelLabel, PixelLink, PixelPanel, PixelProse } from '../ui/Pixel';
+import { PixelTabs, type ChoiceOption } from '../ui/PixelChoice';
 import { LEGAL_TABS, type LegalTabId } from './legalRoute';
 
 /**
@@ -139,8 +140,7 @@ export const LegalScreen: React.FC<LegalScreenProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const tabs: readonly { id: LegalTabId; label: string; icon: React.ReactNode; accent: string }[] =
-    [
+  const tabs: readonly ChoiceOption<LegalTabId>[] = [
       {
         id: 'terms',
         label: t.tab_terms,
@@ -158,8 +158,8 @@ export const LegalScreen: React.FC<LegalScreenProps> = ({
         label: t.tab_licenses,
         icon: <FileText className="h-3 w-3" strokeWidth={3} />,
         accent: 'border-violet-300 bg-violet-700 text-white',
-      },
-    ];
+    },
+  ];
 
   return (
     <div className="pixel-crt absolute inset-0 z-[60] flex flex-col bg-slate-900 p-3 md:p-6">
@@ -203,24 +203,10 @@ export const LegalScreen: React.FC<LegalScreenProps> = ({
           </div>
         </header>
 
-        <nav className="flex flex-wrap gap-1.5" aria-label={t.title}>
-          {tabs.map((entry) => (
-            <PixelButton
-              key={entry.id}
-              onClick={() => onTab(entry.id)}
-              active={tab === entry.id}
-              activeClass={entry.accent}
-              marker
-              className="flex items-center gap-1.5 px-2 py-1.5"
-            >
-              {entry.icon}
-              {entry.label}
-            </PixelButton>
-          ))}
-        </nav>
+        <PixelTabs options={tabs} value={tab} onSelect={onTab} label={t.title} marker />
 
         {/* Solo el documento desplaza: la cabecera y las pestañas nunca se van. */}
-        <div className="min-h-0 flex-1 overflow-y-auto pb-4">
+        <div className="pixel-scroll pb-4">
           <article key={tab} className="flex flex-col gap-3">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h3 className="pixel-text-shadow text-[11px] tracking-[0.15em] text-white uppercase">

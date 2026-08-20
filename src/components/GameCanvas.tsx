@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useState } from 'react';
-import { GameState, Entity, Platform, Projectile, WeaponType, InputMethod, Perk, LoadoutType, Language, Difficulty, CharacterType, type Player, type Rect } from '../types';
+import { GameState, Entity, Platform, Projectile, WeaponType, Perk, LoadoutType, Language, Difficulty, CharacterType, type Player, type Rect, type RunResult } from '../types';
 import {
     CANVAS_WIDTH, CANVAS_HEIGHT, GRAVITY, PLAYER_SPEED, PLAYER_JUMP, FRICTION, TERMINAL_VELOCITY,
     PLAYER_DASH_SPEED, PLAYER_DASH_DURATION, PLAYER_DASH_COOLDOWN,
@@ -17,7 +17,7 @@ import { checkRectCollide } from '../game/physics';
 // Modules
 import { AudioManager } from '../game/audio';
 import { generateLevel } from '../game/level';
-import { createWorld, hudChanged, syncHud, snapshotHud, type World, type HudSnapshot } from '../game/world';
+import { createWorld, hudChanged, syncHud, snapshotHud, runResult, type World, type HudSnapshot } from '../game/world';
 import { planSteps } from '../game/loop';
 import { fallIntoPit, type RunConfig } from '../game/player';
 import { renderScene } from '../game/render/scene';
@@ -39,8 +39,19 @@ import { getRandomPerks, applyPerk } from '../game/perks';
 import { getDifficulty } from '../game/data/difficulty';
 import { contactDamageFor, deathBurstFor, waveInterval, HIDDEN_BOSS, ENEMY_CULL_MARGIN } from '../game/data/enemies';
 import { getFireCooldown, MAX_LEVEL } from '../game/data/weapons';
+import { gainFor } from '../game/data/audio';
 import { createTriggerState, advanceTriggers, isBossSpeedkill } from '../game/triggers';
 import { claimScoreMilestone, claimKillMilestone } from '../game/progression';
+import {
+  MOUSE_BINDINGS,
+  actionForCode,
+  applyAction,
+  bindingIndex,
+  freshInputs,
+  preventDefaultCodes,
+  releaseAll,
+  type Bindings,
+} from '../game/data/controls';
 import { GameHUD } from './GameHUD';
 
 /**
@@ -77,24 +88,30 @@ const overlapCentre = (a: Rect, b: Rect) => ({
 });
 
 interface GameCanvasProps {
-  onGameOver: (score: number) => void;
+  /** Fin de partida, gane o pierda. Un solo embudo para las dos salidas. */
+  onRunEnd: (result: RunResult) => void;
   gameState: GameState;
   setGameState: (state: GameState) => void;
   sessionId: number;
-  inputMethod: InputMethod;
   loadout: LoadoutType;
   difficulty: Difficulty;
   character: CharacterType;
   onPerkSelectStart: (perks: Perk[]) => void;
   selectedPerkId: string | null;
   onPerkApplied: () => void;
-  onVictory: () => void;
   lang: Language;
+  /** Niveles de audio elegidos, en pasos enteros. Ver `game/data/audio.ts`. */
+  music: number;
+  sfx: number;
+  /** Asignaciones de teclas vigentes. Ver `game/data/controls.ts`. */
+  bindings: Bindings;
+  /** Hay una capa de interfaz abierta encima: Escape es suya, no del juego. */
+  overlayOpen: boolean;
   /** Múltiplo entero al que se dibuja el búfer. Ver `components/scale.ts`. */
   supersample: number;
 }
 
-export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, setGameState, sessionId, inputMethod, loadout, difficulty, character, onPerkSelectStart, selectedPerkId, onPerkApplied, onVictory, lang, supersample }) => {
+export const GameCanvas: React.FC<GameCanvasProps> = ({ onRunEnd, gameState, setGameState, sessionId, loadout, difficulty, character, onPerkSelectStart, selectedPerkId, onPerkApplied, lang, bindings, music, sfx, overlayOpen, supersample }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Audio Manager (Singleton-ish per component mount)
@@ -117,17 +134,24 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
   const [hud, setHud] = useState<HudSnapshot>(() => snapshotHud(entities.current));
   const [isMobile, setIsMobile] = useState(false);
 
-  const inputs = useRef({
-    left: false, right: false, aimUp: false, down: false, shoot: false, dash: false,
-    jumpPressed: false, shootPressed: false, dashPressed: false,
-    mouseX: 0, mouseY: 0,
-    /**
-     * Si el ratón ya se ha movido dentro de la partida. Hasta entonces
-     * `mouseX/mouseY` son 0,0 y apuntar al ratón significaba disparar hacia la
-     * esquina superior izquierda del nivel: el primer disparo salía hacia atrás.
-     */
-    mouseSeen: false,
-  });
+  const inputs = useRef(freshInputs());
+
+  /**
+   * Las asignaciones entran por una **ref**, nunca por el cierre del manejador.
+   *
+   * Meterlas en las dependencias del efecto de entrada volvería a registrar seis
+   * escuchas cada vez que el jugador cambia una tecla, y abriría una ventana en
+   * la que un `keyup` cae en la escucha vieja: la bandera se queda levantada y el
+   * personaje corre solo. Con la ref, el manejador siempre lee lo último y no hay
+   * nada que pueda quedarse obsoleto —que importa, porque la regla de eslint que
+   * avisaría de dependencias incompletas está degradada a aviso en este fichero—.
+   */
+  const bindingIdx = useRef(bindingIndex(bindings));
+  const preventCodes = useRef(preventDefaultCodes(bindings));
+  useEffect(() => {
+    bindingIdx.current = bindingIndex(bindings);
+    preventCodes.current = preventDefaultCodes(bindings);
+  }, [bindings]);
 
 
 
@@ -152,10 +176,18 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       }
   }, [sessionId]);
 
-  // Audio Volume Control
+  // Atenuado ambiental por estado de juego. Es un *ducking*, no un nivel: se
+  // multiplica con el volumen que el jugador haya elegido, no lo sustituye.
   useEffect(() => {
       audioManager.current.setAmbientVolume(gameState === GameState.PLAYING ? 0.15 : (gameState === GameState.PAUSED ? 0.05 : 0));
   }, [gameState]);
+
+  // Niveles elegidos por el jugador. Se aplican también antes del primer
+  // `init()`: el AudioManager los recuerda y los pone al crear los buses.
+  useEffect(() => {
+      audioManager.current.setMusicVolume(gainFor(music));
+      audioManager.current.setSfxVolume(gainFor(sfx));
+  }, [music, sfx]);
 
   // Handle Perk Application
   useEffect(() => {
@@ -166,15 +198,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
 
           // Anti-tecla-pegada: el menú se ha comido los keyup, así que se
           // fuerzan todas las entradas a soltado. Hay que volver a pulsar.
-          inputs.current.left = false;
-          inputs.current.right = false;
-          inputs.current.aimUp = false;
-          inputs.current.down = false;
-          inputs.current.shoot = false;
-          inputs.current.dash = false;
-          inputs.current.jumpPressed = false;
-          inputs.current.shootPressed = false;
-          inputs.current.dashPressed = false;
+          releaseAll(inputs.current);
 
           onPerkApplied();
       }
@@ -183,18 +207,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
   useEffect(() => {
     // Global listener for key up to prevent stuck keys when menu closes
     const handleGlobalKeyUp = (e: KeyboardEvent) => {
-        switch (e.code) {
-            case 'KeyA': case 'ArrowLeft': inputs.current.left = false; break;
-            case 'KeyD': case 'ArrowRight': inputs.current.right = false; break;
-            case 'KeyW': case 'ArrowUp': inputs.current.aimUp = false; break;
-            case 'KeyS': case 'ArrowDown': inputs.current.down = false; break;
-            case 'KeyF': case 'KeyK': inputs.current.shoot = false; break;
-            case 'ShiftLeft': case 'ShiftRight': case 'KeyL': inputs.current.dash = false; break;
-        }
+        const action = actionForCode(bindingIdx.current, e.code);
+        if (action) applyAction(inputs.current, action, false);
     };
     const handleGlobalMouseUp = (e: MouseEvent) => {
-        if (e.button === 0) inputs.current.shoot = false;
-        if (e.button === 2) inputs.current.dash = false;
+        const action = MOUSE_BINDINGS[e.button];
+        if (action) applyAction(inputs.current, action, false);
     };
     
     window.addEventListener('keyup', handleGlobalKeyUp);
@@ -256,7 +274,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       const world = entities.current;
       for (const event of world.events) {
           if (event.type === 'perk-offer') onPerkSelectStart(event.perks);
-          else if (event.type === 'victory') onVictory();
+          else if (event.type === 'victory') onRunEnd(runResult(world, 'victory'));
       }
       world.events.length = 0;
 
@@ -280,11 +298,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     entities.current = createWorld(runConfig);
     const s = entities.current;
 
-    inputs.current = {
-        left: false, right: false, aimUp: false, down: false, shoot: false, dash: false,
-        jumpPressed: false, shootPressed: false, dashPressed: false,
-        mouseX: 0, mouseY: 0, mouseSeen: false
-    };
+    inputs.current = freshInputs();
 
     setHud(snapshotHud(s));
   };
@@ -293,7 +307,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       const s = entities.current;
       
       if (s.level.stage >= 5) {
-          s.events.push({ type: 'victory' });
+          s.events.push({ type: 'victory', score: s.player.score, stage: s.level.stage });
           return;
       }
 
@@ -320,7 +334,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
   // el diagnóstico lo deriva `GameOver` de la propia puntuación—.
   const handleGameOver = () => {
     audioManager.current.playGameOver();
-    onGameOver(entities.current.player.score);
+    onRunEnd(runResult(entities.current, 'defeat'));
   };
 
   const triggerPerkSelection = () => {
@@ -337,59 +351,50 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       // arrancaba la partida sin pasar por START: sin incrementar `sessionId`,
       // `resetGame` no corría y se jugaba con la configuración con la que se
       // montó el componente, ignorando clase, dificultad y armamento elegidos.
+      /**
+       * Escape tiene **un solo dueño**, y este no lo es cuando hay una capa
+       * abierta encima.
+       *
+       * Con los ajustes accesibles desde la pausa, la misma pulsación cerraría
+       * los ajustes *y* reanudaría la partida: se saldría del menú de pausa sin
+       * pedirlo. La alternativa —`stopPropagation` repartido por cada pantalla—
+       * es la que acaba en dos capas peleándose por una tecla.
+       */
       if (e.code === 'Escape') {
+          if (overlayOpen) return;
           if (gameState === GameState.PLAYING) setGameState(GameState.PAUSED);
           else if (gameState === GameState.PAUSED) setGameState(GameState.PLAYING);
           return;
       }
       if (gameState !== GameState.PLAYING) return;
-      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
-      
-      switch (e.code) {
-        case 'KeyA': case 'ArrowLeft': inputs.current.left = true; break;
-        case 'KeyD': case 'ArrowRight': inputs.current.right = true; break;
-        case 'KeyW': case 'ArrowUp': inputs.current.aimUp = true; break;
-        case 'Space': if (!inputs.current.jumpPressed) inputs.current.jumpPressed = true; break;
-        case 'KeyS': case 'ArrowDown': inputs.current.down = true; break;
-        case 'KeyF': case 'KeyK': 
-            if (!inputs.current.shoot) inputs.current.shootPressed = true;
-            inputs.current.shoot = true; break;
-        case 'ShiftLeft': case 'ShiftRight': case 'KeyL':
-            if (!inputs.current.dash) inputs.current.dashPressed = true;
-            inputs.current.dash = true; break;
-      }
+      // Derivado de las asignaciones, no de una lista fija: si el salto se
+      // reasigna a otra tecla que desplaza la página, la supresión va con él.
+      if (preventCodes.current.has(e.code)) e.preventDefault();
+
+      const action = actionForCode(bindingIdx.current, e.code);
+      if (action) applyAction(inputs.current, action, true);
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      switch (e.code) {
-        case 'KeyA': case 'ArrowLeft': inputs.current.left = false; break;
-        case 'KeyD': case 'ArrowRight': inputs.current.right = false; break;
-        case 'KeyW': case 'ArrowUp': inputs.current.aimUp = false; break;
-        case 'Space': break;
-        case 'KeyS': case 'ArrowDown': inputs.current.down = false; break;
-        case 'KeyF': case 'KeyK': inputs.current.shoot = false; break;
-        case 'ShiftLeft': case 'ShiftRight': case 'KeyL': inputs.current.dash = false; break;
-      }
+      const action = actionForCode(bindingIdx.current, e.code);
+      if (action) applyAction(inputs.current, action, false);
     };
 
     const handleMouseDown = (e: MouseEvent) => {
         audioManager.current.init();
         if (gameState !== GameState.PLAYING) return;
-        if (inputMethod === 'keyboard' && !isMobile) return; 
 
-        if (e.button === 0) { if (!inputs.current.shoot) inputs.current.shootPressed = true; inputs.current.shoot = true; } 
-        else if (e.button === 2) { if (!inputs.current.dash) inputs.current.dashPressed = true; inputs.current.dash = true; }
+        const action = MOUSE_BINDINGS[e.button];
+        if (action) applyAction(inputs.current, action, true);
     };
 
     const handleMouseUp = (e: MouseEvent) => {
-        if (inputMethod === 'keyboard' && !isMobile) return;
-        if (e.button === 0) inputs.current.shoot = false;
-        if (e.button === 2) inputs.current.dash = false;
+        const action = MOUSE_BINDINGS[e.button];
+        if (action) applyAction(inputs.current, action, false);
     };
 
     const handleMouseMove = (e: MouseEvent) => {
         if (gameState !== GameState.PLAYING) return;
-        if (inputMethod === 'keyboard' && !isMobile) return; 
 
         const rect = canvasRef.current?.getBoundingClientRect();
         if (rect) {
@@ -418,7 +423,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('contextmenu', handleContextMenu);
     };
-  }, [gameState, setGameState, inputMethod, isMobile]);
+  }, [gameState, setGameState, isMobile, overlayOpen]);
 
   const handleTouch = (action: string, pressed: boolean) => (e: React.TouchEvent | React.MouseEvent) => {
       e.preventDefault();
@@ -427,7 +432,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
           case 'left': inputs.current.left = pressed; break;
           case 'right': inputs.current.right = pressed; break;
           case 'up': inputs.current.aimUp = pressed; break;
-          case 'down': inputs.current.down = pressed; break;
           case 'jump': if (!inputs.current.jumpPressed && pressed) inputs.current.jumpPressed = true; break;
           case 'shoot': if (!inputs.current.shoot && pressed) inputs.current.shootPressed = true; inputs.current.shoot = pressed; break;
           case 'dash': if (!inputs.current.dash && pressed) inputs.current.dashPressed = true; inputs.current.dash = pressed; break;
@@ -437,7 +441,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
   const update = (dt: number) => {
     const s = entities.current;
     if (s.platforms.length === 0) s.platforms = generateLevel(s.level.levelWidth);
-    
+
+    // Cronómetro de la partida entera, en tiempo de simulación: se congela con
+    // la pausa y no avanza con la pestaña de fondo. Ver `World.runTime`.
+    s.runTime += dt;
+
     const p = s.player;
     const config = getDifficulty(difficulty);
 
@@ -584,7 +592,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
         let dx: number, dy: number;
 
         // Hasta que el ratón se mueva no hay a dónde apuntar: se dispara al frente.
-        if (inputMethod === 'mouse' && !isMobile && inputs.current.mouseSeen) {
+        if (!isMobile && inputs.current.mouseSeen) {
             const mWX = inputs.current.mouseX + s.camera.x; 
             const mWY = inputs.current.mouseY + s.camera.y;
             const pCX = p.x + p.w/2; 
@@ -923,7 +931,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ onGameOver, gameState, s
     ctx.setTransform(ss, 0, 0, ss, 0, 0);
 
     renderScene(ctx, s, {
-        usingMouse: inputMethod === 'mouse' && !isMobile && inputs.current.mouseSeen,
+        usingMouse: !isMobile && inputs.current.mouseSeen,
         aimUp: inputs.current.aimUp,
         // Las dos laterales van porque con `aimUp` dan las diagonales del teclado, que el
         // dibujado no podía ver: sin ellas, apuntando en diagonal con teclado el arma salía recta.

@@ -10,6 +10,8 @@ import {
   stepAngle,
   stepVector,
   wrapStep,
+  aimStepFrom,
+  type AimInput,
 } from './aim';
 import { BOW, FLOSS, SCYTHE, TOOTHBRUSH } from './weapons';
 
@@ -244,5 +246,57 @@ describe('ejes locales de una hoja', () => {
       const aim = stepVector(step);
       expect(bx * aim.x + by * aim.y, `el paso ${step}`).toBeCloseTo(1);
     }
+  });
+});
+
+/**
+ * La rama **sin ratón** de `aimStepFrom`.
+ *
+ * Existía como "el modo de apuntado por teclado" y ese modo se ha retirado, pero
+ * la rama se queda porque tiene dos usuarios que nadie vuelve a probar a mano:
+ *
+ * 1. **El mando táctil.** El apuntado con ratón está condicionado a `!isMobile`,
+ *    así que un teléfono cae **siempre** por aquí; el botón ARRIBA del mando
+ *    escribe `aimUp` y `left`/`right` le dan las diagonales.
+ * 2. **El primer disparo de cada partida.** `mouseSeen` arranca en falso hasta
+ *    que el ratón se mueve, así que los primeros instantes también pasan por
+ *    aquí. Sin esta rama, el primer tiro no tendría dirección.
+ *
+ * Estos casos se escribieron **antes** de borrar el modo, precisamente para que
+ * el borrado no se llevase la rama por delante.
+ */
+describe('apuntado sin ratón', () => {
+  const aim = (over: Partial<AimInput> = {}): AimInput => ({
+    usingMouse: false,
+    aimUp: false,
+    left: false,
+    right: false,
+    mouseX: 0,
+    mouseY: 0,
+    cameraX: 0,
+    cameraY: 0,
+    ...over,
+  });
+
+  it('sin apuntar arriba, dispara hacia donde se mira', () => {
+    expect(aimStepFrom(aim(), 0, 0, 1)).toBe(0);
+    expect(aimStepFrom(aim(), 0, 0, -1)).toBe(AIM_STEPS / 2);
+  });
+
+  it('apuntando arriba a secas, dispara recto hacia arriba', () => {
+    // Hacia arriba es y negativa, y el paso resultante no depende de `facing`.
+    const up = aimStep(0, -1);
+    expect(aimStepFrom(aim({ aimUp: true }), 0, 0, 1)).toBe(up);
+    expect(aimStepFrom(aim({ aimUp: true }), 0, 0, -1)).toBe(up);
+  });
+
+  it('arriba más un lateral da la diagonal', () => {
+    expect(aimStepFrom(aim({ aimUp: true, left: true }), 0, 0, 1)).toBe(aimStep(-1, -1));
+    expect(aimStepFrom(aim({ aimUp: true, right: true }), 0, 0, -1)).toBe(aimStep(1, -1));
+  });
+
+  it('con ratón manda el ratón, y el resto de banderas dan igual', () => {
+    const withMouse = aim({ usingMouse: true, aimUp: true, left: true, mouseX: 100, mouseY: 0 });
+    expect(aimStepFrom(withMouse, 0, 0, 1)).toBe(aimStep(100, 0));
   });
 });

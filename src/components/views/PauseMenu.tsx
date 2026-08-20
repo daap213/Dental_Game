@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pause, Play, RefreshCw, Home } from 'lucide-react';
+import { Pause, Play, RefreshCw, Home, SlidersHorizontal } from 'lucide-react';
 import { Language } from '../../types';
 import { TEXT } from '../../i18n';
 import { PixelPanel } from '../ui/Pixel';
@@ -8,11 +8,24 @@ interface PauseMenuProps {
   onResume: () => void;
   onRestart: () => void;
   onQuit: () => void;
+  /**
+   * Los ajustes también desde aquí: bajar el volumen o cambiar una tecla se
+   * necesita justo cuando molesta, no antes de empezar. Antes no había forma
+   * ninguna de tocar el volumen.
+   */
+  onSettings: () => void;
   lang: Language;
 }
 
-export const PauseMenu: React.FC<PauseMenuProps> = ({ onResume, onRestart, onQuit, lang }) => {
+export const PauseMenu: React.FC<PauseMenuProps> = ({
+  onResume,
+  onRestart,
+  onQuit,
+  onSettings,
+  lang,
+}) => {
   const t = TEXT[lang].pause;
+  const ts = TEXT[lang].settings;
 
   return (
     <div className="pixel-crt absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/80">
@@ -42,6 +55,15 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({ onResume, onRestart, onQui
           >
             <RefreshCw className="h-4 w-4" strokeWidth={3} />
             {t.restart}
+          </button>
+
+          <button
+            type="button"
+            onClick={onSettings}
+            className="pixel-btn pixel-text-shadow flex w-full cursor-pointer items-center justify-center gap-2 border-slate-500 bg-slate-700 px-5 py-3 text-[10px] tracking-wider text-slate-200 uppercase hover:bg-slate-600"
+          >
+            <SlidersHorizontal className="h-4 w-4" strokeWidth={3} />
+            {ts.title}
           </button>
 
           <button

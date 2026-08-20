@@ -11,7 +11,6 @@ import {
   Scissors,
   Snail,
   ArrowUp,
-  ArrowDown,
   ArrowLeft,
   ArrowRight,
   Shield,
@@ -272,16 +271,14 @@ export const GameHUD: React.FC<GameHUDProps> = ({ hud, isMobile, handleTouch, la
               >
                 <ArrowUp className="text-slate-300 w-5 h-5" />
               </button>
-              {/* DOWN */}
-              <button
-                className="pixel-btn absolute bottom-0 left-[3.25rem] w-10 h-12 bg-slate-800 border-slate-500 flex items-center justify-center active:bg-slate-600"
-                onTouchStart={handleTouch('down', true)}
-                onTouchEnd={handleTouch('down', false)}
-                onMouseDown={handleTouch('down', true)}
-                onMouseUp={handleTouch('down', false)}
-              >
-                <ArrowDown className="text-slate-300 w-5 h-5" />
-              </button>
+              {/*
+                Aquí había un botón ABAJO. No hacía **nada**: escribía una
+                bandera que se ponía en cuatro sitios y no se leía en ninguno.
+                No hay agacharse ni bajar de plataforma —las plataformas son
+                sólidas por los cuatro lados—, así que era un mando prometiendo
+                una mecánica inexistente. Si algún día se implementa bajar de
+                una plataforma fina, vuelve; hasta entonces, no.
+              */}
               {/* LEFT */}
               <button
                 className="pixel-btn absolute top-[3.25rem] left-0 w-12 h-10 bg-slate-800 border-slate-500 flex items-center justify-center active:bg-slate-600"

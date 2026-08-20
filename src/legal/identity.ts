@@ -28,7 +28,7 @@ export const JURISDICTION_COUNTRY = 'Ecuador';
 export const JURISDICTION_CITY = 'Guayaquil';
 
 /** Última revisión de los tres documentos legales. ISO, y la misma para los dos idiomas. */
-export const LEGAL_UPDATED = '2026-08-19';
+export const LEGAL_UPDATED = '2026-08-20';
 
 /**
  * `© 2025 DaapTech` mientras no haya pasado un año, `© 2025–2027 DaapTech`

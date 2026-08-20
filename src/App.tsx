@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { GameCanvas } from './components/GameCanvas';
 import { MainMenu } from './components/views/MainMenu';
@@ -15,7 +14,12 @@ import {
 } from './components/views/legalRoute';
 import { useViewportSize } from './components/useViewportSize';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from './game/data/physics';
-import { GameState, InputMethod, Perk, LoadoutType, Language, Difficulty, CharacterType } from './types';
+import { GameState, Perk, type RunResult } from './types';
+import { useSettings } from './storage/useSettings';
+import type { ScoreEntry } from './storage/scores';
+import { HighScores } from './components/views/HighScores';
+import { Settings } from './components/views/Settings';
+import { NicknameDialog } from './components/views/NicknameDialog';
 
 /**
  * `?sprites=palette|player|enemies|bosses` abre la galería de arte en lugar del
@@ -36,13 +40,23 @@ const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>(GameState.MENU);
   const [finalScore, setFinalScore] = useState(0);
   const [sessionId, setSessionId] = useState(0);
-  const [inputMethod, setInputMethod] = useState<InputMethod>('mouse');
-  const [loadout, setLoadout] = useState<LoadoutType>('all');
-  const [difficulty, setDifficulty] = useState<Difficulty>('normal');
   const [availablePerks, setAvailablePerks] = useState<Perk[]>([]);
   const [selectedPerkId, setSelectedPerkId] = useState<string | null>(null);
-  const [language, setLanguage] = useState<Language>('en');
-  const [character, setCharacter] = useState<CharacterType>('molar');
+
+  /**
+   * Idioma, dificultad, clase, equipamiento, teclas y volumen **ya no son estado
+   * suelto**: viven en los ajustes, que se leen del navegador al arrancar y se
+   * guardan solos. Antes eran cinco `useState` que se perdían en cada recarga.
+   */
+  const store = useSettings();
+  const { settings, scores } = store;
+  const { language, difficulty, character, loadout, bindings } = settings;
+
+  /** Partida terminada a la espera de apodo, y la fila que se acaba de anotar. */
+  const [pendingRun, setPendingRun] = useState<RunResult | null>(null);
+  const [lastEntryId, setLastEntryId] = useState<string | null>(null);
+  const [showRecords, setShowRecords] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   /**
    * Los créditos se abren desde el menú, desde la pantalla legal y al ganar, así
@@ -88,28 +102,62 @@ const App: React.FC = () => {
     document.documentElement.lang = language;
   }, [language]);
 
-  const handleGameOver = (score: number) => {
-    setFinalScore(score);
-    setGameState(GameState.GAME_OVER);
+  /**
+   * El **único** embudo de fin de partida, gane o pierda.
+   *
+   * Antes eran dos caminos separados y la victoria no publicaba puntuación
+   * ninguna, así que al ganar la pantalla mostraba el cero —o lo de la partida
+   * anterior—. Ahora las dos salidas traen el mismo resultado y pasan por aquí.
+   *
+   * Si aún no hay apodo se abre el diálogo **antes** de cambiar de pantalla; con
+   * apodo, la partida se anota y se sigue. Se pregunta una sola vez en la vida.
+   */
+  const handleRunEnd = (result: RunResult) => {
+    setFinalScore(result.score);
+    if (settings.nickname) {
+      commitRun(result, settings.nickname);
+      setGameState(result.outcome === 'victory' ? GameState.VICTORY : GameState.GAME_OVER);
+      return;
+    }
+    setPendingRun(result);
+  };
+
+  const commitRun = (result: RunResult, nickname: string) => {
+    const entry: ScoreEntry = {
+      // La fecha se toma **aquí**, en la capa de React: dentro de la simulación
+      // no puede haber relojes de pared.
+      id: `${Date.now()}-${result.score}`,
+      date: new Date().toISOString().slice(0, 10),
+      nickname,
+      score: result.score,
+      character: settings.character,
+      difficulty: settings.difficulty,
+      stage: result.stage,
+      kills: result.kills,
+      ms: result.ms,
+      outcome: result.outcome,
+    };
+    store.recordScore(entry);
+    setLastEntryId(entry.id);
   };
 
   const startGame = () => {
-    setSessionId(s => s + 1);
+    setSessionId((s) => s + 1);
     setGameState(GameState.PLAYING);
   };
 
   const handlePerkSelectionStart = (perks: Perk[]) => {
-      setAvailablePerks(perks);
-      setSelectedPerkId(null);
-      setGameState(GameState.PERK_SELECTION);
+    setAvailablePerks(perks);
+    setSelectedPerkId(null);
+    setGameState(GameState.PERK_SELECTION);
   };
 
   const handlePerkSelect = (perkId: string) => {
-      setSelectedPerkId(perkId);
+    setSelectedPerkId(perkId);
   };
 
   const handlePerkApplied = () => {
-      setGameState(GameState.PLAYING);
+    setGameState(GameState.PLAYING);
   };
 
   if (galleryPage) return <SpriteGallery page={galleryPage} lang={language} />;
@@ -137,59 +185,62 @@ const App: React.FC = () => {
         className="relative flex flex-col overflow-hidden bg-slate-900"
         style={{ width: viewportWidth, height: viewportHeight }}
       >
-      <GameCanvas
-        onGameOver={handleGameOver}
-        gameState={gameState}
-        setGameState={setGameState}
-        sessionId={sessionId}
-        inputMethod={inputMethod}
-        loadout={loadout}
-        difficulty={difficulty}
-        character={character}
-        onPerkSelectStart={handlePerkSelectionStart}
-        selectedPerkId={selectedPerkId}
-        onPerkApplied={handlePerkApplied}
-        onVictory={() => setGameState(GameState.VICTORY)}
-        lang={language}
-        supersample={supersample}
-      />
+        <GameCanvas
+          onRunEnd={handleRunEnd}
+          gameState={gameState}
+          setGameState={setGameState}
+          sessionId={sessionId}
+          loadout={loadout}
+          difficulty={difficulty}
+          character={character}
+          onPerkSelectStart={handlePerkSelectionStart}
+          selectedPerkId={selectedPerkId}
+          onPerkApplied={handlePerkApplied}
+          lang={language}
+          bindings={bindings}
+          music={settings.music}
+          sfx={settings.sfx}
+          overlayOpen={
+            showSettings || showRecords || showCredits || legal !== null || pendingRun !== null
+          }
+          supersample={supersample}
+        />
       </div>
 
       {gameState === GameState.MENU && (
         <div className="absolute inset-0 z-50">
           <MainMenu
             onStart={startGame}
-            inputMethod={inputMethod}
-            setInputMethod={setInputMethod}
             loadout={loadout}
-            setLoadout={setLoadout}
+            setLoadout={store.setLoadout}
             difficulty={difficulty}
-            setDifficulty={setDifficulty}
+            setDifficulty={store.setDifficulty}
             character={character}
-            setCharacter={setCharacter}
+            setCharacter={store.setCharacter}
             lang={language}
-            setLang={setLanguage}
+            setLang={store.setLanguage}
             onCredits={() => setShowCredits(true)}
             onLegal={openLegal}
+            onRecords={() => setShowRecords(true)}
+            onSettings={() => setShowSettings(true)}
+            bindings={bindings}
+            scores={scores}
           />
         </div>
       )}
 
       {gameState === GameState.PAUSED && (
-        <PauseMenu 
+        <PauseMenu
           onResume={() => setGameState(GameState.PLAYING)}
           onRestart={startGame}
           onQuit={() => setGameState(GameState.MENU)}
+          onSettings={() => setShowSettings(true)}
           lang={language}
         />
       )}
 
       {gameState === GameState.PERK_SELECTION && (
-          <PerkMenu 
-             perks={availablePerks}
-             onSelect={handlePerkSelect}
-             lang={language}
-          />
+        <PerkMenu perks={availablePerks} onSelect={handlePerkSelect} lang={language} />
       )}
 
       {gameState === GameState.GAME_OVER && (
@@ -212,6 +263,54 @@ const App: React.FC = () => {
         />
       )}
 
+      {showRecords && (
+        <HighScores
+          scores={scores}
+          highlight={lastEntryId}
+          onClose={() => setShowRecords(false)}
+          lang={language}
+        />
+      )}
+
+      {showSettings && (
+        <Settings
+          onClose={() => setShowSettings(false)}
+          lang={language}
+          setLang={store.setLanguage}
+          nickname={settings.nickname}
+          setNickname={store.setNickname}
+          bindings={bindings}
+          setBindings={store.setBindings}
+          music={settings.music}
+          sfx={settings.sfx}
+          setMusic={store.setMusic}
+          setSfx={store.setSfx}
+          onErase={store.eraseEverything}
+          onPrivacy={() => {
+            setShowSettings(false);
+            openLegal('privacy');
+          }}
+        />
+      )}
+
+      {/* Se pregunta antes de cambiar de pantalla, así que va por encima de todo
+          y sin salida que no guarde la partida. */}
+      {pendingRun && (
+        <NicknameDialog
+          score={pendingRun.score}
+          lang={language}
+          onSubmit={(nickname) => {
+            store.setNickname(nickname);
+            commitRun(pendingRun, nickname);
+            setGameState(
+              pendingRun.outcome === 'victory' ? GameState.VICTORY : GameState.GAME_OVER
+            );
+            setPendingRun(null);
+          }}
+          onPrivacy={() => openLegal('privacy')}
+        />
+      )}
+
       {/* Por encima del resto de capas: se puede llegar desde el menú, desde los
           créditos y directamente por URL. */}
       {legal && (
@@ -224,7 +323,7 @@ const App: React.FC = () => {
             setShowCredits(true);
           }}
           lang={language}
-          setLang={setLanguage}
+          setLang={store.setLanguage}
         />
       )}
     </div>

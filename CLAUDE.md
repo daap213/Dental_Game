@@ -230,6 +230,43 @@ Two rules the screen keeps:
 
 `src/i18n/en.ts` is the reference dictionary and exports its own shape as `Dictionary`; `src/i18n/es.ts` is typed against it, so a missing or extra key is a **compile error**, not a runtime `undefined`. `src/i18n/index.ts` exports `TEXT: Record<Language, Dictionary>`. Data modules store IDs only and hydrate localized text at call time (`src/game/perks.ts` is the reference pattern).
 
+### Input is a table now, and it lives in `data/controls.ts`
+
+There is exactly one aiming mode: **the mouse**. The keyboard-aim mode was removed — but the **non-mouse branch of `aimStepFrom` stayed**, and deleting it is a trap that looks safe. Mouse aim is gated on `!isMobile`, so a phone falls through that branch *always* (the d-pad's UP writes the same `aimUp` flag, and `AimInput.left/right` exist only to give it diagonals), and `mouseSeen` starts false, so the first shot of every run goes through it too. `aim.test.ts` pins it.
+
+`src/game/data/controls.ts` holds `GameAction`, `ACTION_SPECS` and `DEFAULT_BINDINGS`. It replaced **five hand-maintained copies** of the same key table inside `GameCanvas` (global keyup, keydown, keyup, two mouse tables) plus a separate hardcoded scroll-suppression list. Four rules:
+
+- **Everything is `e.code`, never `e.key`** — physical position, so WASD stays the same square on AZERTY. UI screens are the opposite: `e.key`, because `'Escape'` is `'Escape'` everywhere. `PixelDialog` documents the split.
+- **Held vs edge is the delicate part.** Move/aim are held-only; jump is edge-only (holding must not repeat); shoot and dash have **both**, and the edge flag rises only on the 0→1 transition. `applyAction` is the one place that expresses it, and `controls.test.ts` pins the asymmetry — it is exactly what a refactor flattens by accident.
+- **`preventDefaultCodes` is derived from the bindings**, never a fixed list. The old list suppressed `ArrowDown` for an action that no longer existed, and rebinding jump to `PageDown` would have scrolled the page under the player. **`Tab` is never suppressed**: it is the only keyboard escape route.
+- **Bindings reach the handlers through a ref, never through the closure.** Putting them in the effect deps re-registers six listeners on every change and opens a window where a `keyup` lands on the old listener and a flag sticks. Nothing would warn you — `react-hooks/exhaustive-deps` is only a *warning* in this file.
+
+`Escape` is not a `GameAction` and has **one owner**: `App` passes `overlayOpen` down, and `GameCanvas` returns early when a layer is up. Without that, opening settings from the pause menu means one press closes settings *and* unpauses.
+
+### Storage lives in `src/storage/` and is injected, not imported
+
+Preferences and the score table persist in `localStorage`. Three things make it work with this repo's test setup, and all three are load-bearing:
+
+- **`StorageLike` is injected**, defaulting to a memoized `defaultStorage()`. Vitest runs `environment: 'node'`, so `localStorage` does not exist; a module that touched it at import time would crash the whole suite. Tests pass a `Map`. Same argument as `PixelTarget` in `render/pixel.ts`.
+- **`useSettings` reads in a lazy initialiser**, never at module scope, for the same reason.
+- **Nothing in `store.ts` throws.** Corrupt JSON, a wrong schema version, a blocked `localStorage` and a quota error all degrade to defaults. The worst version of that bug would fire on the game-over screen, which is exactly when it writes. Sanitising is **per field**: a corrupt volume must not take the score table with it.
+
+`eraseAll` sweeps by **prefix**, not two known keys — the privacy policy promises a working erase control, and a third key added later would silently escape a two-key version.
+
+### One funnel for the end of a run
+
+`onRunEnd(runResult(world, outcome))` is the only exit, win or lose. Victory used to publish **no score at all** (`{type:'victory'}` carried nothing, and reading `hud.score` does not work either — the event queue drains *before* `syncHud`, so React would get the previous frame). `runResult` lives in `world.ts` because both endings built the same five fields by hand.
+
+`World.runTime` is the run clock, accumulated by `dt` in the fixed step — **never `Date.now()`**, which is the bug the hidden-boss timers already had. `triggers.levelTime` resets per stage and cannot be used for this. Dates for the score table are taken in the React layer, where a wall clock is fine.
+
+### The menu does not use `useFitScale`, and that is the point
+
+`useFitScale` shrinks content to fit. Because the menu content is `w-full max-w-*`, the width ratio is always ≥1, so it only ever shrank *vertically* — on a phone the grid collapsed to one column, natural height tripled, and the hook scaled everything including the 7px type down to about 4px. It also meant every panel added to the menu was a font-size cut. The menu now has real breakpoints and scrolls when it does not fit.
+
+The hook is still right for `Credits` and `GameOver`, which are fixed compositions meant to be seen whole. It now has a floor of `MIN_FIT_SCALE` and callback refs — with object refs and empty deps it kept observing detached nodes after a screen unmounted and remounted, and the scale froze at a stale value forever.
+
+The menu background is stage 5 through `drawBackground(ctx, cameraX, 5, t)`, which needs no `World`. It draws the logical 800×450 and lets CSS `object-cover` do the rest: making the layer stack width-parametric is a rendering-layer project, not a menu change. Unlike `Credits` it evicts bakes **only on unmount** (nothing is baked to the box width here), and it pans with a cosine so single-copy layers never walk off-screen.
+
 ### The legal texts are the one thing that does *not* live in `Dictionary`
 
 `src/legal/` holds the terms, the privacy policy and the licences page — prose, not labels — and it stays out of `src/i18n/` on purpose. `locales.test.ts` asserts exact **path** parity, so legal prose inside the dictionary would force EN and ES to have the same number of paragraphs, which is an editorial straitjacket (the two drafting traditions split clauses differently). Worse, it would dilute what that test means: today its parity says "every UI label is translated"; afterwards it would mostly say "somebody pressed Enter the same number of times". Only the screen's chrome — tab labels, "Last updated" — lives in the dictionary, under `legal:`.

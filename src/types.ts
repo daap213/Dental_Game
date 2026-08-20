@@ -7,7 +7,6 @@ export enum GameState {
   PERK_SELECTION,
 }
 
-export type InputMethod = 'mouse' | 'keyboard';
 export type LoadoutType = 'all' | WeaponType;
 export type Language = 'en' | 'es';
 export type Difficulty = 'easy' | 'normal' | 'hard' | 'legend';
@@ -262,4 +261,20 @@ export interface Perk {
   rarity: 'common' | 'rare' | 'legendary';
   color: string;
   weight: number; // Probability weight (higher = more common)
+}
+
+/**
+ * Lo que una partida deja al terminar, gane o pierda.
+ *
+ * Vive aquí y no en `storage/` porque es la frontera: lo produce el bucle del
+ * juego y lo consume la tabla de récords, y ninguno de los dos debe importar al
+ * otro. `ms` viene del cronómetro de simulación del mundo, nunca de un reloj de
+ * pared.
+ */
+export interface RunResult {
+  score: number;
+  stage: number;
+  kills: number;
+  ms: number;
+  outcome: 'defeat' | 'victory';
 }

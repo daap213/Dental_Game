@@ -23,6 +23,24 @@
   -webkit-user-select: none;
 }
 
+/* La pareja `min-h-0` + `overflow-y-auto` que hace funcionar el scroll dentro
+   de un flex a pantalla completa. Estaba escrita a mano en la base de datos y
+   en la pantalla legal; es una utilidad de CSS, no un componente de React. */
+@utility pixel-scroll {
+  min-height: 0;
+  flex: 1 1 0%;
+  overflow-y: auto;
+}
+
+/* La usaba el HUD desde siempre y no estaba definida en ninguna parte. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 /*
  * Lenguaje visual pixel art
  * -------------------------
@@ -161,9 +179,14 @@
   background-color: rgb(103 232 249 / 0.12);
 }
 
-/* Foco visible y cuadrado, en el mismo lenguaje que el resto: sin redondeos. */
+/* Foco visible y cuadrado, en el mismo lenguaje que el resto: sin redondeos.
+   Alcanza también a `.pixel-inset`, que es el campo de texto y el mando de
+   nivel: eran los dos únicos controles del juego que se podían enfocar sin que
+   se viera absolutamente nada. */
 .pixel-link:focus-visible,
-.pixel-btn:focus-visible {
+.pixel-btn:focus-visible,
+.pixel-inset:focus-visible,
+.pixel-inset:focus-within {
   outline: 3px solid #fbbf24;
   outline-offset: 2px;
 }

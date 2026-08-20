@@ -205,7 +205,7 @@ export const legalEs: LegalPack = {
             spans: [
               'No está dirigido específicamente a menores. Como ',
               { strong: 'no se recoge ningún dato de nadie' },
-              ', menores incluidos, no hay ningún mecanismo de consentimiento parental que aplicar. Aun así, se recomienda supervisión con los más pequeños.',
+              ', menores incluidos, no hay ningún mecanismo de consentimiento parental que aplicar. El apodo de la tabla de puntuaciones nunca sale del dispositivo donde se escribió. Aun así, se recomienda supervisión con los más pequeños.',
             ],
           },
         ],
@@ -325,7 +325,7 @@ export const legalEs: LegalPack = {
           {
             kind: 'p',
             spans: [
-              'El resto de esta página explica por qué eso es literalmente cierto y cuál es la única excepción honesta: el servidor que te entrega la página.',
+              'El resto de esta página explica por qué eso es literalmente cierto y cuáles son las dos excepciones honestas: lo que tu propio navegador recuerda —tus ajustes y tus puntuaciones, que no salen de ahí— y el servidor que te entrega la página.',
             ],
           },
         ],
@@ -376,9 +376,9 @@ export const legalEs: LegalPack = {
           {
             kind: 'p',
             spans: [
-              'El juego ',
-              { strong: 'no tiene ni un solo campo de texto' },
-              ': no hay forma de introducir información aunque quisieras.',
+              'El juego tiene ',
+              { strong: 'un único campo de texto' },
+              ': el apodo opcional de la tabla de puntuaciones. Es libre, se guarda solo en tu navegador y no se envía a ninguna parte. No hay ningún otro sitio donde introducir información.',
             ],
           },
         ],
@@ -410,17 +410,9 @@ export const legalEs: LegalPack = {
           {
             kind: 'p',
             spans: [
-              'Hoy el juego ',
-              { strong: 'no guarda nada' },
-              ' en tu navegador: ni almacenamiento local, ni de sesión, ni bases de datos. Al recargar la página, todo vuelve a empezar.',
-            ],
-          },
-          {
-            kind: 'p',
-            spans: [
-              'En el futuro el juego podrá guardar, ',
+              'El juego guarda, ',
               { strong: 'únicamente en tu dispositivo' },
-              ', tus preferencias (idioma, dificultad, clase, equipamiento, control y sonido) y un apodo elegido por ti junto con tus puntuaciones.',
+              ', tus preferencias —idioma, dificultad, clase, equipamiento, teclas y niveles de sonido— y un apodo elegido por ti junto con tu tabla de puntuaciones.',
             ],
           },
           {
@@ -436,7 +428,12 @@ export const legalEs: LegalPack = {
                 ' ni nada que te identifique.',
               ],
               [
-                'Podrás borrarlo desde el propio juego, o en cualquier momento limpiando los datos del sitio en tu navegador.',
+                'Puedes borrarlo todo en ',
+                { strong: 'Ajustes → Audio y datos → Borrar mis datos' },
+                ', o limpiando los datos del sitio en tu navegador.',
+              ],
+              [
+                'Técnicamente son dos entradas de `localStorage` con el prefijo `supermolar:`, y no hay ninguna más.',
               ],
             ],
           },
@@ -523,7 +520,7 @@ export const legalEs: LegalPack = {
           {
             kind: 'p',
             spans: [
-              'No conservamos nada, porque no recogemos nada. Los registros técnicos del alojamiento los gestiona Cloudflare según su propia política. Lo que en el futuro se guarde en local vivirá en tu navegador hasta que tú lo borres.',
+              'No conservamos nada, porque no recogemos nada. Los registros técnicos del alojamiento los gestiona Cloudflare según su propia política. Lo que se guarda en local vive en tu navegador hasta que tú lo borres.',
             ],
           },
         ],

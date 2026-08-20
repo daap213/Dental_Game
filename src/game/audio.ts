@@ -5,9 +5,40 @@ export class AudioManager {
   ctx: AudioContext | null = null;
   ambientGain: GainNode | null = null;
 
+  /**
+   * Dos buses, y por eso existen.
+   *
+   * Todos los efectos se conectaban **directamente a `destination`** en quince
+   * sitios, así que no había ni un punto por el que pasara el sonido: no existía
+   * el concepto de volumen, sólo el atenuado de la cama ambiental. Con un bus
+   * para música y otro para efectos, el jugador puede bajar la música y
+   * conservar los avisos, que es lo que la gente hace de verdad.
+   *
+   * `out()` es lo que sustituye a `this.ctx.destination` en todos los efectos.
+   * Cae al destino si aún no hay bus, para que un sonido disparado antes del
+   * primer `init()` no se pierda en silencio.
+   */
+  musicBus: GainNode | null = null;
+  sfxBus: GainNode | null = null;
+
+  private music = 1;
+  private sfx = 1;
+
   init() {
     if (!this.ctx) {
       this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+
+      // Los buses van al destino **directamente**, no por `out()`: `out()`
+      // devuelve el bus de efectos, así que enchufarlos ahí crearía un lazo del
+      // bus consigo mismo y colgaría el grafo de audio.
+      this.musicBus = this.ctx.createGain();
+      this.musicBus.gain.value = this.music;
+      this.musicBus.connect(this.ctx.destination);
+
+      this.sfxBus = this.ctx.createGain();
+      this.sfxBus.gain.value = this.sfx;
+      this.sfxBus.connect(this.ctx.destination);
+
       this.startAmbient();
     }
     if (this.ctx.state === 'suspended') {
@@ -15,10 +46,36 @@ export class AudioManager {
     }
   }
 
+  /** Salida de los efectos. Todo sonido puntual pasa por aquí. */
+  private out(): AudioNode {
+    return this.sfxBus ?? this.ctx!.destination;
+  }
+
+  /**
+   * Atenuado de la cama ambiental según el estado de la partida.
+   *
+   * **No es el volumen de la música y no lo sustituye**: esto sube y baja con la
+   * pausa, y el nivel del jugador multiplica por encima en el bus. Son un
+   * *ducking* y un nivel, y componen.
+   */
   setAmbientVolume(volume: number) {
     if (!this.ctx || !this.ambientGain) return;
     const now = this.ctx.currentTime;
     this.ambientGain.gain.setTargetAtTime(volume, now, 0.5);
+  }
+
+  /** Nivel de música elegido por el jugador, de 0 a 1. */
+  setMusicVolume(volume: number) {
+    this.music = Math.max(0, Math.min(1, volume));
+    if (!this.ctx || !this.musicBus) return;
+    this.musicBus.gain.setTargetAtTime(this.music, this.ctx.currentTime, 0.05);
+  }
+
+  /** Nivel de efectos elegido por el jugador, de 0 a 1. */
+  setSfxVolume(volume: number) {
+    this.sfx = Math.max(0, Math.min(1, volume));
+    if (!this.ctx || !this.sfxBus) return;
+    this.sfxBus.gain.setTargetAtTime(this.sfx, this.ctx.currentTime, 0.05);
   }
 
   startAmbient() {
@@ -26,7 +83,7 @@ export class AudioManager {
 
     const masterGain = this.ctx.createGain();
     masterGain.gain.value = 0;
-    masterGain.connect(this.ctx.destination);
+    masterGain.connect(this.musicBus ?? this.ctx.destination);
     this.ambientGain = masterGain;
 
     const t = this.ctx.currentTime;
@@ -95,7 +152,7 @@ export class AudioManager {
     gain.gain.setValueAtTime(0.1, t);
     gain.gain.linearRampToValueAtTime(0, t + 0.3);
     
-    osc.connect(gain).connect(this.ctx.destination);
+    osc.connect(gain).connect(this.out());
     osc.start(t); osc.stop(t + 0.3);
   }
 
@@ -127,7 +184,7 @@ export class AudioManager {
         noiseGain.gain.setValueAtTime(0.6, start);
         noiseGain.gain.exponentialRampToValueAtTime(0.01, start + 0.1);
         
-        noise.connect(noiseFilter).connect(noiseGain).connect(this.ctx.destination);
+        noise.connect(noiseFilter).connect(noiseGain).connect(this.out());
         noise.start(start);
 
         // Low Thud (Jaw closing impact)
@@ -140,7 +197,7 @@ export class AudioManager {
         oscGain.gain.setValueAtTime(0.4, start);
         oscGain.gain.exponentialRampToValueAtTime(0.01, start + 0.1);
         
-        osc.connect(oscGain).connect(this.ctx.destination);
+        osc.connect(oscGain).connect(this.out());
         osc.start(start);
     }
   }
@@ -150,7 +207,7 @@ export class AudioManager {
     const t = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
-    osc.connect(gain).connect(this.ctx.destination);
+    osc.connect(gain).connect(this.out());
 
     switch (type) {
       case 'normal':
@@ -248,7 +305,7 @@ export class AudioManager {
           g.gain.setValueAtTime(0, t);
           g.gain.linearRampToValueAtTime(0.2, t + 0.5);
           g.gain.linearRampToValueAtTime(0, t + 4);
-          osc.connect(g).connect(this.ctx!.destination);
+          osc.connect(g).connect(this.out());
           osc.start(t); osc.stop(t + 4);
       });
   }
@@ -277,7 +334,7 @@ export class AudioManager {
       gain.gain.setValueAtTime(0, t);
       gain.gain.linearRampToValueAtTime(0.3, t + 0.5);
       gain.gain.linearRampToValueAtTime(0, t + 2);
-      osc.connect(gain).connect(this.ctx.destination);
+      osc.connect(gain).connect(this.out());
       osc.start(t); osc.stop(t + 2);
     } else if (variant === 'calculus') {
       /**
@@ -306,7 +363,7 @@ export class AudioManager {
       grindGain.gain.setValueAtTime(0, t);
       grindGain.gain.linearRampToValueAtTime(0.34, t + 0.18);
       grindGain.gain.exponentialRampToValueAtTime(0.01, t + 1.3);
-      grind.connect(crackle).connect(grindGain).connect(this.ctx.destination);
+      grind.connect(crackle).connect(grindGain).connect(this.out());
       grind.start(t);
       grind.stop(t + 1.4);
 
@@ -318,7 +375,7 @@ export class AudioManager {
       const thudGain = this.ctx.createGain();
       thudGain.gain.setValueAtTime(0.4, t);
       thudGain.gain.exponentialRampToValueAtTime(0.01, t + 0.8);
-      thud.connect(thudGain).connect(this.ctx.destination);
+      thud.connect(thudGain).connect(this.out());
       thud.start(t);
       thud.stop(t + 0.8);
     } else if (variant === 'general') {
@@ -330,7 +387,7 @@ export class AudioManager {
             g.gain.setValueAtTime(0, t + i*0.1);
             g.gain.linearRampToValueAtTime(0.1, t + i*0.1 + 0.05);
             g.gain.linearRampToValueAtTime(0, t + i*0.1 + 0.3);
-            osc.connect(g).connect(this.ctx!.destination);
+            osc.connect(g).connect(this.out());
             osc.start(t + i*0.1); osc.stop(t + i*0.1 + 0.3);
         });
     } else if (variant === 'deity') {
@@ -346,7 +403,7 @@ export class AudioManager {
             g.gain.setValueAtTime(0, t);
             g.gain.linearRampToValueAtTime(0.2, t + 1);
             g.gain.linearRampToValueAtTime(0, t + 4);
-            osc.connect(filter).connect(g).connect(this.ctx!.destination);
+            osc.connect(filter).connect(g).connect(this.out());
             osc.start(t); osc.stop(t + 4);
         });
     } else { // King
@@ -357,7 +414,7 @@ export class AudioManager {
         const gain = this.ctx.createGain();
         gain.gain.setValueAtTime(0.5, t);
         gain.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
-        osc.connect(gain).connect(this.ctx.destination);
+        osc.connect(gain).connect(this.out());
         osc.start(t); osc.stop(t + 0.5);
     }
   }
@@ -367,7 +424,7 @@ export class AudioManager {
     const t = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
-    osc.connect(gain).connect(this.ctx.destination);
+    osc.connect(gain).connect(this.out());
 
     switch (attack) {
       case 'shoot':
@@ -431,7 +488,7 @@ export class AudioManager {
     const gain = this.ctx.createGain();
     gain.gain.setValueAtTime(0.3, t);
     gain.gain.linearRampToValueAtTime(0, t + 2);
-    osc.connect(gain).connect(this.ctx.destination);
+    osc.connect(gain).connect(this.out());
     osc.start(t); osc.stop(t + 2);
 
     [300, 250, 200, 150].forEach((freq, i) => {
@@ -442,7 +499,7 @@ export class AudioManager {
          g.gain.setValueAtTime(0, t + i*0.4);
          g.gain.linearRampToValueAtTime(0.2, t + i*0.4 + 0.1);
          g.gain.linearRampToValueAtTime(0, t + i*0.4 + 0.8);
-         o.connect(g).connect(this.ctx!.destination);
+         o.connect(g).connect(this.out());
          o.start(t + i*0.4); o.stop(t + i*0.4 + 0.8);
     });
   }

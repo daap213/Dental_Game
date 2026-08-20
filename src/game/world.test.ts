@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createWorld, syncHud, snapshotHud, hudChanged, type World } from './world';
+import { createWorld, syncHud, snapshotHud, hudChanged, runResult, type World } from './world';
 import { applyPerk } from './perks';
 import type { RunConfig } from './player';
 
@@ -164,5 +164,40 @@ describe('publicación del HUD frame a frame', () => {
     const snap = pub.frame();
 
     expect(snap).toMatchObject({ bossName: 'Tartar Tank', bossHp: 3500, bossMaxHp: 3500 });
+  });
+});
+
+describe('resultado de la partida', () => {
+  it('recoge lo que la tabla de récords necesita', () => {
+    const world = createWorld({ loadout: 'all', difficulty: 'normal', character: 'molar' });
+    world.player.score = 4200;
+    world.player.runStats.killCount = 37;
+    world.level.stage = 3;
+    world.runTime = 95.5;
+
+    expect(runResult(world, 'defeat')).toEqual({
+      score: 4200,
+      stage: 3,
+      kills: 37,
+      // El mundo cuenta en segundos y la tabla guarda milisegundos.
+      ms: 95_500,
+      outcome: 'defeat',
+    });
+  });
+
+  it('la victoria y la derrota traen lo mismo salvo el desenlace', () => {
+    // Eran dos construcciones separadas, y la de la victoria ni siquiera
+    // llevaba puntuación: al ganar, la tabla recibía un cero.
+    const world = createWorld({ loadout: 'all', difficulty: 'normal', character: 'molar' });
+    world.player.score = 900;
+
+    const defeat = { ...runResult(world, 'defeat'), outcome: undefined };
+    const victory = { ...runResult(world, 'victory'), outcome: undefined };
+    expect(victory).toEqual(defeat);
+    expect(runResult(world, 'victory').outcome).toBe('victory');
+  });
+
+  it('el cronómetro arranca a cero en cada partida', () => {
+    expect(createWorld({ loadout: 'all', difficulty: 'normal', character: 'molar' }).runTime).toBe(0);
   });
 });

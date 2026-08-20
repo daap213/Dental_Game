@@ -9,6 +9,7 @@ import type {
   LevelState,
   Perk,
   WeaponType,
+  RunResult,
 } from '../types';
 import { createPlayer, type RunConfig } from './player';
 import { generateLevel } from './level';
@@ -59,8 +60,15 @@ export type GameEvent =
   | { type: 'perk-offer'; perks: Perk[] }
   | { type: 'stage-changed'; stage: number }
   | { type: 'boss-defeated' }
-  | { type: 'game-over'; score: number }
-  | { type: 'victory' };
+  /**
+   * La victoria **lleva la puntuación**. No la llevaba, y por eso al ganar la
+   * tabla de récords recibía un cero: la cola se drena antes de `syncHud`, así
+   * que leer el HUD tampoco valía —habría dado el fotograma anterior—.
+   *
+   * (Aquí vivía además un `game-over` que nunca llegó a emitirse. La derrota
+   * sigue siendo una llamada directa desde el bucle, que es donde se detecta.)
+   */
+  | { type: 'victory'; score: number; stage: number };
 
 /** Estado mutable de la simulación. Se muta in situ, paso a paso. */
 export interface World {
@@ -87,6 +95,16 @@ export interface World {
   transition: { phase: 'none' | 'closing' | 'opening'; progress: number };
   /** Relojes de comportamiento que invocan al jefe oculto. */
   triggers: TriggerState;
+  /**
+   * Segundos de simulación desde que empezó la **partida**, no la fase.
+   *
+   * No existía nada así: `triggers.levelTime` se reinicia en cada cambio de
+   * fase, así que no había forma de saber cuánto había durado una partida. Se
+   * acumula por `dt` en el paso fijo y **nunca con `Date.now()`**: un reloj de
+   * pared seguiría corriendo con el juego en pausa o con la pestaña de fondo,
+   * que es exactamente el fallo que ya tuvieron los relojes del jefe oculto.
+   */
+  runTime: number;
   hud: HudSnapshot;
   events: GameEvent[];
 }
@@ -118,6 +136,7 @@ export const createWorld = (config: RunConfig): World => {
     stageClearTimer: 0,
     transition: { phase: 'none', progress: 0 },
     triggers: createTriggerState(player.x),
+    runTime: 0,
     hud: {
       score: 0,
       hp: player.hp,
@@ -190,6 +209,25 @@ export const syncHud = (world: World) => {
  * los valores correctos.
  */
 export const snapshotHud = (world: World): HudSnapshot => ({ ...world.hud });
+
+/**
+ * Lo que la partida deja al terminar.
+ *
+ * Vive aquí y no en el componente porque lo construían **dos sitios distintos**
+ * —la derrota y la victoria— con los mismos cinco campos copiados a mano, y
+ * dos copias de una forma es una copia de más: la primera vez que se añada un
+ * dato, una de las dos se queda sin él y la mitad de las partidas se guardan
+ * incompletas.
+ *
+ * `runTime` está en segundos de simulación; la tabla los quiere en milisegundos.
+ */
+export const runResult = (world: World, outcome: RunResult['outcome']): RunResult => ({
+  score: world.player.score,
+  stage: world.level.stage,
+  kills: world.player.runStats.killCount,
+  ms: world.runTime * 1000,
+  outcome,
+});
 
 /** true si algún valor de la instantánea cambió respecto a la anterior. */
 export const hudChanged = (a: HudSnapshot, b: HudSnapshot): boolean =>

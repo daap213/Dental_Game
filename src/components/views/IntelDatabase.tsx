@@ -16,6 +16,7 @@ import { PERK_DEFINITIONS } from '../../game/perks';
 import { previewItem } from '../../game/render/preview';
 import { PixelCanvas } from '../PixelCanvas';
 import { PixelButton, PixelKey, PixelPanel } from '../ui/Pixel';
+import { PixelTabs, type ChoiceOption } from '../ui/PixelChoice';
 import type { CommonEnemy } from '../../i18n/subjects';
 
 /**
@@ -121,7 +122,7 @@ export const IntelDatabase: React.FC<{ onClose: () => void; lang: Language }> = 
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const tabs: readonly { id: TabId; label: string; icon: React.ReactNode; accent: string }[] = [
+  const tabs: readonly ChoiceOption<TabId>[] = [
     {
       id: 'classes',
       label: t.group_characters,
@@ -176,24 +177,10 @@ export const IntelDatabase: React.FC<{ onClose: () => void; lang: Language }> = 
         </header>
 
         {/* Las pestañas: una fila, sin scroll, y la abierta se marca con el cursor ▶. */}
-        <nav className="flex flex-wrap gap-1.5" aria-label={t.title}>
-          {tabs.map((entry) => (
-            <PixelButton
-              key={entry.id}
-              onClick={() => setTab(entry.id)}
-              active={tab === entry.id}
-              activeClass={entry.accent}
-              marker
-              className="flex items-center gap-1.5 px-2 py-1.5"
-            >
-              {entry.icon}
-              {entry.label}
-            </PixelButton>
-          ))}
-        </nav>
+        <PixelTabs options={tabs} value={tab} onSelect={setTab} label={t.title} marker />
 
         {/* Solo el contenido de la pestaña desplaza, así que la cabecera nunca se va. */}
-        <div className="min-h-0 flex-1 overflow-y-auto pb-4">
+        <div className="pixel-scroll pb-4">
           {tab === 'classes' && (
             <PixelPanel title={t.group_characters} accent="border-green-700">
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
