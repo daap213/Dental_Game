@@ -83,6 +83,15 @@ All drawing lives in `src/game/render/` and nothing outside it draws. There are 
 
 Variation comes from `render/noise.ts` — a deterministic hash, never `Math.random()`. Baked art with a random seed is frozen with whatever it rolled that session, so two runs of the same stage would not share a scenery. That shipped once in the credits scene.
 
+**The credits scene (`render/credits.ts`) is drawn from `referencias/fondo_creditos.jpg`** — redrawn in code like everything else; the reference is never shipped. Six elements carry it: storm sky with a veiled moon, the fortified-molar castle on its hill, the misty ridge, dental probes standing like dead trees, the gum mound, and the caped hero dragging a toothbrush. Four rules it keeps, three of them from mistakes made while drawing it:
+
+- **Depth is relative size plus baseline height, and nothing else.** The ridge molars started at the hero's scale with their bases *below* his feet, which reads as "in front of him": the scene collapsed into a frieze. They are now half his height with their bases well above his, and the fog cuts their feet.
+- **A cape needs canvas to fly into.** `HERO_W` is 78 for a 46-wide tooth; the spare 26px on the left is where the sweep lives. Clipped at the mask edge, the cape came out a rectangle with a ragged hem — a curtain hung on a molar. Its collar also has to follow the crown's curve, or the straight top edge reads as a band painted across the tooth.
+- **The castle is a fortified molar, not a castle shaped like a molar.** The silhouette must read as a tooth first: battlements are **subtracted** from its top edge and windows painted on afterwards. Towers added on top give a castle with a tooth stuck to it. Windows must be painted over the blitted sprite, never subtracted from the mask — subtracted, you see the sky through the castle.
+- **Big single features anchor to a fraction of the width; repeating texture tiles every 800.** Moon, castle and hero are one each and must keep composing when the scene stretches; clouds, ridge and rubble tile, so their density does not change with the window.
+
+**Bake caches survive hot reload.** `bake` memoizes by id, and editing a drawing module does not evict what it already produced — `dropBakes(CREDITS_BAKE_PREFIX)` only runs on resize and unmount. While iterating on baked art, reload the page: otherwise you are looking at the previous version and concluding your change did nothing.
+
 Two traps worth knowing before drawing anything new:
 
 - **A rectangle one pixel wide is useless for dithering.** The 4×4 matrix is anchored to absolute coordinates, so a narrow strip only touches one of its four phases: at low levels some columns come out dotted and their neighbours empty. A horizontal gradient built from 1px columns reads as a grid of vertical stripes. Step in fours, or evaluate the threshold per pixel (`background/cheeks.ts` does the latter).

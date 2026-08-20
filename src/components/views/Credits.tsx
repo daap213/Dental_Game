@@ -23,7 +23,11 @@ interface CreditsProps {
 
 export const Credits: React.FC<CreditsProps> = ({ onClose, onLegal, lang }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { containerRef, contentRef, scale: fitScale } = useFitScale<HTMLDivElement, HTMLDivElement>();
+  const {
+    containerRef,
+    contentRef,
+    scale: fitScale,
+  } = useFitScale<HTMLDivElement, HTMLDivElement>();
   const t = TEXT[lang].credits;
   const tl = TEXT[lang].legal;
 
@@ -64,7 +68,7 @@ export const Credits: React.FC<CreditsProps> = ({ onClose, onLegal, lang }) => {
       drawCreditsScene(ctx, elapsed, sceneW);
     };
 
-    // La escena está horneada; solo las ascuas se mueven, así que basta con
+    // La escena está horneada; solo cae la ceniza, así que basta con
     // repintar despacio en lugar de a 60 fps.
     let raf = 0;
     let start = 0;
@@ -119,8 +123,11 @@ export const Credits: React.FC<CreditsProps> = ({ onClose, onLegal, lang }) => {
           mayor, igual que en el lienzo del juego. */}
       <canvas ref={canvasRef} className="absolute inset-0 z-0 h-full w-full" />
 
-      {/* Velo plano en vez de degradado, para no romper la estética. */}
-      <div aria-hidden className="pointer-events-none absolute inset-0 z-0 bg-slate-950/75" />
+      {/* Velo plano en vez de degradado, para no romper la estética. Al 75 % se
+          comía la escena entera —el castillo, las sondas y la capa del héroe
+          quedaban en penumbra—; los paneles llevan su propio fondo, así que la
+          legibilidad del texto no depende de esto. */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 z-0 bg-slate-950/50" />
 
       {/* Cabecera */}
       <header className="pixel-frame relative z-10 flex shrink-0 items-center justify-between gap-3 border-slate-700 bg-slate-950 px-4 py-3">
